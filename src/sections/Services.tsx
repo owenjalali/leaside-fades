@@ -69,14 +69,14 @@ export default function Services() {
     const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("Men");
 
     return (
-        <section id="services" className="section-padding bg-[#0a0a0a]">
+        <section id="services" className="section-padding bg-[#f5f5f5]">
             <div className="max-w-4xl mx-auto">
                 <AnimateOnScroll animation="fade-up">
                     <div className="text-center mb-10">
                         <p className="text-green text-sm font-semibold tracking-widest uppercase mb-3">
                             Our Services
                         </p>
-                        <h2 className="font-display text-4xl md:text-5xl text-white tracking-wide">
+                        <h2 className="font-display text-4xl md:text-5xl text-charcoal tracking-wide">
                             SERVICES & PRICING
                         </h2>
                     </div>
@@ -93,7 +93,7 @@ export default function Services() {
                                     "px-6 py-2.5 rounded-full text-sm font-semibold transition-all duration-300",
                                     activeTab === tab
                                         ? "bg-green text-white shadow-lg shadow-green/30"
-                                        : "bg-white/5 text-white/50 hover:bg-white/10 hover:text-white"
+                                        : "bg-charcoal/5 text-charcoal/50 hover:bg-charcoal/10 hover:text-charcoal"
                                 )}
                             >
                                 {tab}
@@ -104,7 +104,7 @@ export default function Services() {
 
                 {/* Service List */}
                 <AnimateOnScroll animation="fade-up" delay={200}>
-                    <div className="bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] overflow-hidden">
+                    <div className="bg-[#0a0a0a] rounded-2xl border border-white/[0.06] overflow-hidden">
                         {services[activeTab].map((group, gi) => (
                             <div key={gi}>
                                 {group.heading && (

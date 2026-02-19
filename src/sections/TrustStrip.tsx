@@ -9,7 +9,7 @@ const stats = [
 
 export default function TrustStrip() {
     return (
-        <section className="bg-white py-8 border-b border-gray-100">
+        <section className="bg-cream py-8 border-b border-green/10">
             <div className="max-w-7xl mx-auto px-4 md:px-8">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                     {stats.map((stat) => (
