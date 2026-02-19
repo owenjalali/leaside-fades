@@ -1,3 +1,4 @@
+import { useGoogleReviews } from "@/lib/googleReviews";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import Hero from "@/sections/Hero";
@@ -13,17 +14,22 @@ import Contact from "@/sections/Contact";
 import FinalCTA from "@/sections/FinalCTA";
 
 export default function App() {
+    const reviewsState = useGoogleReviews();
+
     return (
         <div className="min-h-screen bg-white">
             <Navbar />
             <main>
                 <Hero />
-                <TrustStrip />
+                <TrustStrip
+                    overallRating={reviewsState.overallRating}
+                    totalReviews={reviewsState.totalReviews}
+                />
                 <Services />
                 <Features />
                 <OurShop />
                 <Gallery />
-                <Testimonials />
+                <Testimonials reviews={reviewsState.reviews} />
                 <Team />
                 <FAQ />
                 <Contact />

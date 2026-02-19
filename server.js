@@ -222,6 +222,64 @@ app.get("/api/google-reviews", async (_req, res) => {
   }
 });
 
+app.get("/api/review-avatar", async (req, res) => {
+  const rawUrl = typeof req.query.url === "string" ? req.query.url : "";
+
+  if (!rawUrl) {
+    return res.status(400).json({ message: "Missing avatar URL." });
+  }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(rawUrl);
+  } catch {
+    return res.status(400).json({ message: "Invalid avatar URL." });
+  }
+
+  const allowedHosts = new Set([
+    "lh3.googleusercontent.com",
+    "lh4.googleusercontent.com",
+    "lh5.googleusercontent.com",
+    "lh6.googleusercontent.com",
+    "lh.googleusercontent.com",
+  ]);
+
+  if (parsedUrl.protocol !== "https:" || !allowedHosts.has(parsedUrl.hostname)) {
+    return res.status(400).json({ message: "Avatar host is not allowed." });
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(parsedUrl.toString(), {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+      },
+    });
+
+    if (!response.ok) {
+      return res.status(502).json({ message: "Failed to fetch avatar image." });
+    }
+
+    const contentType = response.headers.get("content-type") || "image/jpeg";
+    if (!contentType.startsWith("image/")) {
+      return res.status(415).json({ message: "Avatar response is not an image." });
+    }
+
+    const body = Buffer.from(await response.arrayBuffer());
+
+    res.set("Content-Type", contentType);
+    res.set("Cache-Control", "public, max-age=86400, stale-while-revalidate=86400");
+    res.send(body);
+  } catch {
+    return res.status(502).json({ message: "Avatar service is unavailable." });
+  } finally {
+    clearTimeout(timeout);
+  }
+});
+
 app.get("/api/site-config", (_req, res) => {
   res.set("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
   res.json(getPublicSiteConfig());

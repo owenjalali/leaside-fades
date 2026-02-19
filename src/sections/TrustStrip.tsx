@@ -1,13 +1,27 @@
 import { MapPin, Star, Clock, Phone } from "lucide-react";
 
-const stats = [
-    { icon: Star, label: "5.0 Rating", sub: "Google Reviews" },
-    { icon: Clock, label: "Mon–Sat", sub: "Open 9AM–7PM" },
-    { icon: MapPin, label: "Bayview Ave", sub: "East York, ON" },
-    { icon: Phone, label: "(647) 471-5485", sub: "Call or Text" },
-];
+interface TrustStripProps {
+    overallRating: number | null;
+    totalReviews: number | null;
+}
 
-export default function TrustStrip() {
+export default function TrustStrip({ overallRating, totalReviews }: TrustStripProps) {
+    const ratingLabel =
+        typeof overallRating === "number" && overallRating > 0
+            ? `${overallRating.toFixed(1)} / 5`
+            : "5.0 Rating";
+    const reviewsSubLabel =
+        typeof totalReviews === "number" && totalReviews > 0
+            ? `${totalReviews}+ Google reviews`
+            : "Google Reviews";
+
+    const stats = [
+        { icon: Star, label: ratingLabel, sub: reviewsSubLabel },
+        { icon: Clock, label: "Mon-Sat", sub: "Open 9AM-7PM" },
+        { icon: MapPin, label: "Bayview Ave", sub: "East York, ON" },
+        { icon: Phone, label: "(647) 471-5485", sub: "Call or Text" },
+    ];
+
     return (
         <section className="bg-cream py-8 border-b border-green/10">
             <div className="max-w-7xl mx-auto px-4 md:px-8">
