@@ -9,6 +9,7 @@ dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const isDirectRun = process.argv[1] ? path.resolve(process.argv[1]) === __filename : false;
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -25,7 +26,8 @@ const DEFAULT_PHONE_DISPLAY = "+1 (647) 348-2200";
 
 const publicDir = path.join(__dirname, "public");
 const dataDir = path.join(__dirname, "data");
-const cachePath = path.join(dataDir, "google-reviews-cache.json");
+const cacheDir = process.env.VERCEL ? "/tmp" : dataDir;
+const cachePath = path.join(cacheDir, "google-reviews-cache.json");
 const fallbackPath = path.join(dataDir, "reviews-fallback.json");
 
 function getPublicSiteConfig() {
@@ -176,7 +178,11 @@ app.get("/api/google-reviews", async (_req, res) => {
       data: freshData,
     };
 
-    await writeJsonFile(cachePath, nextCache);
+    try {
+      await writeJsonFile(cachePath, nextCache);
+    } catch {
+      // Non-fatal in serverless/read-only environments.
+    }
 
     res.set("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
     return res.json({
@@ -293,7 +299,11 @@ app.get("/", (_req, res) => {
   res.sendFile(path.join(publicDir, "index.html"));
 });
 
-app.listen(port, () => {
-  // eslint-disable-next-line no-console
-  console.log(`Leaside Fades site running at http://localhost:${port}`);
-});
+if (isDirectRun) {
+  app.listen(port, () => {
+    // eslint-disable-next-line no-console
+    console.log(`Leaside Fades site running at http://localhost:${port}`);
+  });
+}
+
+export default app;
