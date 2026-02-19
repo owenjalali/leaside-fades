@@ -10,25 +10,58 @@ interface Service {
     note?: string;
 }
 
-const services: Record<(typeof tabs)[number], Service[]> = {
+interface ServiceGroup {
+    heading?: string;
+    items: Service[];
+}
+
+const services: Record<(typeof tabs)[number], ServiceGroup[]> = {
     Men: [
-        { name: "Haircut", price: "$30" },
-        { name: "Haircut + Beard", price: "$40" },
-        { name: "Buzz Cut", price: "$20" },
-        { name: "Beard Trim / Line-Up", price: "$15" },
-        { name: "Hair Design", price: "$10+", note: "add-on" },
-        { name: "Hot Towel Shave", price: "$25" },
-        { name: "Senior's Cut", price: "$22", note: "65+" },
+        {
+            items: [
+                { name: "Cut", price: "$30" },
+                { name: "Long Hair", price: "$35" },
+                { name: "Senior Citizens", price: "$28" },
+                { name: "Fade", price: "$35" },
+                { name: "Bald Fade", price: "$45" },
+                { name: "Line Up", price: "$15" },
+                { name: "Beard Trim", price: "$15" },
+                { name: "Beard Shave (Machine)", price: "$25" },
+                { name: "Hot Lather Shave", price: "$55" },
+                { name: "Hot Lather Head Shave", price: "$55" },
+                { name: "Wash & Style", price: "$15" },
+                { name: "Wash", price: "$5" },
+            ],
+        },
     ],
     Ladies: [
-        { name: "Short Haircut", price: "$30" },
-        { name: "Buzz Cut", price: "$20" },
-        { name: "Bang Trim", price: "$10" },
-        { name: "Nape / Neck Cleanup", price: "$10" },
+        {
+            items: [
+                { name: "Cut", price: "$45" },
+                { name: "Wash & Blow Dry", price: "$35" },
+                { name: "Wash", price: "$15" },
+                { name: "Colour", price: "$80" },
+                { name: "Root Touch Up", price: "$55" },
+            ],
+        },
+        {
+            heading: "Foil Highlight",
+            items: [
+                { name: "Half Head", price: "$95" },
+                { name: "Full Head", price: "$150" },
+                { name: "Single Pack", price: "$15" },
+                { name: "Eight Pack", price: "$55" },
+            ],
+        },
+        {
+            heading: "Long Hair (Extra Charge)",
+            items: [{ name: "Wash", price: "$10" }],
+        },
     ],
     Boys: [
-        { name: "Boys Cut", price: "$22", note: "Ages 9 & under" },
-        { name: "Boys Cut + Design", price: "$30", note: "Ages 9 & under" },
+        {
+            items: [{ name: "Cut", price: "$25", note: "Ages 9 & under" }],
+        },
     ],
 };
 
@@ -36,7 +69,7 @@ export default function Services() {
     const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("Men");
 
     return (
-        <section id="services" className="section-padding bg-forest">
+        <section id="services" className="section-padding bg-[#0a0a0a]">
             <div className="max-w-4xl mx-auto">
                 <AnimateOnScroll animation="fade-up">
                     <div className="text-center mb-10">
@@ -60,7 +93,7 @@ export default function Services() {
                                     "px-6 py-2.5 rounded-full text-sm font-semibold transition-all duration-300",
                                     activeTab === tab
                                         ? "bg-green text-white shadow-lg shadow-green/30"
-                                        : "bg-white/10 text-white/60 hover:bg-white/15 hover:text-white"
+                                        : "bg-white/5 text-white/50 hover:bg-white/10 hover:text-white"
                                 )}
                             >
                                 {tab}
@@ -71,27 +104,43 @@ export default function Services() {
 
                 {/* Service List */}
                 <AnimateOnScroll animation="fade-up" delay={200}>
-                    <div className="bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 overflow-hidden">
-                        {services[activeTab].map((service, i) => (
-                            <div
-                                key={service.name}
-                                className={cn(
-                                    "flex items-center justify-between px-6 md:px-8 py-5 transition-colors hover:bg-white/5",
-                                    i !== services[activeTab].length - 1 &&
-                                    "border-b border-white/5"
+                    <div className="bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] overflow-hidden">
+                        {services[activeTab].map((group, gi) => (
+                            <div key={gi}>
+                                {group.heading && (
+                                    <div className="px-6 md:px-8 pt-6 pb-2">
+                                        <h3 className="text-green/80 text-xs font-semibold tracking-widest uppercase">
+                                            {group.heading}
+                                        </h3>
+                                    </div>
                                 )}
-                            >
-                                <div className="flex items-center gap-3">
-                                    <span className="text-white font-medium">{service.name}</span>
-                                    {service.note && (
-                                        <span className="text-xs text-green/70 bg-green/10 px-2 py-0.5 rounded-full">
-                                            {service.note}
+                                {group.items.map((service, i) => (
+                                    <div
+                                        key={service.name + group.heading}
+                                        className={cn(
+                                            "flex items-center justify-between px-6 md:px-8 py-4 transition-colors hover:bg-white/[0.03]",
+                                            i !== group.items.length - 1 &&
+                                            "border-b border-white/[0.04]",
+                                            gi !== services[activeTab].length - 1 &&
+                                            i === group.items.length - 1 &&
+                                            "border-b border-white/[0.08]"
+                                        )}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-white/90 font-medium text-sm">
+                                                {service.name}
+                                            </span>
+                                            {service.note && (
+                                                <span className="text-xs text-green/60 bg-green/10 px-2 py-0.5 rounded-full">
+                                                    {service.note}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <span className="text-green font-bold text-base">
+                                            {service.price}
                                         </span>
-                                    )}
-                                </div>
-                                <span className="text-green font-bold text-lg">
-                                    {service.price}
-                                </span>
+                                    </div>
+                                ))}
                             </div>
                         ))}
                     </div>

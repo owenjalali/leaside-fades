@@ -16,7 +16,7 @@ export default function Contact() {
                                 <h2 className="font-display text-4xl md:text-5xl text-charcoal tracking-wide">
                                     COME THROUGH
                                 </h2>
-                                <p className="text-charcoal/50 mt-4 max-w-lg">
+                                <p className="text-gray-500 mt-4 max-w-lg">
                                     Located on Bayview Ave in East York. Easy TTC access, street
                                     parking available.
                                 </p>
@@ -31,7 +31,7 @@ export default function Contact() {
                                     </div>
                                     <div>
                                         <p className="text-charcoal font-medium">Address</p>
-                                        <p className="text-charcoal/50 text-sm">
+                                        <p className="text-gray-500 text-sm">
                                             1680 Bayview Ave, East York, ON M4G 3C4
                                         </p>
                                     </div>
@@ -45,7 +45,7 @@ export default function Contact() {
                                         <p className="text-charcoal font-medium">Phone</p>
                                         <a
                                             href="tel:+16474715485"
-                                            className="text-charcoal/50 text-sm hover:text-green transition-colors"
+                                            className="text-gray-500 text-sm hover:text-green transition-colors"
                                         >
                                             (647) 471-5485
                                         </a>
@@ -58,10 +58,8 @@ export default function Contact() {
                                     </div>
                                     <div>
                                         <p className="text-charcoal font-medium">Hours</p>
-                                        <p className="text-charcoal/50 text-sm">
-                                            Mon–Fri: 9AM – 7PM
-                                            <br />
-                                            Sat: 9AM – 6PM
+                                        <p className="text-gray-500 text-sm">
+                                            Mon–Sat: 9AM – 7PM
                                             <br />
                                             Sun: 10AM – 5PM
                                         </p>

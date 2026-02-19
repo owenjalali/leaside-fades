@@ -7,9 +7,9 @@ export default function Footer() {
                     <div className="lg:col-span-1">
                         <div className="flex items-center gap-3 mb-4">
                             <img
-                                src="/assets/logo.png"
+                                src="/assets/logo-transparent.png"
                                 alt="Leaside Fades"
-                                className="h-12 brightness-0 invert"
+                                className="h-12"
                             />
                             <span className="font-display text-xl text-white tracking-wider">
                                 LEASIDE FADES
@@ -54,12 +54,8 @@ export default function Footer() {
                         </h4>
                         <ul className="space-y-2 text-white/50 text-sm">
                             <li className="flex justify-between">
-                                <span>Monday – Friday</span>
+                                <span>Monday – Saturday</span>
                                 <span className="text-white/70">9AM – 7PM</span>
-                            </li>
-                            <li className="flex justify-between">
-                                <span>Saturday</span>
-                                <span className="text-white/70">9AM – 6PM</span>
                             </li>
                             <li className="flex justify-between">
                                 <span>Sunday</span>

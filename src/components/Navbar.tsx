@@ -35,10 +35,10 @@ export default function Navbar() {
                     {/* Logo */}
                     <a href="#" className="flex items-center gap-3 group">
                         <img
-                            src="/assets/logo.png"
+                            src="/assets/logo-transparent.png"
                             alt="Leaside Fades"
                             className={cn(
-                                "transition-all duration-500 mix-blend-multiply",
+                                "transition-all duration-500",
                                 scrolled ? "h-10" : "h-14"
                             )}
                         />
