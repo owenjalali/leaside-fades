@@ -15,16 +15,28 @@ const team: TeamMember[] = [
         specialty: "Fades & Beard Sculpting",
     },
     {
-        name: "Barber #2",
+        name: "Laura",
         role: "Senior Barber",
-        image: "https://placehold.co/600x800/1a3a2a/52b788?text=Barber+2",
+        image: "https://placehold.co/600x800/1a3a2a/52b788?text=Laura",
         specialty: "Precision Cuts & Styling",
     },
     {
-        name: "Barber #3",
+        name: "Shayon",
         role: "Barber",
-        image: "https://placehold.co/600x800/1a3a2a/52b788?text=Barber+3",
+        image: "https://placehold.co/600x800/1a3a2a/52b788?text=Shayon",
         specialty: "Fades & Line Work",
+    },
+    {
+        name: "Fawad",
+        role: "Barber",
+        image: "https://placehold.co/600x800/1a3a2a/52b788?text=Fawad",
+        specialty: "Classic Cuts & Beard Work",
+    },
+    {
+        name: "Yogesh",
+        role: "Barber",
+        image: "https://placehold.co/600x800/1a3a2a/52b788?text=Yogesh",
+        specialty: "Skin Fades & Styling",
     },
 ];
 
@@ -35,7 +47,7 @@ export default function Team() {
                 <AnimateOnScroll animation="fade-up">
                     <div className="text-center mb-12">
                         <p className="text-green text-sm font-semibold tracking-widest uppercase mb-3">
-                            Meet The Team
+                            Meet The Barbers
                         </p>
                         <h2 className="font-display text-4xl md:text-5xl text-charcoal tracking-wide">
                             YOUR BARBERS

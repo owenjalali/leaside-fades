@@ -9,7 +9,7 @@ export default function TrustStrip({ overallRating, totalReviews }: TrustStripPr
     const ratingLabel =
         typeof overallRating === "number" && overallRating > 0
             ? `${overallRating.toFixed(1)} / 5`
-            : "5.0 Rating";
+            : "Google Rating";
     const reviewsSubLabel =
         typeof totalReviews === "number" && totalReviews > 0
             ? `${totalReviews}+ Google reviews`

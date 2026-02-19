@@ -1,6 +1,18 @@
 import AnimateOnScroll from "@/components/AnimateOnScroll";
 
-export default function Hero() {
+interface HeroProps {
+    overallRating: number | null;
+    totalReviews: number | null;
+}
+
+export default function Hero({ overallRating, totalReviews }: HeroProps) {
+    const hasLiveRating = typeof overallRating === "number" && overallRating > 0;
+    const ratingLabel = hasLiveRating ? overallRating.toFixed(1) : null;
+    const reviewCountLabel =
+        typeof totalReviews === "number" && totalReviews > 0
+            ? `${totalReviews}+ reviews`
+            : "Google reviews";
+
     return (
         <section
             id="hero"
@@ -64,7 +76,14 @@ export default function Hero() {
                 <AnimateOnScroll animation="fade-in" delay={800}>
                     <div className="flex flex-wrap items-center justify-center gap-6 mt-12 text-white/60 text-sm">
                         <span className="flex items-center gap-1.5">
-                            ⭐ <strong className="text-white">5.0</strong> on Google
+                            ⭐{" "}
+                            {hasLiveRating ? (
+                                <>
+                                    <strong className="text-white">{ratingLabel}</strong> on Google ({reviewCountLabel})
+                                </>
+                            ) : (
+                                "Live Google reviews"
+                            )}
                         </span>
                         <span className="w-px h-4 bg-white/20" />
                         <span>📍 1680 Bayview Ave</span>

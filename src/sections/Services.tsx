@@ -104,7 +104,7 @@ export default function Services() {
 
                 {/* Service List */}
                 <AnimateOnScroll animation="fade-up" delay={200}>
-                    <div className="bg-[#0a0a0a] rounded-2xl border border-white/[0.06] overflow-hidden lg:bg-gradient-to-br lg:from-[#0f2b2a] lg:via-[#153d39] lg:to-[#1a4a44] lg:border-[#83ecd8]/35 lg:shadow-[0_22px_48px_rgba(13,85,78,0.35)]">
+                    <div className="rounded-2xl border border-[#83ecd8]/35 overflow-hidden bg-gradient-to-br from-[#0f2b2a] via-[#153d39] to-[#1a4a44] shadow-[0_22px_48px_rgba(13,85,78,0.35)]">
                         {services[activeTab].map((group, gi) => (
                             <div key={gi}>
                                 {group.heading && (

@@ -20,7 +20,10 @@ export default function App() {
         <div className="min-h-screen bg-white">
             <Navbar />
             <main>
-                <Hero />
+                <Hero
+                    overallRating={reviewsState.overallRating}
+                    totalReviews={reviewsState.totalReviews}
+                />
                 <TrustStrip
                     overallRating={reviewsState.overallRating}
                     totalReviews={reviewsState.totalReviews}
