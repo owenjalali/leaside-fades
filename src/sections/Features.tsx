@@ -37,14 +37,14 @@ export default function Features() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                     {features.map((f, i) => (
                         <AnimateOnScroll key={f.title} animation="fade-up" delay={i * 150}>
-                            <div className="group text-center p-8 rounded-2xl border border-white/[0.06] hover:border-green/20 hover:shadow-xl hover:shadow-green/5 transition-all duration-500 bg-[#0a0a0a]">
-                                <div className="w-14 h-14 rounded-2xl bg-green/10 flex items-center justify-center mx-auto mb-6 group-hover:bg-green/20 transition-colors">
+                            <div className="group text-center p-8 rounded-2xl border border-[#8ae9d6]/40 bg-gradient-to-br from-[#dffdf6] via-[#d3f6ed] to-[#c5efe5] shadow-[0_14px_32px_rgba(27,128,112,0.16)] transition-all duration-500 lg:hover:-translate-y-1.5 lg:hover:scale-[1.02] lg:hover:border-[#6de7d0] lg:hover:shadow-[0_0_30px_rgba(83,215,189,0.45),0_22px_40px_rgba(16,98,85,0.28)]">
+                                <div className="w-14 h-14 rounded-2xl bg-[#8deedc]/30 flex items-center justify-center mx-auto mb-6 transition-colors lg:group-hover:bg-[#74e7d2]/45">
                                     <f.icon size={24} className="text-green" />
                                 </div>
-                                <h3 className="font-display text-2xl text-white tracking-wider mb-3">
+                                <h3 className="font-display text-2xl text-[#134139] tracking-wider mb-3">
                                     {f.title.toUpperCase()}
                                 </h3>
-                                <p className="text-white/50 text-sm leading-relaxed">
+                                <p className="text-[#24524a]/85 text-sm leading-relaxed">
                                     {f.desc}
                                 </p>
                             </div>

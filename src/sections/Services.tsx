@@ -104,12 +104,12 @@ export default function Services() {
 
                 {/* Service List */}
                 <AnimateOnScroll animation="fade-up" delay={200}>
-                    <div className="bg-[#0a0a0a] rounded-2xl border border-white/[0.06] overflow-hidden">
+                    <div className="bg-[#0a0a0a] rounded-2xl border border-white/[0.06] overflow-hidden lg:bg-gradient-to-br lg:from-[#0f2b2a] lg:via-[#153d39] lg:to-[#1a4a44] lg:border-[#83ecd8]/35 lg:shadow-[0_22px_48px_rgba(13,85,78,0.35)]">
                         {services[activeTab].map((group, gi) => (
                             <div key={gi}>
                                 {group.heading && (
                                     <div className="px-6 md:px-8 pt-6 pb-2">
-                                        <h3 className="text-green/80 text-xs font-semibold tracking-widest uppercase">
+                                        <h3 className="text-green/80 text-xs font-semibold tracking-widest uppercase lg:text-[#9ef1e0]">
                                             {group.heading}
                                         </h3>
                                     </div>
@@ -118,7 +118,7 @@ export default function Services() {
                                     <div
                                         key={service.name + group.heading}
                                         className={cn(
-                                            "flex items-center justify-between px-6 md:px-8 py-4 transition-colors hover:bg-white/[0.03]",
+                                            "flex items-center justify-between px-6 md:px-8 py-4 transition-colors hover:bg-white/[0.03] lg:transition-all lg:duration-300 lg:hover:bg-[#1e5852]/45 lg:hover:ring-1 lg:hover:ring-[#9ef1e0]/75 lg:hover:shadow-[0_0_24px_rgba(83,215,189,0.45)] lg:hover:scale-[1.01]",
                                             i !== group.items.length - 1 &&
                                             "border-b border-white/[0.04]",
                                             gi !== services[activeTab].length - 1 &&
@@ -127,16 +127,16 @@ export default function Services() {
                                         )}
                                     >
                                         <div className="flex items-center gap-3">
-                                            <span className="text-white/90 font-medium text-sm">
+                                            <span className="text-white/90 font-medium text-sm lg:text-[#dbfff7]">
                                                 {service.name}
                                             </span>
                                             {service.note && (
-                                                <span className="text-xs text-green/60 bg-green/10 px-2 py-0.5 rounded-full">
+                                                <span className="text-xs text-green/60 bg-green/10 px-2 py-0.5 rounded-full lg:text-[#b4f8ea] lg:bg-[#72e6cf]/20">
                                                     {service.note}
                                                 </span>
                                             )}
                                         </div>
-                                        <span className="text-green font-bold text-base">
+                                        <span className="text-green font-bold text-base lg:text-[#96f8e5]">
                                             {service.price}
                                         </span>
                                     </div>
