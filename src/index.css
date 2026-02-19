@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+@theme {
+  --color-forest: #1a3a2a;
+  --color-emerald: #2d6a4f;
+  --color-green: #52b788;
+  --color-green-light: #74c69d;
+  --color-mint: #b7e4c7;
+  --color-cream: #f0fdf4;
+  --color-charcoal: #1a1a1a;
+
+  --font-display: "Bebas Neue", sans-serif;
+  --font-body: "Manrope", sans-serif;
+
+  --animate-shimmer: shimmer 2s linear infinite;
+
+  @keyframes shimmer {
+    from {
+      background-position: 0 0;
+    }
+
+    to {
+      background-position: -200% 0;
+    }
+  }
+}
+
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: "Manrope", sans-serif;
+    background-color: #ffffff;
+    color: #1a1a1a;
+    overflow-x: hidden;
+  }
+
+  ::selection {
+    background-color: #52b788;
+    color: #ffffff;
+  }
+}
+
+.section-padding {
+  padding-left: 1rem;
+  padding-right: 1rem;
+  padding-top: 5rem;
+  padding-bottom: 5rem;
+}
+
+@media (min-width: 768px) {
+  .section-padding {
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .section-padding {
+    padding-left: 4rem;
+    padding-right: 4rem;
+    padding-top: 7rem;
+    padding-bottom: 7rem;
+  }
+}

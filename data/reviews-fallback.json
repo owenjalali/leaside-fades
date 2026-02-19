@@ -1,0 +1,35 @@
+{
+  "businessName": "Leaside Fades",
+  "overallRating": 4.9,
+  "totalReviews": 0,
+  "googleMapsUrl": "https://www.google.com/maps/place/Leaside+Fades/@43.7137557,-79.3678747,17z/data=!3m1!4b1!4m6!3m5!1s0x89d4cd3cbeae8bc3:0xc528126035583aff!8m2!3d43.7137557!4d-79.3652998!16s%2Fg%2F11xmhwymps?entry=ttu&g_ep=EgoyMDI2MDIxNi4wIKXMDSoASAFQAw%3D%3D",
+  "reviews": [
+    {
+      "authorName": "Leaside Client",
+      "authorUrl": "",
+      "profilePhotoUrl": "",
+      "rating": 5,
+      "text": "Clean shop, professional team, and one of the best fades in East York.",
+      "relativeTimeDescription": "recently",
+      "publishTime": 1739836800
+    },
+    {
+      "authorName": "Toronto Client",
+      "authorUrl": "",
+      "profilePhotoUrl": "",
+      "rating": 5,
+      "text": "Great attention to detail and consistent cuts. Easy recommendation.",
+      "relativeTimeDescription": "recently",
+      "publishTime": 1739491200
+    },
+    {
+      "authorName": "Neighborhood Client",
+      "authorUrl": "",
+      "profilePhotoUrl": "",
+      "rating": 5,
+      "text": "Friendly atmosphere and the hot lather shave service is excellent.",
+      "relativeTimeDescription": "recently",
+      "publishTime": 1739232000
+    }
+  ]
+}
