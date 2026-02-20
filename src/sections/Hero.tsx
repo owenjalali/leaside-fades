@@ -192,21 +192,25 @@ export default function Hero({ overallRating, totalReviews }: HeroProps) {
                 </AnimateOnScroll>
 
                 <AnimateOnScroll animation="fade-in" delay={800} className="relative z-10">
-                    <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 mt-12 text-white/70 text-sm">
-                        <span className="flex items-center gap-1.5">
-                            {hasLiveRating ? (
-                                <>
-                                    <strong className="text-white">{ratingLabel}</strong> on Google (
-                                    {reviewCountLabel}, Eglinton)
-                                </>
-                            ) : (
-                                "Live Google reviews (Eglinton)"
-                            )}
-                        </span>
-                        <span className="hidden sm:block w-px h-4 bg-white/20" />
-                        <span>866 Eglinton Ave E and 909 Millwood Rd</span>
-                        <span className="hidden sm:block w-px h-4 bg-white/20" />
-                        <span>Mon-Sat: 10AM-7PM | Sun: 10AM-5PM</span>
+                    <div className="mt-12 mx-auto w-full max-w-xl rounded-2xl border border-white/15 bg-black/20 backdrop-blur-md px-4 py-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 text-center text-white/75 text-xs sm:text-sm leading-relaxed">
+                            <div className="py-2 sm:py-1 sm:px-4">
+                                {hasLiveRating ? (
+                                    <>
+                                        <strong className="text-white">{ratingLabel}</strong> on Google (
+                                        {reviewCountLabel}, Eglinton)
+                                    </>
+                                ) : (
+                                    "Live Google reviews (Eglinton)"
+                                )}
+                            </div>
+                            <div className="py-2 sm:py-1 sm:px-4 border-t border-white/10 sm:border-t-0 sm:border-l">
+                                866 Eglinton Ave E and 909 Millwood Rd
+                            </div>
+                            <div className="py-2 sm:py-1 sm:px-4 border-t border-white/10 sm:border-t-0 sm:border-l">
+                                Mon-Sat: 10AM-7PM | Sun: 10AM-5PM
+                            </div>
+                        </div>
                     </div>
                 </AnimateOnScroll>
             </div>
