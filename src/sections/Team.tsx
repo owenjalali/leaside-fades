@@ -26,7 +26,7 @@ const team: TeamMember[] = [
         specialty: "Precision Cuts & Styling",
     },
     {
-        name: "Shayon",
+        name: "Shayan",
         role: "Barber",
         image: shayonImage,
         specialty: "Fades & Line Work",
