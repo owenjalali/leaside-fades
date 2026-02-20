@@ -1,12 +1,23 @@
+import { useState } from "react";
 import { MapPin, Phone, Clock, Navigation } from "lucide-react";
 import AnimateOnScroll from "@/components/AnimateOnScroll";
+import LocationActionMenu from "@/components/LocationActionMenu";
+import {
+    DEFAULT_LOCATION_ID,
+    SHOP_LOCATIONS,
+    getLocationById,
+    type ShopLocationId,
+} from "@/data/locations";
 
 export default function Contact() {
+    const [activeLocationId, setActiveLocationId] =
+        useState<ShopLocationId>(DEFAULT_LOCATION_ID);
+    const activeLocation = getLocationById(activeLocationId);
+
     return (
-        <section id="contact" className="section-padding bg-white">
+        <section id="contact" className="section-padding bg-white relative z-30">
             <div className="max-w-7xl mx-auto">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-                    {/* Info */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
                     <div className="space-y-8">
                         <AnimateOnScroll animation="fade-right">
                             <div>
@@ -14,16 +25,49 @@ export default function Contact() {
                                     Find Us
                                 </p>
                                 <h2 className="font-display text-4xl md:text-5xl text-charcoal tracking-wide">
-                                    COME THROUGH
+                                    TWO LOCATIONS
                                 </h2>
                                 <p className="text-gray-500 mt-4 max-w-lg">
-                                    Located on Bayview Ave in East York. Easy TTC access, street
-                                    parking available.
+                                    Choose your closest shop and book or call directly. Both locations
+                                    follow the same schedule.
                                 </p>
                             </div>
                         </AnimateOnScroll>
 
                         <AnimateOnScroll animation="fade-right" delay={100}>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {SHOP_LOCATIONS.map((location) => {
+                                    const isActive = location.id === activeLocationId;
+
+                                    return (
+                                        <button
+                                            type="button"
+                                            key={location.id}
+                                            onClick={() => setActiveLocationId(location.id)}
+                                            className={`text-left rounded-2xl border p-4 transition-all min-h-[132px] ${
+                                                isActive
+                                                    ? "border-green bg-green/5 shadow-sm"
+                                                    : "border-gray-100 hover:border-green/50"
+                                            }`}
+                                        >
+                                            <p className="text-charcoal font-semibold text-sm">
+                                                {location.fullName}
+                                            </p>
+                                            <p className="text-charcoal/60 text-xs mt-2 leading-relaxed">
+                                                {location.addressLine}
+                                                <br />
+                                                {location.cityLine}
+                                            </p>
+                                            <p className="text-charcoal/70 text-xs mt-3">
+                                                {location.phoneDisplay}
+                                            </p>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </AnimateOnScroll>
+
+                        <AnimateOnScroll animation="fade-right" delay={160}>
                             <div className="space-y-5">
                                 <div className="flex items-start gap-4">
                                     <div className="w-10 h-10 rounded-lg bg-green/10 flex items-center justify-center shrink-0 mt-0.5">
@@ -32,7 +76,7 @@ export default function Contact() {
                                     <div>
                                         <p className="text-charcoal font-medium">Address</p>
                                         <p className="text-gray-500 text-sm">
-                                            1680 Bayview Ave, East York, ON M4G 3C4
+                                            {activeLocation.addressLine}, {activeLocation.cityLine}
                                         </p>
                                     </div>
                                 </div>
@@ -44,10 +88,10 @@ export default function Contact() {
                                     <div>
                                         <p className="text-charcoal font-medium">Phone</p>
                                         <a
-                                            href="tel:+16474715485"
+                                            href={`tel:${activeLocation.phoneE164}`}
                                             className="text-gray-500 text-sm hover:text-green transition-colors"
                                         >
-                                            (647) 471-5485
+                                            {activeLocation.phoneDisplay}
                                         </a>
                                     </div>
                                 </div>
@@ -58,50 +102,48 @@ export default function Contact() {
                                     </div>
                                     <div>
                                         <p className="text-charcoal font-medium">Hours</p>
-                                        <p className="text-gray-500 text-sm">
-                                            Mon–Sat: 10AM – 7PM
-                                            <br />
-                                            Sun: 10AM – 5PM
-                                        </p>
+                                        <p className="text-gray-500 text-sm">{activeLocation.hoursLabel}</p>
                                     </div>
                                 </div>
                             </div>
                         </AnimateOnScroll>
 
-                        <AnimateOnScroll animation="fade-right" delay={200}>
-                            <div className="flex flex-wrap gap-4">
+                        <AnimateOnScroll animation="fade-right" delay={220} className="relative z-40">
+                            <div className="flex flex-wrap gap-3">
                                 <a
-                                    href="https://maps.app.goo.gl/UbEJ2VDyDjNXhRsQA"
+                                    href={activeLocation.mapsUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-green text-white font-medium hover:bg-emerald transition-colors shadow-md"
+                                    className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-green text-white font-medium hover:bg-emerald transition-colors shadow-md min-h-[44px]"
                                 >
                                     <Navigation size={16} />
                                     Get Directions
                                 </a>
-                                <a
-                                    href="tel:+16474715485"
-                                    className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-charcoal/5 text-charcoal font-medium hover:bg-charcoal/10 transition-colors"
-                                >
-                                    <Phone size={16} />
-                                    Call Now
-                                </a>
+                                <LocationActionMenu
+                                    action="book"
+                                    label="Book Now"
+                                    buttonClassName="bg-charcoal text-white hover:bg-charcoal/90"
+                                />
+                                <LocationActionMenu
+                                    action="call"
+                                    label="Call"
+                                    buttonClassName="bg-charcoal/5 text-charcoal border border-charcoal/10 hover:bg-charcoal/10"
+                                />
                             </div>
                         </AnimateOnScroll>
                     </div>
 
-                    {/* Map */}
                     <AnimateOnScroll animation="fade-left" delay={200}>
                         <div className="relative rounded-2xl overflow-hidden h-[400px] lg:h-[500px] border border-gray-100 shadow-sm">
                             <iframe
-                                src="https://maps.google.com/maps?q=Leaside+Fades+1680+Bayview+Ave+East+York+ON&t=&z=15&ie=UTF8&iwloc=&output=embed"
+                                src={activeLocation.mapEmbedUrl}
                                 width="100%"
                                 height="100%"
                                 style={{ border: 0 }}
                                 allowFullScreen
                                 loading="lazy"
                                 referrerPolicy="no-referrer-when-downgrade"
-                                title="Leaside Fades location"
+                                title={`${activeLocation.fullName} map`}
                             />
                         </div>
                     </AnimateOnScroll>

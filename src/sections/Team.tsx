@@ -1,4 +1,9 @@
-import AnimateOnScroll from "@/components/AnimateOnScroll";
+﻿import AnimateOnScroll from "@/components/AnimateOnScroll";
+import samImage from "@/Leaside_Fades_Barbers/CC40C0D6-6C0A-4109-84F8-21EF7AF11545.png";
+import lauraImage from "@/Leaside_Fades_Barbers/Salon_Laura_Nguyen_Edited.jpg";
+import fawadImage from "@/Leaside_Fades_Barbers/0E9EB0D5-8E2C-424B-BCC5-7D875DDC1617.png";
+import yogeshImage from "@/Leaside_Fades_Barbers/IMG_1563_Original.jpg";
+import shayonImage from "@/Leaside_Fades_Barbers/C22B1F6E-FD0C-4576-8754-B2894CF4AF9B.png";
 
 interface TeamMember {
     name: string;
@@ -11,32 +16,32 @@ const team: TeamMember[] = [
     {
         name: "Sam",
         role: "Owner / Head Barber",
-        image: "https://placehold.co/600x800/1a3a2a/52b788?text=Sam",
+        image: samImage,
         specialty: "Fades & Beard Sculpting",
     },
     {
         name: "Laura",
         role: "Senior Barber",
-        image: "https://placehold.co/600x800/1a3a2a/52b788?text=Laura",
+        image: lauraImage,
         specialty: "Precision Cuts & Styling",
     },
     {
         name: "Shayon",
         role: "Barber",
-        image: "https://placehold.co/600x800/1a3a2a/52b788?text=Shayon",
+        image: shayonImage,
         specialty: "Fades & Line Work",
     },
     {
         name: "Fawad",
         role: "Barber",
-        image: "https://placehold.co/600x800/1a3a2a/52b788?text=Fawad",
-        specialty: "Classic Cuts & Beard Work",
+        image: fawadImage,
+        specialty: "Classic Cuts, Beard Work & Fades",
     },
     {
         name: "Yogesh",
         role: "Barber",
-        image: "https://placehold.co/600x800/1a3a2a/52b788?text=Yogesh",
-        specialty: "Skin Fades & Styling",
+        image: yogeshImage,
+        specialty: "Haircuts, Fades & Styling",
     },
 ];
 

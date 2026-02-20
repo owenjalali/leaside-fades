@@ -22,7 +22,7 @@ const faqs: FAQItem[] = [
     {
         question: "Is there parking nearby?",
         answer:
-            "Yes! There's free street parking on Bayview Ave and side streets. We're also easily accessible by TTC bus routes along Bayview.",
+            "Yes. There is free street parking near both Eglinton Ave E and Millwood Rd, plus convenient TTC access.",
     },
     {
         question: "Do you cut kids' hair?",

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import AnimateOnScroll from "@/components/AnimateOnScroll";
+import LocationActionMenu from "@/components/LocationActionMenu";
 
 interface HeroProps {
     overallRating: number | null;
@@ -36,6 +37,7 @@ const WEEKDAY_ORDER: Weekday[] = [
 ];
 
 const BUSINESS_HOURS: Partial<Record<Weekday, DayHours>> = {
+    Sunday: { open: 10, close: 17 },
     Monday: { open: 10, close: 19 },
     Tuesday: { open: 10, close: 19 },
     Wednesday: { open: 10, close: 19 },
@@ -93,26 +95,26 @@ function getOpenStatus(): OpenStatus {
         const closeMinutes = todayHours.close * 60;
 
         if (nowMinutes >= openMinutes && nowMinutes < closeMinutes) {
-            return { isOpen: true, label: "Open today" };
+            return { isOpen: true, label: "Open now" };
         }
 
         if (nowMinutes < openMinutes) {
             return {
                 isOpen: false,
-                label: `Closed today. Opens at ${formatHour(todayHours.open)}.`,
+                label: `Closed now. Opens at ${formatHour(todayHours.open)}.`,
             };
         }
     }
 
     const nextOpening = getNextOpening(todayIndex);
     if (!nextOpening) {
-        return { isOpen: false, label: "Closed today." };
+        return { isOpen: false, label: "Closed now." };
     }
 
     const dayLabel = nextOpening.offset === 1 ? "tomorrow" : nextOpening.day;
     return {
         isOpen: false,
-        label: `Closed today. Opens ${dayLabel} at ${formatHour(nextOpening.hours.open)}.`,
+        label: `Closed now. Opens ${dayLabel} at ${formatHour(nextOpening.hours.open)}.`,
     };
 }
 
@@ -135,7 +137,7 @@ export default function Hero({ overallRating, totalReviews }: HeroProps) {
     return (
         <section
             id="hero"
-            className="relative min-h-screen flex items-center justify-center overflow-hidden"
+            className="relative min-h-screen flex items-center justify-center overflow-x-hidden"
         >
             <div
                 className="absolute inset-0 bg-cover bg-center bg-no-repeat"
@@ -166,49 +168,45 @@ export default function Hero({ overallRating, totalReviews }: HeroProps) {
                 </AnimateOnScroll>
 
                 <AnimateOnScroll animation="fade-up" delay={400}>
-                    <p className="text-white/70 text-lg md:text-xl max-w-2xl mx-auto mt-6 leading-relaxed">
-                        East York&apos;s neighbourhood barbershop on Bayview Ave. Classic
-                        technique, modern style, and a fresh cut every time.
+                    <p className="text-white/80 text-lg md:text-xl max-w-2xl mx-auto mt-6 leading-relaxed">
+                        Two East York locations. One Leaside Fades standard. Walk in or book the
+                        shop that works best for you.
                     </p>
                 </AnimateOnScroll>
 
-                <AnimateOnScroll animation="fade-up" delay={600}>
+                <AnimateOnScroll animation="fade-up" delay={600} className="relative z-40">
                     <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-10">
-                        <a
-                            href="https://www.fresha.com/a/leasidefades-toronto-866-eglinton-avenue-east-oyz3pt1m?preview=35767ad4-91b3-4aea-a890-bf79b66c2a81&pId=2797003&_gl=1*1essaaw*_gcl_aw*R0NMLjE3NzE1MjY0ODIuQ2owS0NRaUFodHZNQmhEQkFSSXNBTDI2cGpId29mSEkxZl9WYWtabkdWOU5DbHJrLVF2SEwxc2pjWnctZ0Z5MU0xeEIzbFhpZ1hNUlk4WWFBaDhsRUFMd193Y0I.*_gcl_au*MTQzOTg5MjA1MS4xNzY5NDU5MjI4LjEwNDY3OTA5OTAuMTc3MTUyNjUyMi4xNzcxNTI2NTIy*_ga*MTI1OTQ0MDQxNC4xNzY5NDU5MjI4*_ga_SMQNG7NE8C*czE3NzE1MzYxNjckbzEyJGcxJHQxNzcxNTQ1MjQ3JGozMiRsMCRoMA.."
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="relative inline-flex items-center justify-center px-8 py-4 overflow-hidden font-bold text-white bg-green rounded-full group hover:bg-emerald transition-all duration-300 text-lg shadow-xl shadow-green/30"
-                        >
-                            <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
-                            <span className="relative">Book Your Cut</span>
-                        </a>
-                        <a
-                            href="tel:+16474715485"
-                            className="inline-flex items-center gap-2 px-8 py-4 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white font-medium hover:bg-white/20 transition-all duration-300"
-                        >
-                            📞 (647) 471-5485
-                        </a>
+                        <LocationActionMenu
+                            action="book"
+                            label="Book Now"
+                            buttonClassName="bg-green text-white hover:bg-emerald px-8 py-4 text-lg font-bold shadow-xl shadow-green/30"
+                            menuClassName="left-1/2 -translate-x-1/2 sm:left-0 sm:translate-x-0"
+                        />
+                        <LocationActionMenu
+                            action="call"
+                            label="Call"
+                            buttonClassName="bg-white/10 backdrop-blur-md border border-white/20 text-white hover:bg-white/20 px-8 py-4 text-lg"
+                            menuClassName="left-1/2 -translate-x-1/2 sm:left-0 sm:translate-x-0"
+                        />
                     </div>
                 </AnimateOnScroll>
 
-                <AnimateOnScroll animation="fade-in" delay={800}>
-                    <div className="flex flex-wrap items-center justify-center gap-6 mt-12 text-white/60 text-sm">
+                <AnimateOnScroll animation="fade-in" delay={800} className="relative z-10">
+                    <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 mt-12 text-white/70 text-sm">
                         <span className="flex items-center gap-1.5">
-                            ⭐{" "}
                             {hasLiveRating ? (
                                 <>
                                     <strong className="text-white">{ratingLabel}</strong> on Google (
-                                    {reviewCountLabel})
+                                    {reviewCountLabel}, Eglinton)
                                 </>
                             ) : (
-                                "Live Google reviews"
+                                "Live Google reviews (Eglinton)"
                             )}
                         </span>
-                        <span className="w-px h-4 bg-white/20" />
-                        <span>📍 1680 Bayview Ave</span>
-                        <span className="w-px h-4 bg-white/20 hidden sm:block" />
-                        <span className="hidden sm:inline">🕐 Mon-Sat: 10AM-7PM</span>
+                        <span className="hidden sm:block w-px h-4 bg-white/20" />
+                        <span>866 Eglinton Ave E and 909 Millwood Rd</span>
+                        <span className="hidden sm:block w-px h-4 bg-white/20" />
+                        <span>Mon-Sat: 10AM-7PM | Sun: 10AM-5PM</span>
                     </div>
                 </AnimateOnScroll>
             </div>

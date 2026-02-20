@@ -10,7 +10,7 @@ const features = [
     {
         icon: Clock,
         title: "Walk-Ins Welcome",
-        desc: "No appointment needed. Drop by anytime we're open and we'll get you right in the chair.",
+        desc: "Drop by anytime we're open and we'll get you right in the chair.",
     },
     {
         icon: Award,
