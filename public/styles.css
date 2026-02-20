@@ -334,6 +334,26 @@ a {
   font-weight: 600;
 }
 
+#open-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+#open-status-chip::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: #56dd84;
+  box-shadow: 0 0 0 4px rgba(86, 221, 132, 0.2);
+}
+
+#open-status-chip.is-closed::before {
+  background: rgba(255, 255, 255, 0.65);
+  box-shadow: none;
+}
+
 .hero-panel {
   position: relative;
   z-index: 2;

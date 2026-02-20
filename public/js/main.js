@@ -70,6 +70,16 @@ function updateOpenStatusChip() {
   const node = document.getElementById("open-status-chip");
   if (!node) return;
 
+  const weekdayOrder = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ];
+
   const schedule = {
     Monday: { open: 10, close: 19 },
     Tuesday: { open: 10, close: 19 },
@@ -77,22 +87,71 @@ function updateOpenStatusChip() {
     Thursday: { open: 10, close: 19 },
     Friday: { open: 10, close: 19 },
     Saturday: { open: 10, close: 19 },
-    Sunday: { open: 10, close: 17 },
   };
 
   const { weekday, hour, minute } = getTorontoTimeParts();
   const hours = schedule[weekday];
-  if (!hours) return;
+  const todayIndex = weekdayOrder.indexOf(weekday);
+  if (todayIndex < 0) return;
+
+  const formatHour = (hour24) => {
+    if (hour24 === 0) return "12 a.m.";
+    if (hour24 < 12) return `${hour24} a.m.`;
+    if (hour24 === 12) return "12 p.m.";
+    return `${hour24 - 12} p.m.`;
+  };
+
+  const getNextOpening = () => {
+    for (let offset = 1; offset <= weekdayOrder.length; offset += 1) {
+      const nextDay = weekdayOrder[(todayIndex + offset) % weekdayOrder.length];
+      const nextHours = schedule[nextDay];
+      if (nextHours) {
+        return { day: nextDay, hours: nextHours, offset };
+      }
+    }
+    return null;
+  };
+
+  const setChip = (isOpen, text) => {
+    node.classList.toggle("is-closed", !isOpen);
+    node.textContent = text;
+  };
+
+  if (!hours) {
+    const nextOpening = getNextOpening();
+    if (!nextOpening) {
+      setChip(false, "Closed today.");
+      return;
+    }
+
+    const dayLabel = nextOpening.offset === 1 ? "tomorrow" : nextOpening.day;
+    setChip(false, `Closed today. Opens ${dayLabel} at ${formatHour(nextOpening.hours.open)}.`);
+    return;
+  }
 
   const nowMinutes = hour * 60 + minute;
   const openMinutes = hours.open * 60;
   const closeMinutes = hours.close * 60;
   const isOpen = nowMinutes >= openMinutes && nowMinutes < closeMinutes;
-  const closeLabel = hours.close === 17 ? "5 p.m." : "7 p.m.";
 
-  node.textContent = isOpen
-    ? `Open now until ${closeLabel}`
-    : "Closed now - Opens at 10 a.m.";
+  if (isOpen) {
+    setChip(true, "Open today");
+    return;
+  }
+
+  if (nowMinutes < openMinutes) {
+    setChip(false, `Closed today. Opens at ${formatHour(hours.open)}.`);
+    return;
+  }
+
+  const nextOpening = getNextOpening();
+  if (!nextOpening) {
+    setChip(false, "Closed today.");
+    return;
+  }
+
+  const dayLabel = nextOpening.offset === 1 ? "tomorrow" : nextOpening.day;
+  setChip(false, `Closed today. Opens ${dayLabel} at ${formatHour(nextOpening.hours.open)}.`);
 }
 
 function withTimeout(promiseFactory, ms) {
@@ -188,4 +247,5 @@ async function initSiteConfig() {
 }
 
 updateOpenStatusChip();
+setInterval(updateOpenStatusChip, 60_000);
 initSiteConfig();
