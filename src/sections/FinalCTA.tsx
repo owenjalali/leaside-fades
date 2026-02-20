@@ -23,9 +23,9 @@ export default function FinalCTA() {
                     <LocationActionMenu
                         action="book"
                         label="Book Now"
-                        side="top"
+                        position="static"
                         buttonClassName="relative inline-flex items-center justify-center px-10 py-4 overflow-hidden font-bold text-forest bg-white rounded-full hover:bg-cream transition-all duration-300 text-lg shadow-xl"
-                        menuClassName="left-1/2 -translate-x-1/2"
+                        menuClassName="mx-auto"
                     />
                 </AnimateOnScroll>
             </div>

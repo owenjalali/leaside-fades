@@ -6,12 +6,14 @@ import { SHOP_LOCATIONS, type ShopLocation } from "@/data/locations";
 type LocationAction = "book" | "call";
 type MenuAlign = "left" | "right";
 type MenuSide = "top" | "bottom";
+type MenuPosition = "absolute" | "static";
 
 interface LocationActionMenuProps {
     action: LocationAction;
     label: string;
     align?: MenuAlign;
     side?: MenuSide;
+    position?: MenuPosition;
     buttonClassName?: string;
     menuClassName?: string;
     itemClassName?: string;
@@ -38,6 +40,7 @@ export default function LocationActionMenu({
     label,
     align = "left",
     side = "bottom",
+    position = "absolute",
     buttonClassName,
     menuClassName,
     itemClassName,
@@ -106,9 +109,14 @@ export default function LocationActionMenu({
                     role="menu"
                     aria-labelledby={buttonId}
                     className={cn(
-                        "absolute z-[210] w-[280px] rounded-xl border border-charcoal/10 bg-white p-2 shadow-xl",
-                        side === "top" ? "bottom-full mb-2" : "top-full mt-2",
-                        align === "right" ? "right-0" : "left-0",
+                        "z-[210] w-[280px] rounded-xl border border-charcoal/10 bg-white p-2 shadow-xl",
+                        position === "absolute"
+                            ? cn(
+                                  "absolute",
+                                  side === "top" ? "bottom-full mb-2" : "top-full mt-2",
+                                  align === "right" ? "right-0" : "left-0",
+                              )
+                            : "relative mt-2",
                         menuClassName,
                     )}
                 >
