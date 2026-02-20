@@ -21,6 +21,8 @@ const DEFAULT_MAPS_URL =
 const DEFAULT_INSTAGRAM_URL =
   "https://www.instagram.com/explore/locations/108041690603158/leaside-fades/";
 const DEFAULT_FACEBOOK_URL = "https://www.facebook.com/p/Leaside-FADES-100067481677284/";
+const DEFAULT_BOOKING_URL =
+  "https://www.fresha.com/a/leasidefades-toronto-866-eglinton-avenue-east-oyz3pt1m?preview=35767ad4-91b3-4aea-a890-bf79b66c2a81&pId=2797003&_gl=1*1essaaw*_gcl_aw*R0NMLjE3NzE1MjY0ODIuQ2owS0NRaUFodHZNQmhEQkFSSXNBTDI2cGpId29mSEkxZl9WYWtabkdWOU5DbHJrLVF2SEwxc2pjWnctZ0Z5MU0xeEIzbFhpZ1hNUlk4WWFBaDhsRUFMd193Y0I.*_gcl_au*MTQzOTg5MjA1MS4xNzY5NDU5MjI4LjEwNDY3OTA5OTAuMTc3MTUyNjUyMi4xNzcxNTI2NTIy*_ga*MTI1OTQ0MDQxNC4xNzY5NDU5MjI4*_ga_SMQNG7NE8C*czE3NzE1MzYxNjckbzEyJGcxJHQxNzcxNTQ1MjQ3JGozMiRsMCRoMA..";
 const DEFAULT_PHONE_E164 = "+16473482200";
 const DEFAULT_PHONE_DISPLAY = "+1 (647) 348-2200";
 
@@ -31,7 +33,7 @@ const cachePath = path.join(cacheDir, "google-reviews-cache.json");
 const fallbackPath = path.join(dataDir, "reviews-fallback.json");
 
 function getPublicSiteConfig() {
-  const bookingUrl = (process.env.SITE_BOOKING_URL || "").trim();
+  const bookingUrl = (process.env.SITE_BOOKING_URL || DEFAULT_BOOKING_URL).trim();
   const bookingEnabled = /^https?:\/\//i.test(bookingUrl);
 
   return {

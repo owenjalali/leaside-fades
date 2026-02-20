@@ -55,7 +55,7 @@ export default function Hero({ overallRating, totalReviews }: HeroProps) {
                 <AnimateOnScroll animation="fade-up" delay={600}>
                     <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-10">
                         <a
-                            href="https://www.fresha.com/a/leaside-fades-east-york-1680-bayview-avenue-e5v8n6i4/booking"
+                            href="https://www.fresha.com/a/leasidefades-toronto-866-eglinton-avenue-east-oyz3pt1m?preview=35767ad4-91b3-4aea-a890-bf79b66c2a81&pId=2797003&_gl=1*1essaaw*_gcl_aw*R0NMLjE3NzE1MjY0ODIuQ2owS0NRaUFodHZNQmhEQkFSSXNBTDI2cGpId29mSEkxZl9WYWtabkdWOU5DbHJrLVF2SEwxc2pjWnctZ0Z5MU0xeEIzbFhpZ1hNUlk4WWFBaDhsRUFMd193Y0I.*_gcl_au*MTQzOTg5MjA1MS4xNzY5NDU5MjI4LjEwNDY3OTA5OTAuMTc3MTUyNjUyMi4xNzcxNTI2NTIy*_ga*MTI1OTQ0MDQxNC4xNzY5NDU5MjI4*_ga_SMQNG7NE8C*czE3NzE1MzYxNjckbzEyJGcxJHQxNzcxNTQ1MjQ3JGozMiRsMCRoMA.."
                             target="_blank"
                             rel="noopener noreferrer"
                             className="relative inline-flex items-center justify-center px-8 py-4 overflow-hidden font-bold text-white bg-green rounded-full group hover:bg-emerald transition-all duration-300 text-lg shadow-xl shadow-green/30"
@@ -88,7 +88,7 @@ export default function Hero({ overallRating, totalReviews }: HeroProps) {
                         <span className="w-px h-4 bg-white/20" />
                         <span>📍 1680 Bayview Ave</span>
                         <span className="w-px h-4 bg-white/20 hidden sm:block" />
-                        <span className="hidden sm:inline">🕐 Mon–Sat: 9AM–7PM</span>
+                        <span className="hidden sm:inline">🕐 Mon–Sat: 10AM–7PM</span>
                     </div>
                 </AnimateOnScroll>
             </div>

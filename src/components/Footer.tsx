@@ -55,7 +55,7 @@ export default function Footer() {
                         <ul className="space-y-2 text-white/50 text-sm">
                             <li className="flex justify-between">
                                 <span>Monday – Saturday</span>
-                                <span className="text-white/70">9AM – 7PM</span>
+                                <span className="text-white/70">10AM – 7PM</span>
                             </li>
                             <li className="flex justify-between">
                                 <span>Sunday</span>
@@ -81,7 +81,7 @@ export default function Footer() {
                             </li>
                             <li>
                                 <a
-                                    href="https://www.fresha.com/a/leaside-fades-east-york-1680-bayview-avenue-e5v8n6i4/booking"
+                                    href="https://www.fresha.com/a/leasidefades-toronto-866-eglinton-avenue-east-oyz3pt1m?preview=35767ad4-91b3-4aea-a890-bf79b66c2a81&pId=2797003&_gl=1*1essaaw*_gcl_aw*R0NMLjE3NzE1MjY0ODIuQ2owS0NRaUFodHZNQmhEQkFSSXNBTDI2cGpId29mSEkxZl9WYWtabkdWOU5DbHJrLVF2SEwxc2pjWnctZ0Z5MU0xeEIzbFhpZ1hNUlk4WWFBaDhsRUFMd193Y0I.*_gcl_au*MTQzOTg5MjA1MS4xNzY5NDU5MjI4LjEwNDY3OTA5OTAuMTc3MTUyNjUyMi4xNzcxNTI2NTIy*_ga*MTI1OTQ0MDQxNC4xNzY5NDU5MjI4*_ga_SMQNG7NE8C*czE3NzE1MzYxNjckbzEyJGcxJHQxNzcxNTQ1MjQ3JGozMiRsMCRoMA.."
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="hover:text-green transition-colors"

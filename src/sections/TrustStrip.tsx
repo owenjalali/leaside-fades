@@ -17,7 +17,7 @@ export default function TrustStrip({ overallRating, totalReviews }: TrustStripPr
 
     const stats = [
         { icon: Star, label: ratingLabel, sub: reviewsSubLabel },
-        { icon: Clock, label: "Mon-Sat", sub: "Open 9AM-7PM" },
+        { icon: Clock, label: "Mon-Sat", sub: "Open 10AM-7PM" },
         { icon: MapPin, label: "Bayview Ave", sub: "East York, ON" },
         { icon: Phone, label: "(647) 471-5485", sub: "Call or Text" },
     ];
