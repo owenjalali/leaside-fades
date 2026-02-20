@@ -1,7 +1,7 @@
 ﻿import AnimateOnScroll from "@/components/AnimateOnScroll";
-import millwoodExterior from "@/Leaside_Fades_Barbers/229e9df9-6420-4c05-8f5b-ed146c1b9939.png";
-import millwoodInteriorA from "@/Leaside_Fades_Barbers/b9293b7e-0a86-4778-8bff-5d722d7b2bba.png";
-import millwoodInteriorB from "@/Leaside_Fades_Barbers/ca3d49ec-16ca-4fc0-9865-d32473e34bd0.png";
+import millwoodExterior from "@/assets/barbers/millwood-storefront.png";
+import millwoodInteriorA from "@/assets/barbers/millwood-interior-1.png";
+import millwoodInteriorB from "@/assets/barbers/millwood-interior-2.png";
 
 interface ShopImage {
     src: string;
