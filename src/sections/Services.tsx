@@ -153,8 +153,8 @@ export default function Services() {
                         <LocationActionMenu
                             action="book"
                             label="Book Now on Fresha"
+                            position="static"
                             buttonClassName="bg-green text-white font-bold hover:bg-green-light px-8 py-3 shadow-lg shadow-green/20"
-                            menuClassName="left-1/2 -translate-x-1/2"
                         />
                     </div>
                 </AnimateOnScroll>
