@@ -154,7 +154,7 @@ export default function Services() {
                             action="book"
                             label="Book Now on Fresha"
                             buttonClassName="bg-green text-white font-bold hover:bg-green-light px-8 py-3 shadow-lg shadow-green/20"
-                            menuClassName="left-1/2 -translate-x-1/2 sm:left-0 sm:translate-x-0"
+                            menuClassName="left-1/2 -translate-x-1/2"
                         />
                     </div>
                 </AnimateOnScroll>
