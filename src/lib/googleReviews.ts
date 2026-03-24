@@ -139,7 +139,7 @@ function buildDisplayReviews(liveReviews: UiReview[]): UiReview[] {
         }
     };
 
-    addUnique(sortByBest(liveReviews));
+    addUnique(sortByBest(liveReviews.filter((r) => r.rating === 5)));
     addUnique(sortByBest(FALLBACK_REVIEWS));
 
     if (selected.length < MAX_REVIEWS) {

@@ -81,7 +81,7 @@ export default function LocationActionMenu({
     }, []);
 
     return (
-        <div ref={containerRef} className={cn("relative", open && "z-[200]")}>
+        <div ref={containerRef} className={cn("relative", position === "static" && "flex flex-col items-center", open && "z-[200]")}>
             <button
                 type="button"
                 id={buttonId}
