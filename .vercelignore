@@ -1,0 +1,7 @@
+.env
+.env.*
+.git
+.playwright-mcp
+.vercel
+node_modules
+output

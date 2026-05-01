@@ -13,6 +13,9 @@ const isDirectRun = process.argv[1] ? path.resolve(process.argv[1]) === __filena
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
+let publicBookingApiPromise;
+let adminApiPromise;
+let reminderJobPromise;
 
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const API_TIMEOUT_MS = 5000;
@@ -21,12 +24,13 @@ const DEFAULT_MAPS_URL =
 const DEFAULT_INSTAGRAM_URL =
   "https://www.instagram.com/explore/locations/108041690603158/leaside-fades/";
 const DEFAULT_FACEBOOK_URL = "https://www.facebook.com/p/Leaside-FADES-100067481677284/";
-const DEFAULT_BOOKING_URL =
-  "https://www.fresha.com/a/leasidefades-toronto-866-eglinton-avenue-east-oyz3pt1m?preview=35767ad4-91b3-4aea-a890-bf79b66c2a81&pId=2797003&_gl=1*1essaaw*_gcl_aw*R0NMLjE3NzE1MjY0ODIuQ2owS0NRaUFodHZNQmhEQkFSSXNBTDI2cGpId29mSEkxZl9WYWtabkdWOU5DbHJrLVF2SEwxc2pjWnctZ0Z5MU0xeEIzbFhpZ1hNUlk4WWFBaDhsRUFMd193Y0I.*_gcl_au*MTQzOTg5MjA1MS4xNzY5NDU5MjI4LjEwNDY3OTA5OTAuMTc3MTUyNjUyMi4xNzcxNTI2NTIy*_ga*MTI1OTQ0MDQxNC4xNzY5NDU5MjI4*_ga_SMQNG7NE8C*czE3NzE1MzYxNjckbzEyJGcxJHQxNzcxNTQ1MjQ3JGozMiRsMCRoMA..";
+const DEFAULT_BOOKING_URL = "https://leasidefades.com/book";
 const DEFAULT_PHONE_E164 = "+16473482200";
 const DEFAULT_PHONE_DISPLAY = "+1 (647) 348-2200";
 
 const publicDir = path.join(__dirname, "public");
+const distDir = path.join(__dirname, "dist");
+const distIndexPath = path.join(distDir, "index.html");
 const dataDir = path.join(__dirname, "data");
 const cacheDir = process.env.VERCEL ? "/tmp" : dataDir;
 const cachePath = path.join(cacheDir, "google-reviews-cache.json");
@@ -34,7 +38,7 @@ const fallbackPath = path.join(dataDir, "reviews-fallback.json");
 
 function getPublicSiteConfig() {
   const bookingUrl = (process.env.SITE_BOOKING_URL || DEFAULT_BOOKING_URL).trim();
-  const bookingEnabled = /^https?:\/\//i.test(bookingUrl);
+  const bookingEnabled = /^https?:\/\//i.test(bookingUrl) || bookingUrl.startsWith("/");
 
   return {
     businessName: process.env.SITE_BUSINESS_NAME || "Leaside Fades",
@@ -47,8 +51,39 @@ function getPublicSiteConfig() {
     bookingEnabled,
     bookingNotice:
       process.env.SITE_BOOKING_NOTICE ||
-      "Online booking will be enabled via Fresha once the owner account is ready.",
+      "Book online with Leaside Fades.",
   };
+}
+
+function loadPublicBookingApi() {
+  publicBookingApiPromise ??= import("./src/server/public-booking/api.ts");
+  return publicBookingApiPromise;
+}
+
+function loadAdminApi() {
+  adminApiPromise ??= import("./src/server/admin/api.ts");
+  return adminApiPromise;
+}
+
+function loadReminderJob() {
+  reminderJobPromise ??= import("./src/server/notifications/reminder-job-runner.ts");
+  return reminderJobPromise;
+}
+
+function asyncRoute(handler) {
+  return (req, res, next) => {
+    Promise.resolve(handler(req, res, next)).catch(next);
+  };
+}
+
+async function sendPublicBookingError(error, res, next) {
+  try {
+    const publicBookingApi = await loadPublicBookingApi();
+    const httpError = publicBookingApi.toPublicBookingHttpError(error);
+    return res.status(httpError.status).json(httpError.body);
+  } catch {
+    return next(error);
+  }
 }
 
 function attachMapsUrl(data) {
@@ -65,6 +100,15 @@ async function readJsonFile(filePath) {
     return JSON.parse(raw);
   } catch {
     return null;
+  }
+}
+
+async function sendReactBookingApp(_req, res) {
+  try {
+    await fs.access(distIndexPath);
+    return res.sendFile(distIndexPath);
+  } catch {
+    return res.status(503).send("Booking app build is missing. Run npm run build before using this route.");
   }
 }
 
@@ -159,6 +203,21 @@ app.use(
     index: false,
   }),
 );
+
+app.use(
+  "/assets",
+  express.static(path.join(distDir, "assets"), {
+    maxAge: "7d",
+    etag: true,
+    index: false,
+  }),
+);
+
+app.get(/^\/assets\/index-[^/]+\.(?:js|css)$/, (req, res, next) => {
+  res.sendFile(path.join(distDir, req.path), (error) => {
+    if (error) next();
+  });
+});
 
 app.get("/api/google-reviews", async (_req, res) => {
   const cached = await readJsonFile(cachePath);
@@ -293,12 +352,371 @@ app.get("/api/site-config", (_req, res) => {
   res.json(getPublicSiteConfig());
 });
 
+app.get(
+  "/api/jobs/send-reminders",
+  asyncRoute(async (req, res) => {
+    const cronSecret = process.env.CRON_SECRET;
+
+    if (!cronSecret) {
+      return res.status(503).json({ error: "CRON_SECRET is required before production reminder jobs can run." });
+    }
+
+    if (req.get("authorization") !== `Bearer ${cronSecret}`) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const reminderJob = await loadReminderJob();
+    const result = await reminderJob.runConfiguredBookingReminderJob();
+    return res.json({ ok: true, result });
+  }),
+);
+
+app.get(
+  "/api/booking/catalog",
+  asyncRoute(async (_req, res, next) => {
+    try {
+      const publicBookingApi = await loadPublicBookingApi();
+      const catalog = await publicBookingApi.getPublicBookingCatalog();
+      res.set("Cache-Control", "no-store");
+      return res.json(catalog);
+    } catch (error) {
+      return sendPublicBookingError(error, res, next);
+    }
+  }),
+);
+
+app.post(
+  "/api/admin/auth/login",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminLogin(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/auth/logout",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminLogout(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/auth/forgot-password",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminForgotPassword(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/auth/reset-password",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminResetPassword(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/auth/accept-invite",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminAcceptInvite(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/team/barbers",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminCreateBarber(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/team/barbers/:barberId/deactivate",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminDeactivateBarber(req, res, next);
+  }),
+);
+
+app.get(
+  "/api/admin/auth/session",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminSession(req, res, next);
+  }),
+);
+
+app.get(
+  "/api/admin/bookings",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminBookings(req, res, next);
+  }),
+);
+
+app.get(
+  "/api/admin/dashboard",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminDashboard(req, res, next);
+  }),
+);
+
+app.get(
+  "/api/admin/calendar/options",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminCalendarOptions(req, res, next);
+  }),
+);
+
+app.get(
+  "/api/admin/availability",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminAvailability(req, res, next);
+  }),
+);
+
+app.get(
+  "/api/admin/bookings/:bookingId",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminBookingDetail(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/bookings",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminCreateManualBooking(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/bookings/walk-in",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminCreateWalkInBooking(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/bookings/:bookingId/cancel",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminCancelBooking(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/bookings/:bookingId/no-show",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminNoShowBooking(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/bookings/:bookingId/reschedule",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminRescheduleBooking(req, res, next);
+  }),
+);
+
+app.get(
+  "/api/admin/schedule",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminSchedule(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/schedule/shifts",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminCreateShift(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/schedule/shifts/:shiftId",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminUpdateShift(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/schedule/shifts/:shiftId/deactivate",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminDeactivateShift(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/schedule/shift-overrides",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminCreateShiftOverride(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/schedule/shift-overrides/:overrideId",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminUpdateShiftOverride(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/schedule/shift-overrides/:overrideId/delete",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminDeleteShiftOverride(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/schedule/blocked-times",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminCreateBlockedTime(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/schedule/blocked-times/:blockedTimeId",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminUpdateBlockedTime(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/schedule/blocked-times/:blockedTimeId/delete",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminDeleteBlockedTime(req, res, next);
+  }),
+);
+
+app.get(
+  "/api/booking/availability",
+  asyncRoute(async (req, res, next) => {
+    try {
+      const publicBookingApi = await loadPublicBookingApi();
+      const availability = await publicBookingApi.getPublicBookingAvailability(req.query);
+      res.set("Cache-Control", "no-store");
+      return res.json(availability);
+    } catch (error) {
+      return sendPublicBookingError(error, res, next);
+    }
+  }),
+);
+
+app.get(
+  "/api/booking/manage/:token",
+  asyncRoute(async (req, res, next) => {
+    try {
+      const publicBookingApi = await loadPublicBookingApi();
+      const booking = await publicBookingApi.getCustomerManagedBookingFromToken(req.params.token);
+      res.set("Cache-Control", "no-store");
+      return res.json({ booking });
+    } catch (error) {
+      return sendPublicBookingError(error, res, next);
+    }
+  }),
+);
+
+app.post(
+  "/api/booking/manage/:token/cancel",
+  asyncRoute(async (req, res, next) => {
+    try {
+      const publicBookingApi = await loadPublicBookingApi();
+      const booking = await publicBookingApi.cancelCustomerManagedBookingFromToken(req.params.token);
+      res.set("Cache-Control", "no-store");
+      return res.json({ booking });
+    } catch (error) {
+      return sendPublicBookingError(error, res, next);
+    }
+  }),
+);
+
+app.get(
+  "/api/booking/manage/:token/availability",
+  asyncRoute(async (req, res, next) => {
+    try {
+      const publicBookingApi = await loadPublicBookingApi();
+      const availability = await publicBookingApi.getCustomerManagedBookingAvailability(
+        req.params.token,
+        req.query,
+      );
+      res.set("Cache-Control", "no-store");
+      return res.json(availability);
+    } catch (error) {
+      return sendPublicBookingError(error, res, next);
+    }
+  }),
+);
+
+app.post(
+  "/api/booking/manage/:token/reschedule",
+  asyncRoute(async (req, res, next) => {
+    try {
+      const publicBookingApi = await loadPublicBookingApi();
+      const booking = await publicBookingApi.rescheduleCustomerManagedBookingFromBody(
+        req.params.token,
+        req.body,
+      );
+      res.set("Cache-Control", "no-store");
+      return res.json({ booking });
+    } catch (error) {
+      return sendPublicBookingError(error, res, next);
+    }
+  }),
+);
+
+app.post(
+  "/api/booking/bookings",
+  asyncRoute(async (req, res, next) => {
+    try {
+      const publicBookingApi = await loadPublicBookingApi();
+      const booking = await publicBookingApi.createPublicBookingFromBody(req.body);
+      res.set("Cache-Control", "no-store");
+      return res.status(201).json(booking);
+    } catch (error) {
+      return sendPublicBookingError(error, res, next);
+    }
+  }),
+);
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, timestamp: Date.now() });
 });
 
+app.get(/^\/booking(?:\/.*)?$/, asyncRoute(sendReactBookingApp));
+
+app.get(/^\/book(?:\/.*)?$/, asyncRoute(sendReactBookingApp));
+
+app.get(/^\/admin(?:\/.*)?$/, asyncRoute(sendReactBookingApp));
+
 app.get("/", (_req, res) => {
   res.sendFile(path.join(publicDir, "index.html"));
+});
+
+app.use((error, _req, res, _next) => {
+  // eslint-disable-next-line no-console
+  console.error(error);
+  res.status(500).json({ message: "Service is currently unavailable." });
 });
 
 if (isDirectRun) {

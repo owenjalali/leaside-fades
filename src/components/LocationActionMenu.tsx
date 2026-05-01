@@ -21,11 +21,13 @@ interface LocationActionMenuProps {
     onActionSelect?: () => void;
 }
 
+const PUBLIC_BOOKING_HREF = "/book";
+
 function getHref(location: ShopLocation, action: LocationAction): string {
     if (action === "call") {
         return `tel:${location.phoneE164}`;
     }
-    return location.bookingUrl;
+    return PUBLIC_BOOKING_HREF;
 }
 
 function getDetailLabel(location: ShopLocation, action: LocationAction): string {
@@ -35,7 +37,39 @@ function getDetailLabel(location: ShopLocation, action: LocationAction): string 
     return `${location.addressLine}, ${location.cityLine}`;
 }
 
-export default function LocationActionMenu({
+export default function LocationActionMenu(props: LocationActionMenuProps) {
+    if (props.action === "book") {
+        return <BookingActionLink {...props} />;
+    }
+
+    return <LocationActionDropdown {...props} />;
+}
+
+function BookingActionLink({
+    label,
+    position = "absolute",
+    buttonClassName,
+    onActionSelect,
+}: LocationActionMenuProps) {
+    return (
+        <div className={cn("relative", position === "static" && "flex flex-col items-center")}>
+            <a
+                href={PUBLIC_BOOKING_HREF}
+                onClick={onActionSelect}
+                className={cn(
+                    "inline-flex min-h-[44px] items-center gap-2 rounded-full px-6 py-2.5 text-sm font-medium transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green/50 focus-visible:ring-offset-2",
+                    buttonClassName,
+                )}
+            >
+                <CalendarCheck2 size={16} />
+                <span>{label}</span>
+            </a>
+        </div>
+    );
+}
+
+function LocationActionDropdown({
     action,
     label,
     align = "left",
@@ -52,7 +86,6 @@ export default function LocationActionMenu({
     const instanceId = useId().replace(/:/g, "");
     const buttonId = `${action}-location-menu-button-${instanceId}`;
     const menuId = `${action}-location-menu-${instanceId}`;
-    const Icon = action === "book" ? CalendarCheck2 : Phone;
 
     useEffect(() => {
         const handlePointerDown = (event: MouseEvent | TouchEvent) => {
@@ -95,7 +128,7 @@ export default function LocationActionMenu({
                     buttonClassName,
                 )}
             >
-                <Icon size={16} />
+                <Phone size={16} />
                 <span>{label}</span>
                 <ChevronDown
                     size={16}
@@ -123,14 +156,15 @@ export default function LocationActionMenu({
                     {locations.map((location) => {
                         const href = getHref(location, action);
                         const detail = getDetailLabel(location, action);
+                        const external = /^https?:\/\//i.test(href);
 
                         return (
                             <a
                                 key={`${action}-${location.id}`}
                                 role="menuitem"
                                 href={href}
-                                target={action === "book" ? "_blank" : undefined}
-                                rel={action === "book" ? "noopener noreferrer" : undefined}
+                                target={external ? "_blank" : undefined}
+                                rel={external ? "noopener noreferrer" : undefined}
                                 onClick={() => {
                                     setOpen(false);
                                     onActionSelect?.();

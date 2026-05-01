@@ -16,6 +16,11 @@ data/google-reviews-cache.json
 npm-debug.log*
 *.log
 
+# Browser automation scratch files
+.playwright-mcp/
+artifacts/
+output/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -29,3 +34,7 @@ leaside_fades/
 
 # Research
 research/
+leaside_fresha_lite_codex_package/
+
+.vercel
+.env*.local

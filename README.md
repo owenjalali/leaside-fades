@@ -44,7 +44,7 @@ cp .env.example .env
 - `SITE_GOOGLE_MAPS_URL`
 - `SITE_INSTAGRAM_URL`
 - `SITE_FACEBOOK_URL`
-- `SITE_BOOKING_URL` (optional until Fresha is live)
+- `SITE_BOOKING_URL` (production default: `https://leasidefades.com/book`)
 - `SITE_PHONE_E164`
 
 4. Start locally:
@@ -54,6 +54,16 @@ npm run dev
 ```
 
 Open `http://localhost:3000`.
+
+## Phase 13 Fresha Import
+
+Use the guarded importer only after read-only Playwright extraction:
+
+```bash
+npm run fresha:import:dry-run -- --input output/fresha-import/fresha-extraction.json --report output/fresha-import/fresha-import-review.md
+```
+
+See `docs/FRESHA_IMPORT_GUIDE.md` before applying production imports.
 
 ## API Response Shape
 

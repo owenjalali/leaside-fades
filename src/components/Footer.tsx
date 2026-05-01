@@ -109,14 +109,22 @@ export default function Footer() {
                     <p className="text-white/30 text-xs">
                         © {new Date().getFullYear()} Leaside Fades. All rights reserved.
                     </p>
-                    <a
-                        href={eglinton.mapsUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-white/30 text-xs hover:text-green transition-colors"
-                    >
-                        View Eglinton and Millwood on Google Maps
-                    </a>
+                    <div className="flex flex-wrap items-center justify-center gap-4 md:justify-end">
+                        <a
+                            href="/admin/login"
+                            className="text-white/30 text-xs hover:text-green transition-colors"
+                        >
+                            Staff login
+                        </a>
+                        <a
+                            href={eglinton.mapsUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-white/30 text-xs hover:text-green transition-colors"
+                        >
+                            View Eglinton and Millwood on Google Maps
+                        </a>
+                    </div>
                 </div>
             </div>
         </footer>

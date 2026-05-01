@@ -187,6 +187,7 @@ function applySiteConfig(config) {
   const bookingEnabled = Boolean(config.bookingEnabled && config.bookingUrl);
   const bookingUrl = config.bookingUrl;
   const bookingNotice = config.bookingNotice;
+  const bookingIsExternal = /^https?:\/\//i.test(bookingUrl) && !bookingUrl.startsWith(window.location.origin);
 
   if (googleMapsUrl) {
     document.querySelectorAll("[data-maps-link]").forEach((link) => {
@@ -217,8 +218,13 @@ function applySiteConfig(config) {
   document.querySelectorAll("[data-online-booking]").forEach((link) => {
     if (bookingEnabled) {
       link.setAttribute("href", bookingUrl);
-      link.setAttribute("target", "_blank");
-      link.setAttribute("rel", "noopener noreferrer");
+      if (bookingIsExternal) {
+        link.setAttribute("target", "_blank");
+        link.setAttribute("rel", "noopener noreferrer");
+      } else {
+        link.removeAttribute("target");
+        link.removeAttribute("rel");
+      }
       link.textContent = "Book Online";
       if (bookingNoteNode) {
         bookingNoteNode.textContent = "Online booking is now live.";
@@ -229,7 +235,7 @@ function applySiteConfig(config) {
     link.setAttribute("href", "#booking-coming-soon");
     link.removeAttribute("target");
     link.removeAttribute("rel");
-    link.textContent = "Book Online (Fresha Soon)";
+    link.textContent = "Book Online";
   });
 
   if (!bookingEnabled && bookingNoteNode && bookingNotice) {

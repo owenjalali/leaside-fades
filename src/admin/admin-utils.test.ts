@@ -1,0 +1,228 @@
+import { describe, expect, test } from "vitest";
+
+import {
+    buildAdminBookingQuery,
+    buildAdminScheduleQuery,
+    buildBookingDragPayload,
+    buildBlockedTimePayload,
+    buildCalendarBoardRows,
+    buildCalendarTimeSlots,
+    buildMonthDays,
+    buildWeekDays,
+    formatAdminStatus,
+    getBookingCardTone,
+    formatScheduleWindow,
+    groupBookingsByLocalDate,
+    groupShiftsByBarberAndWeekday,
+} from "./admin-utils";
+import type { AdminBookingSummary, AdminShift, SafeAdminUser } from "./types";
+
+const bookingA: AdminBookingSummary = {
+    id: "booking-a",
+    barberId: "barber-a",
+    barberName: "Sam To",
+    locationId: "location-a",
+    locationName: "Leaside Fades Eglinton",
+    customerName: "Ada Lovelace",
+    customerEmail: "ada@example.com",
+    customerPhone: "+16475550199",
+    status: "confirmed",
+    source: "public",
+    startTime: "2026-04-27T14:00:00.000Z",
+    endTime: "2026-04-27T14:30:00.000Z",
+    totalDurationMinutes: 30,
+    services: ["Men's Cut"],
+};
+
+const bookingB: AdminBookingSummary = {
+    ...bookingA,
+    id: "booking-b",
+    startTime: "2026-04-28T15:00:00.000Z",
+    endTime: "2026-04-28T15:30:00.000Z",
+};
+
+describe("Phase 6 admin UI utilities", () => {
+    test("builds Sunday-start week days for the selected date", () => {
+        expect(buildWeekDays("2026-04-29").map((day) => day.date)).toEqual([
+            "2026-04-26",
+            "2026-04-27",
+            "2026-04-28",
+            "2026-04-29",
+            "2026-04-30",
+            "2026-05-01",
+            "2026-05-02",
+        ]);
+    });
+
+    test("builds a full month grid including leading and trailing week days", () => {
+        const days = buildMonthDays("2026-04-15");
+
+        expect(days[0].date).toBe("2026-03-29");
+        expect(days[days.length - 1]?.date).toBe("2026-05-02");
+        expect(days).toHaveLength(35);
+        expect(days.filter((day) => day.inCurrentMonth)).toHaveLength(30);
+    });
+
+    test("serializes only active booking filters", () => {
+        expect(
+            buildAdminBookingQuery({
+                from: "2026-04-27",
+                to: "2026-04-27",
+                locationId: "location-a",
+                barberId: "",
+                status: "confirmed",
+            }),
+        ).toBe("from=2026-04-27&to=2026-04-27&locationId=location-a&status=confirmed");
+    });
+
+    test("groups bookings by Toronto local date", () => {
+        expect(groupBookingsByLocalDate([bookingA, bookingB])).toEqual({
+            "2026-04-27": [bookingA],
+            "2026-04-28": [bookingB],
+        });
+    });
+
+    test("formats booking status labels for compact UI surfaces", () => {
+        expect(formatAdminStatus("confirmed")).toBe("Confirmed");
+        expect(formatAdminStatus("no_show")).toBe("No show");
+    });
+});
+
+const shiftA: AdminShift = {
+    id: "shift-a",
+    barberId: "barber-a",
+    locationId: "location-a",
+    dayOfWeek: 1,
+    startTime: "10:00",
+    endTime: "13:00",
+    effectiveFrom: null,
+    effectiveTo: null,
+    active: true,
+};
+
+const shiftB: AdminShift = {
+    ...shiftA,
+    id: "shift-b",
+    dayOfWeek: 3,
+    startTime: "14:00",
+    endTime: "19:00",
+};
+
+describe("Phase 7 schedule UI utilities", () => {
+    test("serializes only active schedule query filters", () => {
+        expect(buildAdminScheduleQuery({ from: "2026-05-01", to: "" })).toBe("from=2026-05-01");
+    });
+
+    test("groups shifts by barber and weekday for the recurring schedule grid", () => {
+        expect(groupShiftsByBarberAndWeekday([shiftA, shiftB])).toEqual({
+            "barber-a": {
+                1: [shiftA],
+                3: [shiftB],
+            },
+        });
+    });
+
+    test("formats local schedule windows for compact shift chips", () => {
+        expect(formatScheduleWindow("10:00", "19:00")).toBe("10:00 AM - 7:00 PM");
+        expect(formatScheduleWindow("11:15", "15:45")).toBe("11:15 AM - 3:45 PM");
+    });
+
+    test("builds all-day blocked time payloads with the next local end date", () => {
+        expect(
+            buildBlockedTimePayload({
+                scope: "business",
+                startDate: "2026-05-04",
+                startTime: "12:00",
+                endDate: "2026-05-04",
+                endTime: "13:00",
+                allDay: true,
+                reason: "Staff training",
+            }),
+        ).toEqual({
+            scope: "business",
+            startDate: "2026-05-04",
+            startTime: "00:00",
+            endDate: "2026-05-05",
+            endTime: "00:00",
+            reason: "Staff training",
+        });
+    });
+});
+
+describe("Phase 7.5 calendar-first UI utilities", () => {
+    test("builds 15-minute day-board slots inside business hours", () => {
+        expect(buildCalendarTimeSlots("10:00", "11:00")).toEqual([
+            "10:00",
+            "10:15",
+            "10:30",
+            "10:45",
+        ]);
+    });
+
+    test("adds a visible closing boundary without creating a bookable close slot", () => {
+        const rows = buildCalendarBoardRows("10:00", "19:00");
+
+        expect(rows.closeBoundary).toBe("19:00");
+        expect(rows.bookableSlots[rows.bookableSlots.length - 1]).toBe("18:45");
+        expect(rows.bookableSlots).not.toContain("19:00");
+    });
+
+    test("assigns operational booking card tones by status and walk-in source", () => {
+        expect(getBookingCardTone({ ...bookingA, status: "confirmed", source: "public" })).toBe("confirmed");
+        expect(getBookingCardTone({ ...bookingA, status: "confirmed", source: "walk_in" })).toBe("walk_in");
+        expect(getBookingCardTone({ ...bookingA, status: "no_show", source: "manual" })).toBe("no_show");
+        expect(getBookingCardTone({ ...bookingA, status: "cancelled", source: "manual" })).toBe("cancelled");
+        expect(getBookingCardTone({ ...bookingA, status: "completed", source: "manual" })).toBe("completed");
+    });
+
+    test("builds reschedule payloads for authorized booking drag drops and rejects unsafe drops", () => {
+        const owner: SafeAdminUser = {
+            id: "owner",
+            email: "owner@example.com",
+            displayName: "Owner",
+            role: "owner",
+            barberId: null,
+        };
+        const barber: SafeAdminUser = {
+            id: "barber",
+            email: "barber@example.com",
+            displayName: "Sam",
+            role: "barber",
+            barberId: "barber-a",
+        };
+
+        expect(
+            buildBookingDragPayload({
+                user: owner,
+                booking: bookingA,
+                targetBarberId: "barber-b",
+                targetLocationId: "location-a",
+                targetStartTime: "2026-04-27T15:00:00.000Z",
+            }),
+        ).toEqual({
+            locationId: "location-a",
+            barberId: "barber-b",
+            startTime: "2026-04-27T15:00:00.000Z",
+        });
+
+        expect(
+            buildBookingDragPayload({
+                user: barber,
+                booking: bookingA,
+                targetBarberId: "barber-b",
+                targetLocationId: "location-a",
+                targetStartTime: "2026-04-27T15:00:00.000Z",
+            }),
+        ).toBeNull();
+
+        expect(
+            buildBookingDragPayload({
+                user: owner,
+                booking: { ...bookingA, status: "no_show" },
+                targetBarberId: "barber-a",
+                targetLocationId: "location-a",
+                targetStartTime: "2026-04-27T15:00:00.000Z",
+            }),
+        ).toBeNull();
+    });
+});

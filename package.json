@@ -7,8 +7,25 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:seed": "tsx src/server/db/seed.ts",
+    "db:seed:dev-owner": "tsx src/server/db/seed-dev-owner.ts",
+    "db:seed:dev-shifts": "tsx src/server/db/seed-dev-shifts.ts",
+    "qa:phase5-auth": "tsx src/server/qa/phase5-auth-flow-qa.ts",
+    "qa:phase6-admin": "tsx src/server/qa/phase6-admin-flow-qa.ts",
+    "qa:phase7-schedule": "tsx src/server/qa/phase7-schedule-flow-qa.ts",
+    "qa:phase7-5-calendar": "tsx src/server/qa/phase7-5-calendar-flow-qa.ts",
+    "qa:phase8-customer-token": "tsx src/server/qa/phase8-customer-token-flow-qa.ts",
+    "qa:phase9-notifications": "tsx src/server/qa/phase9-notifications-flow-qa.ts",
+    "qa:phase10-reminders": "tsx src/server/qa/phase10-reminders-flow-qa.ts",
+    "notifications:check-live-config": "tsx src/server/notifications/check-live-config.ts",
+    "notifications:send-reminders": "tsx src/server/notifications/send-reminders.ts",
+    "fresha:import:dry-run": "tsx src/server/import/fresha-import.ts --mode=dry-run",
+    "fresha:import:apply": "tsx src/server/import/fresha-import.ts --mode=apply",
     "preview": "vite preview",
-    "server": "node server.js"
+    "server": "node server.js",
+    "test": "vitest run"
   },
   "keywords": [
     "barbershop",
@@ -19,26 +36,43 @@
   "author": "",
   "license": "UNLICENSED",
   "dependencies": {
+    "argon2": "^0.44.0",
     "clsx": "^2.1.1",
     "compression": "^1.8.1",
     "dotenv": "^17.2.3",
-    "express": "^5.1.0",
+    "drizzle-orm": "^0.45.2",
+    "express": "^5.2.1",
     "framer-motion": "^12.34.2",
     "lucide-react": "^0.574.0",
+    "pg": "^8.20.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "tailwind-merge": "^3.4.1"
+    "resend": "^6.12.2",
+    "tailwind-merge": "^3.4.1",
+    "twilio": "^6.0.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.0",
+    "@types/express": "^5.0.6",
     "@types/node": "^25.2.3",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/supertest": "^7.2.0",
     "@vitejs/plugin-react": "^5.1.4",
     "autoprefixer": "^10.4.24",
-    "postcss": "^8.5.6",
+    "drizzle-kit": "^0.31.10",
+    "postcss": "^8.5.12",
+    "supertest": "^7.2.2",
     "tailwindcss": "^4.2.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1"
+    "vite": "^7.3.2",
+    "vitest": "^4.1.5"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.25.12"
+    }
   }
 }

@@ -2,72 +2,14 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import AnimateOnScroll from "@/components/AnimateOnScroll";
 import LocationActionMenu from "@/components/LocationActionMenu";
-
-const tabs = ["Men", "Ladies", "Boys"] as const;
-
-interface Service {
-    name: string;
-    price: string;
-    note?: string;
-}
-
-interface ServiceGroup {
-    heading?: string;
-    items: Service[];
-}
-
-const services: Record<(typeof tabs)[number], ServiceGroup[]> = {
-    Men: [
-        {
-            items: [
-                { name: "Cut", price: "$30" },
-                { name: "Long Hair", price: "$35" },
-                { name: "Senior Citizens", price: "$28" },
-                { name: "Fade", price: "$35" },
-                { name: "Bald Fade", price: "$45" },
-                { name: "Line Up", price: "$15" },
-                { name: "Beard Trim", price: "$15" },
-                { name: "Beard Shave (Machine)", price: "$25" },
-                { name: "Hot Lather Shave", price: "$55" },
-                { name: "Hot Lather Head Shave", price: "$55" },
-                { name: "Wash & Style", price: "$15" },
-                { name: "Wash", price: "$5" },
-            ],
-        },
-    ],
-    Ladies: [
-        {
-            items: [
-                { name: "Cut", price: "$45" },
-                { name: "Wash & Blow Dry", price: "$35" },
-                { name: "Wash", price: "$15" },
-                { name: "Colour", price: "$80" },
-                { name: "Root Touch Up", price: "$55" },
-            ],
-        },
-        {
-            heading: "Foil Highlight",
-            items: [
-                { name: "Half Head", price: "$95" },
-                { name: "Full Head", price: "$150" },
-                { name: "Single Pack", price: "$15" },
-                { name: "Eight Pack", price: "$55" },
-            ],
-        },
-        {
-            heading: "Long Hair (Extra Charge)",
-            items: [{ name: "Wash", price: "$10" }],
-        },
-    ],
-    Boys: [
-        {
-            items: [{ name: "Cut", price: "$25", note: "Ages 9 & under" }],
-        },
-    ],
-};
+import {
+    marketingServiceTabs,
+    serviceTabLabels,
+    type MarketingServiceTab,
+} from "@/data/marketing-services";
 
 export default function Services() {
-    const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("Men");
+    const [activeTab, setActiveTab] = useState<MarketingServiceTab>("Men");
 
     return (
         <section id="services" className="section-padding bg-[#f5f5f5] relative z-20">
@@ -86,7 +28,7 @@ export default function Services() {
                 {/* Tabs */}
                 <AnimateOnScroll animation="fade-up" delay={100}>
                     <div className="flex justify-center gap-2 mb-8">
-                        {tabs.map((tab) => (
+                        {serviceTabLabels.map((tab) => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
@@ -106,7 +48,7 @@ export default function Services() {
                 {/* Service List */}
                 <AnimateOnScroll animation="fade-up" delay={200}>
                     <div className="rounded-2xl border border-[#83ecd8]/35 overflow-hidden bg-gradient-to-br from-[#0f2b2a] via-[#153d39] to-[#1a4a44] shadow-[0_22px_48px_rgba(13,85,78,0.35)]">
-                        {services[activeTab].map((group, gi) => (
+                        {marketingServiceTabs[activeTab].map((group, gi) => (
                             <div key={gi}>
                                 {group.heading && (
                                     <div className="px-6 md:px-8 pt-6 pb-2">
@@ -117,28 +59,26 @@ export default function Services() {
                                 )}
                                 {group.items.map((service, i) => (
                                     <div
-                                        key={service.name + group.heading}
+                                        key={service.slug}
                                         className={cn(
                                             "flex items-center justify-between px-6 md:px-8 py-4 transition-colors hover:bg-white/[0.03] lg:transition-all lg:duration-300 lg:hover:bg-[#1e5852]/45 lg:hover:ring-1 lg:hover:ring-[#9ef1e0]/75 lg:hover:shadow-[0_0_24px_rgba(83,215,189,0.45)] lg:hover:scale-[1.01]",
                                             i !== group.items.length - 1 &&
                                             "border-b border-white/[0.04]",
-                                            gi !== services[activeTab].length - 1 &&
+                                            gi !== marketingServiceTabs[activeTab].length - 1 &&
                                             i === group.items.length - 1 &&
                                             "border-b border-white/[0.08]"
                                         )}
                                     >
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-white/90 font-medium text-sm lg:text-[#dbfff7]">
+                                        <div className="flex min-w-0 flex-1 flex-col gap-1 pr-4 sm:flex-row sm:items-center sm:gap-3">
+                                            <span className="min-w-0 break-words text-white/90 font-medium text-sm lg:text-[#dbfff7]">
                                                 {service.name}
                                             </span>
-                                            {service.note && (
-                                                <span className="text-xs text-green/60 bg-green/10 px-2 py-0.5 rounded-full lg:text-[#b4f8ea] lg:bg-[#72e6cf]/20">
-                                                    {service.note}
-                                                </span>
-                                            )}
+                                            <span className="w-fit shrink-0 text-xs text-green/60 bg-green/10 px-2 py-0.5 rounded-full lg:text-[#b4f8ea] lg:bg-[#72e6cf]/20">
+                                                {service.durationMinutes} min
+                                            </span>
                                         </div>
-                                        <span className="text-green font-bold text-base lg:text-[#96f8e5]">
-                                            {service.price}
+                                        <span className="shrink-0 text-green font-bold text-base lg:text-[#96f8e5]">
+                                            {service.displayPrice}
                                         </span>
                                     </div>
                                 ))}
@@ -152,7 +92,7 @@ export default function Services() {
                     <div className="text-center mt-8">
                         <LocationActionMenu
                             action="book"
-                            label="Book Now on Fresha"
+                            label="Book Now"
                             position="static"
                             buttonClassName="bg-green text-white font-bold hover:bg-green-light px-8 py-3 shadow-lg shadow-green/20"
                         />

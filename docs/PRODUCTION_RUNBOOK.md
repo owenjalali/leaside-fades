@@ -1,0 +1,188 @@
+# Production Runbook
+
+This runbook is for the Leaside Fades launch where the public booking link changes from Fresha to `/book`.
+
+Do not run live SMS/email tests against real customers unless the owner explicitly approves.
+
+Current production target:
+- Vercel project: `owenjalalis-projects/leaside-fades`
+- Production domain: `https://leasidefades.com`
+- Production database: Vercel Neon integration resource `leaside-fades-db`
+
+## Pre-Deployment
+
+- Confirm the production host and database provider.
+- Confirm the production branch/commit to deploy.
+- Confirm a production database backup/checkpoint exists before migration.
+- Confirm `.env.production.example` has been copied into the host environment with real values.
+- Confirm `APP_URL=https://leasidefades.com`.
+- Confirm `SITE_BOOKING_URL=https://leasidefades.com/book`.
+- Confirm `NOTIFICATION_DELIVERY_MODE=live` only after Twilio and Resend are verified.
+- Confirm no `DEV_OWNER_*` values are configured on production.
+- Audit untracked artifacts, Fresha scratch files, cookies, screenshots, exports, and private customer data before the launch commit.
+
+## Required Production Environment
+
+- `NODE_ENV=production`
+- `PORT`
+- `APP_URL`
+- `DATABASE_URL`
+- `NOTIFICATION_DELIVERY_MODE`
+- `REMINDER_JOB_LOOKBACK_MINUTES`
+- `REMINDER_JOB_LOOKAHEAD_MINUTES`
+- `TWILIO_ACCOUNT_SID`
+- `TWILIO_AUTH_TOKEN`
+- `TWILIO_FROM_NUMBER`
+- `RESEND_API_KEY`
+- `EMAIL_FROM`
+- `GOOGLE_PLACES_API_KEY`
+- `GOOGLE_PLACE_ID`
+- `SITE_BUSINESS_NAME`
+- `SITE_PHONE_E164`
+- `SITE_PHONE_DISPLAY`
+- `SITE_GOOGLE_MAPS_URL`
+- `SITE_INSTAGRAM_URL`
+- `SITE_FACEBOOK_URL`
+- `SITE_BOOKING_URL`
+- `SITE_BOOKING_NOTICE`
+
+## Deploy Commands
+
+Install dependencies:
+
+```sh
+npm ci
+```
+
+Build:
+
+```sh
+npm run build
+```
+
+`NODE_ENV=production` is required for production runtime behavior such as secure cookies. Prefer setting it through the host/process environment. If it is also present in a local `.env` during `npm run build`, Vite may print a warning, but the production build can still pass.
+
+Apply migrations:
+
+```sh
+npm run db:migrate
+```
+
+Seed static public business data only if the production DB is empty and owner-approved:
+
+```sh
+npm run db:seed
+```
+
+Start server:
+
+```sh
+npm run server
+```
+
+## Health And Domain Checks
+
+- `https://leasidefades.com/api/health`
+- `https://leasidefades.com`
+- `https://leasidefades.com/book`
+- `https://leasidefades.com/admin/login`
+
+Verify:
+- HTTPS is active.
+- Static assets load.
+- Public booking catalog loads.
+- Admin login page loads.
+- Google Places reviews do not expose server errors.
+- Google Maps, Instagram, and Facebook links point to the approved destinations.
+
+## Data Setup
+
+Before exposing `/book` publicly:
+- Enter owner-approved recurring shifts by barber and location.
+- Confirm Yogesh Kumar is assigned only to Millwood for launch.
+- Confirm active barbers and staff onboarding state.
+- Confirm service catalog, prices, durations, categories, and featured services.
+- Confirm business hours and location details.
+- Enter approved closures or blocked time.
+- Confirm owner/admin login account/email and login path.
+- Enter staff phone/email contacts only from owner-approved data.
+
+Do not seed local/dev sample shifts in production.
+
+## Controlled Live Notification Smoke Test
+
+Preflight:
+
+```sh
+npm run notifications:check-live-config
+```
+
+Rules:
+- Use only owner-approved test phone numbers and email addresses.
+- Do not notify real customers during QA.
+- Keep `NOTIFICATION_DELIVERY_MODE=mock` or a staging database until live smoke test approval is explicit.
+
+Smoke steps:
+- Create a public test booking.
+- Verify customer SMS/email attempts are sent or logged.
+- Verify assigned staff SMS/email attempts are sent or logged when contact info exists.
+- Verify owner/admin Dashboard Notification Center activity appears for the booking.
+- Verify missing staff contacts produce skipped attempts and do not fail booking creation.
+- Verify notification metadata has no raw management tokens and no raw cancel/reschedule URLs.
+- Cancel a test booking through the customer link and verify the slot is freed.
+- Reschedule a test booking through the customer link and verify the new slot is blocked and old slot is freed.
+
+## Reminder Runner
+
+Preflight:
+
+```sh
+npm run notifications:check-live-config
+```
+
+Manual run:
+
+```sh
+npm run notifications:send-reminders
+```
+
+Enable scheduler only after booking and notification smoke tests pass.
+
+Recommended cadence:
+- Every 5 minutes.
+- Default lookback: 60 minutes.
+- Default lookahead: 15 minutes.
+- Capture stdout/stderr in host logs.
+- Do not configure multiple production reminder schedulers for the same database.
+
+## Logging And Error Visibility
+
+Before cutover, confirm where these are visible:
+- server process logs
+- migration output
+- reminder job stdout/stderr
+- Twilio delivery errors
+- Resend delivery errors
+- database connection errors
+- uncaught Express errors
+
+Notification provider failures should be visible in the `notifications` table and host logs.
+
+## Cutover
+
+Only after owner signoff:
+- Replace public Fresha booking links with `https://leasidefades.com/book`.
+- Keep Fresha active for existing bookings during the soft-transition period.
+- Monitor booking creation, notification logs, and reminder job logs after cutover.
+- Keep rollback steps ready for the launch window.
+
+## Rollback
+
+If launch smoke tests fail or production behavior is unsafe:
+- Restore public website booking links to the previous Fresha booking URL.
+- Stop the production reminder scheduler.
+- Leave the production database intact unless a restore is explicitly required.
+- Preserve DB backup, host logs, and notification rows for debugging.
+- If a migration rollback is required, restore from the pre-cutover database checkpoint rather than hand-mutating schema.
+
+Rollback does not mean deleting production data. Treat all customer bookings created during launch tests as records to reconcile with the owner.

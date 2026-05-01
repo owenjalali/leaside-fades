@@ -12,7 +12,7 @@ const faqs: FAQItem[] = [
     {
         question: "Do I need an appointment?",
         answer:
-            "Walk-ins are always welcome! However, we recommend booking online through Fresha to guarantee your preferred time slot, especially on weekends.",
+            "Walk-ins are always welcome. We recommend booking online to reserve your preferred time slot, especially on weekends.",
     },
     {
         question: "What payment methods do you accept?",

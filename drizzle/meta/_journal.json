@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1777221802446,
+      "tag": "0000_magical_sersi",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777301728471,
+      "tag": "0001_phase_5a_custom_session_auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777303257806,
+      "tag": "0002_phase_5b_password_reset",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1777304591726,
+      "tag": "0003_phase_5c_owner_barber_onboarding",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777388959843,
+      "tag": "0004_phase_7_5_calendar_operations",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777484575228,
+      "tag": "0005_phase_9_notifications",
+      "breakpoints": true
+    }
+  ]
+}

@@ -25,7 +25,6 @@ If a barber shift extends outside official business hours, customer availability
 
 Eglinton:
 - Sam To
-- Yogesh Kumar
 - Laura Nguyen
 
 Millwood:
@@ -33,11 +32,26 @@ Millwood:
 - Yogesh Kumar
 - Shayan Hussain
 
-Laura and Yogesh may work at both locations.
+Laura may work at both locations.
+
+Yogesh Kumar is Millwood-only for launch. He must not be bookable at Eglinton unless the owner explicitly changes this launch rule.
 
 Barbers can work split shifts and can work at different locations on the same day.
 
 By default, the same barber cannot have overlapping shifts at different locations.
+
+## Shift Management
+
+Phase 7 schedule management rules:
+- owner/admin users can create, edit, list, and deactivate recurring shifts
+- split shifts are represented as multiple same-day non-overlapping shift windows
+- adjacent shift windows are allowed
+- active shifts for the same barber, same weekday, overlapping local time, and overlapping effective date ranges are rejected
+- one-off `add` and `remove` overrides require valid start/end times
+- one-off `add` overrides require a location
+- one-off `not_working` overrides cover the whole date and must not include start/end times
+- barber users can view relevant schedule context but cannot manage recurring shifts or shift overrides
+- all shift and override mutations are validated server-side and use 15-minute local-time boundaries
 
 ## Booking Window
 
@@ -140,11 +154,25 @@ Customers can cancel anytime through a secure cancellation link.
 Cancellation should:
 - update booking status to cancelled
 - free the time slot
-- notify barber
-- notify customer
+- notify customer/staff after successful mutation for non-walk-ins when valid contact exists
 - update admin calendar
 
 Cancelled bookings must not block future availability.
+
+Phase 8 customer cancellation rules:
+- public bookings generate secure cancellation tokens by default
+- cancellation tokens are stored only as SHA-256 hashes
+- cancellation links do not expire in Phase 8
+- invalid or wrong-action tokens are rejected generically
+- cancelling an already-cancelled booking is safe and idempotent
+- completed and no-show bookings cannot be cancelled through customer links
+- walk-ins do not receive customer cancellation links in Phase 8
+
+Phase 9 cancellation notification rules:
+- dispatch only after the cancellation mutation succeeds
+- notification failure must not roll back cancellation
+- duplicate/idempotent cancellation attempts must not send duplicate messages
+- walk-ins create no cancellation notification attempts
 
 ## Rescheduling
 
@@ -154,17 +182,99 @@ Rescheduling should:
 - validate new slot availability
 - free old slot
 - block new slot
-- notify barber
-- notify customer
+- notify customer/staff after successful mutation for non-walk-ins when valid contact exists
 - update admin calendar
 
 Rescheduling should use the same transactional conflict checks as booking creation.
 
+Phase 8 customer rescheduling rules:
+- public bookings generate secure reschedule tokens by default
+- reschedule tokens are stored only as SHA-256 hashes
+- reschedule links do not expire in Phase 8
+- invalid or wrong-action tokens are rejected generically
+- rescheduling changes time, location, and/or barber only
+- services, service snapshots, pricing snapshots, and customer details are preserved
+- the booking being moved is excluded from its own old-slot conflict check
+- all other confirmed booking overlaps, blocked times, closures, shifts, business hours, 15-minute slot boundaries, 30-minute minimum notice, and 30-day max window are enforced server-side
+- walk-ins do not receive customer reschedule links in Phase 8
+
+Phase 9 reschedule notification rules:
+- dispatch only after the reschedule transaction commits
+- notification failure must not roll back rescheduling
+- idempotency keys include the new appointment start time or equivalent occurrence marker
+- walk-ins create no reschedule notification attempts
+
 ## Manual Bookings
 
-Barbers and owners can create manual bookings/walk-ins from the admin side.
+Barbers and owners create staff-entered appointments from one Add appointment workflow in the admin calendar/dashboard.
 
 Manual bookings must obey no-overlap rules unless an owner explicitly overrides in a later phase. MVP should avoid override unless necessary.
+
+Current staff-created appointment rules:
+- staff-created appointments require an explicit barber
+- customer name, service, barber, time, and location are required
+- customer phone/email are optional for staff-created appointments
+- barber users can create appointments only for their linked barber profile
+- owner/admin users can create appointments for any active eligible barber
+- staff-created appointments use the same transactional availability and overlap path as public bookings
+- staff-created appointments are stored with `source = "manual"` from the unified Add appointment workflow
+- staff-created appointments bypass only the public 30-minute minimum notice by passing a staff-only minimum notice of zero
+- staff-created appointments still enforce active location/barber/service, official business hours, barber shifts, 15-minute boundaries, blocked time, and no-overlap validation
+- no owner override exists
+- Phase 8 does not expose customer management links in the staff-created appointment UI
+- Phase 9 sends/logs manual booking lifecycle notifications after successful create/cancel/reschedule when valid customer/staff contact exists; missing contact creates skipped attempts and does not fail the booking
+
+Legacy walk-in API rules:
+- `POST /api/admin/bookings/walk-in` remains available for compatibility with existing QA and older clients
+- legacy walk-ins are stored with `source = "walk_in"` and continue to create no customer-facing or barber/staff notification attempts by default
+
+Phase 13 imported booking rules:
+- imported Fresha appointments are stored with `source = "imported"`
+- import dry-run must report conflicts before apply
+- apply mode requires a human-reviewed report confirmation
+- imported bookings do not generate customer cancellation/rescheduling tokens
+- imported bookings do not send lifecycle confirmation/cancellation/reschedule notifications at import time
+- imported bookings are excluded from reminder jobs
+- confirmed imported bookings still block availability through the same confirmed-booking overlap rules
+
+## Admin Cancellation And Rescheduling
+
+Phase 6 admin-side cancellation and rescheduling are authenticated staff actions, not customer token flows.
+
+Admin cancellation:
+- owner/admin can cancel any scoped booking
+- barber users can cancel only their own bookings
+- cancelling an already-cancelled booking is safe and idempotent
+- completed and no-show bookings are view-only for Phase 6
+- Phase 9 cancellation notifications dispatch after successful cancellation and never roll back the booking mutation
+
+Admin rescheduling:
+- owner/admin can reschedule any scoped confirmed booking
+- barber users can reschedule only their own bookings
+- rescheduling changes time, location, and/or barber only
+- service changes are handled by cancelling and recreating the booking
+- rescheduling revalidates availability and overlap server-side
+- the booking being moved is excluded from its own old-slot conflict check, but no other confirmed booking is excluded
+- customer rescheduling token flows were implemented in Phase 8
+- Phase 9 reschedule notifications dispatch after the reschedule transaction commits and use occurrence-aware idempotency
+
+Phase 7.5 no-show:
+- owner/admin can mark any current or past confirmed booking as no-show
+- barber users can mark only their own current or past confirmed bookings as no-show
+- future bookings cannot be marked no-show
+- cancelled, completed, and already no-show bookings cannot be marked no-show
+- no-show does not send notifications, charge fees, or create payment records in Phase 7.5
+- no-show bookings should be visually distinct in the calendar, using red styling
+
+Phase 7.5 drag/drop:
+- drag/drop applies only to confirmed bookings
+- drag/drop must call the authenticated admin reschedule endpoint
+- the backend remains the source of truth for all moves
+- rejected moves must leave or return the booking card to its original slot
+- barber users can drag only their own bookings and only within their own calendar column
+- owner/admin cross-barber moves are allowed only through the same reschedule validation path
+- drag/drop is snapped to 15-minute slot boundaries
+- shifts, closures, and blocked time are not drag/drop editable in Phase 7.5
 
 ## Blocked Time
 
@@ -177,18 +287,52 @@ Availability must account for all applicable blocked time.
 
 Blocked times must have start time before end time.
 
+Phase 7 blocked-time management rules:
+- owner/admin users can create, edit, list, and delete all blocked-time scopes
+- barber users can create, edit, list, and delete only their own barber-scoped blocked time
+- business closures cannot include a barber or location
+- location closures require a location and cannot include a barber
+- barber blocked time requires a barber and can optionally be narrowed to one assigned location
+- blocked-time start/end inputs are local `America/Toronto` date/time fields converted to UTC on the server
+- new or updated blocked times are rejected when they overlap existing confirmed bookings in the affected scope
+- blocked-time mutations do not cancel, reschedule, or notify existing bookings in Phase 7
+
 ## Notifications
 
 Notification events:
 - booking confirmation
-- 24-hour reminder
-- 2-hour reminder
 - cancellation confirmation
 - reschedule confirmation
+- 24-hour reminder
+- 2-hour reminder
 
 Twilio is used for SMS.
 Resend is used for email.
 
-Each notification attempt must be logged.
+Notification dispatch rules:
+- dispatch only after successful booking create/cancel/reschedule mutations
+- do not send provider messages inside booking database transactions
+- notification failures must be logged and must not fail booking mutations
+- missing or invalid customer phone/email logs a skipped customer attempt
+- booking confirmation sends/logs customer SMS/email and assigned barber SMS/email when contact exists
+- missing or invalid barber phone/email logs skipped staff attempts
+- owner/admin users see booking and delivery activity through the in-app Dashboard Notification Center instead of outbound owner/admin email
+- walk-ins create no notification attempts by default in Phase 9
+- no-shows, schedule changes, password resets, and barber invites remain out of notification scope
+- customer confirmation messages include cancel/reschedule URLs only when raw URLs are available from the booking response
+- raw customer management tokens must never be reconstructed from hashes or persisted in notification logs
+- reminder jobs are run by `npm run notifications:send-reminders`
+- production reminder delivery should pass `npm run notifications:check-live-config` before scheduler enablement
+- reminder jobs send customer SMS/email only for confirmed public/manual bookings
+- cancelled, completed, no-show, walk-in, and imported bookings do not receive reminders
+- reminder jobs re-check current booking status, source, and start time immediately before sending
+- reminder messages do not include cancel/reschedule links because raw management tokens are not stored
 
-Reminder sends must be idempotent so customers do not receive duplicate reminders.
+Each notification attempt must be logged with event type, channel, provider, recipient, status, idempotency key, booking reference, payload/error metadata, and timestamps where practical.
+
+Idempotency rules:
+- confirmation and cancellation keys are stable per booking/event/channel/recipient
+- reschedule keys include the new start time or equivalent mutation occurrence marker
+- reminder keys include the current appointment start time or equivalent occurrence marker
+- duplicate sent/skipped/pending attempts must not send again and should update attempt bookkeeping
+- failed provider attempts may be retried with the same idempotency key and updated attempt bookkeeping
