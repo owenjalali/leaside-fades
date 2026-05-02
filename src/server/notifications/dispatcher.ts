@@ -62,7 +62,7 @@ export async function dispatchBookingLifecycleNotification(
 ): Promise<BookingLifecycleDispatchResult[]> {
     const context = await input.repository.getBookingNotificationContext(input.bookingId);
 
-    if (!context || context.source === "walk_in" || context.source === "imported") {
+    if (!context || context.source === "imported") {
         return [];
     }
 
@@ -301,7 +301,10 @@ function occurrenceKeyForEvent(
 }
 
 function isReminderEligible(context: BookingNotificationContext) {
-    return context.status === "confirmed" && (context.source === "public" || context.source === "manual");
+    return (
+        context.status === "confirmed" &&
+        (context.source === "public" || context.source === "manual" || context.source === "walk_in")
+    );
 }
 
 function sameInstant(left: Date, right: Date) {

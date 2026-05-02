@@ -228,7 +228,8 @@
 - [x] Booking mutations dispatch notifications only after successful mutation
 - [x] Failed booking mutations create no notification attempts
 - [x] Notification delivery failure does not fail booking mutation
-- [x] Walk-ins create no customer or staff notification attempts
+- [x] Staff-created walk-ins with customer phone/email create booking confirmation attempts
+- [x] Staff-created walk-ins without customer contact still succeed and log skipped/missing-contact attempts
 - [x] Raw customer management tokens are not persisted in notification metadata
 - [x] Repeatable local/dev Phase 9 real-route QA runner exists as `npm run qa:phase9-notifications`
 
@@ -243,7 +244,8 @@
 - [x] Cancelled bookings do not receive reminders
 - [x] Rescheduled bookings receive reminders for the new time only
 - [x] Reminder jobs send customer SMS/email only
-- [x] Reminder jobs skip walk-in and imported bookings
+- [x] Reminder jobs include confirmed walk-ins when customer contact exists
+- [x] Reminder jobs skip imported bookings
 - [x] Live reminder configuration preflight exists as `npm run notifications:check-live-config`
 - [x] Repeatable local/dev Phase 10 real-route QA runner exists as `npm run qa:phase10-reminders`
 
@@ -312,7 +314,7 @@
 - [x] Production admin calendar internal board scroll reaches the weekday 7:00 PM boundary
 - [ ] Google Places API key and Place ID verified in production
 - [ ] Google Maps, Instagram, and Facebook links verified in production
-- [ ] Resend sender/domain verified for `bookings@leasidefades.com` (controlled email smoke failed because `leasidefades.com` is not verified in Resend)
+- [x] Resend live email smoke verified with an approved test contact
 - [x] Twilio production number verified SMS-capable through controlled live smoke
 - [x] Database migration applied
 - [x] Seed data verified
@@ -321,7 +323,7 @@
 - [ ] Barber flow tested end-to-end
 - [ ] Customer/staff booking confirmation delivery and owner/admin dashboard visibility tested in production/staging logs
 - [x] Controlled live SMS smoke test sent only to owner/test phone
-- [ ] Controlled live email smoke test sent only to owner/test email
+- [x] Controlled live email smoke test sent only to approved test email
 - [ ] Reminder job manually tested against a safe controlled fixture or staging database
 - [x] Production reminder scheduler enabled through cron-job.org and first successful `200 OK` run observed
 - [ ] Untracked artifacts audited before launch commit
@@ -349,3 +351,10 @@
 - [x] Imported bookings marked with source
 - [x] Imported bookings excluded from lifecycle notifications and reminders
 - [x] Calendar parity manually verified
+- [x] Admin calendar day-board columns are based on selected date/location shifts and shift overrides
+- [x] Admin calendar shows a clean empty state when no staff are scheduled at a location/date
+- [x] Admin calendar shades non-working time and renders explicit blocked-time overlays
+- [x] Admin calendar flags bookings that sit outside scheduled working hours
+- [x] Mobile add appointment flow uses a full-screen form with sticky create action
+- [x] Notification Center shows delivery mode, filters, upcoming reminder previews, failed rows, channel badges, and provider/error details
+- [x] Playwright MCP browser QA verified `/admin/calendar` and the Notification Center at iPhone width, 1280x720, 1440x900, and 1912x970

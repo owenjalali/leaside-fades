@@ -408,6 +408,10 @@ class InMemoryAdminBookingsRepository
                 sentAt: booking.status === "no_show" ? null : booking.startTime,
                 scheduledFor: null,
                 errorMessage: null,
+                provider: booking.status === "no_show" ? null : "mock",
+                providerMessageId: booking.status === "no_show" ? null : `${booking.id}:provider`,
+                attemptCount: booking.status === "no_show" ? 0 : 1,
+                lastAttemptAt: booking.status === "no_show" ? null : booking.startTime,
             }));
     }
 

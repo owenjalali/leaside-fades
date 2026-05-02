@@ -306,7 +306,7 @@ The Phase 6 admin UI was functionally correct but still behaved like a form-heav
 Decision:
 Add `source = "walk_in"` and allow nullable customer phone/email at the database layer. Public and manual booking paths still require contact details, while staff walk-ins require only name, service, barber, location, and time.
 
-Phase 12 supersedes the UI split: the admin calendar now uses one Add appointment workflow stored as `source = "manual"` with optional staff-entered customer phone/email. The legacy `source = "walk_in"` API remains for compatibility with older QA/scripts.
+Phase 12 supersedes the UI split by using one Add appointment workflow with an Appointment/Walk-in toggle. Phase 13 keeps true walk-ins stored as `source = "walk_in"` and sends confirmations/reminders when customer contact exists.
 
 Reason:
 Walk-ins are operationally different from public/customer bookings and manual back-office bookings. A distinct source supports future reporting/import decisions while the nullable contact fields reflect real in-shop behavior.
@@ -378,10 +378,10 @@ A portable CLI runner works with hosting cron, Windows Task Scheduler, and manua
 ### 2026-04-29 - Send Customer-Only Reminder Notifications
 
 Decision:
-Phase 10 sends 24-hour and 2-hour reminders only to customers by SMS/email for confirmed public/manual bookings. Walk-ins, imported bookings, cancelled bookings, completed bookings, no-shows, and staff reminder SMS are excluded.
+Phase 10 sends 24-hour and 2-hour reminders only to customers by SMS/email for confirmed public/manual/walk-in bookings. Imported bookings, cancelled bookings, completed bookings, no-shows, and staff reminder SMS are excluded.
 
 Reason:
-The MVP reminder goal is reducing customer no-shows without adding unapproved staff alert volume or implying customer self-service behavior for walk-ins/imports.
+The MVP reminder goal is reducing customer no-shows without adding unapproved staff alert volume. Contacted walk-ins are real customer appointments, while imported bookings remain excluded to avoid accidental cutover messaging.
 
 ### 2026-04-29 - Use Appointment Occurrence For Reminder Idempotency
 
@@ -542,3 +542,11 @@ Use cron-job.org job `7551064` as the production five-minute scheduler for `GET 
 
 Reason:
 The current Vercel Hobby plan blocks five-minute Vercel Cron schedules. An external scheduler keeps 24-hour and 2-hour reminders operational without upgrading immediately, while the secret-gated endpoint prevents public reminder triggers.
+
+### 2026-05-02 - Make Admin Calendar Columns Shift-Based And Contacted Walk-Ins Notifying
+
+Decision:
+The admin day-board shows staff columns from selected location/date working windows, including active shifts and same-day shift overrides, rather than static barber-location assignment. Staff-created walk-ins keep `source = "walk_in"` but now reuse booking lifecycle notifications and reminder eligibility when customer phone/email exists; imported bookings remain non-notifying and non-reminded.
+
+Reason:
+Staff need the calendar to match who is actually scheduled at a shop that day, especially on mobile. Contacted walk-ins are real customer appointments and should receive the same confirmation/reminder behavior as contacted manual appointments without generating customer management tokens or changing the database schema.

@@ -14,6 +14,7 @@ import {
     type BookingLifecycleNotificationDispatcher,
     type NotificationAttemptStatus,
     type NotificationChannel,
+    type NotificationDeliveryMode,
     type NotificationEventType,
     type NotificationRecipientType,
 } from "../notifications/index.ts";
@@ -128,12 +129,31 @@ export interface AdminDashboardActivityRecord {
     sentAt: Date | null;
     scheduledFor: Date | null;
     errorMessage: string | null;
+    provider: string | null;
+    providerMessageId: string | null;
+    attemptCount: number;
+    lastAttemptAt: Date | null;
+}
+
+export interface AdminUpcomingReminderPreview {
+    id: string;
+    bookingId: string;
+    eventType: "reminder_24h" | "reminder_2h";
+    channel: "sms" | "email";
+    customerName: string;
+    barberName: string;
+    locationName: string;
+    appointmentStartTime: Date;
+    scheduledFor: Date;
+    recipientLabel: string;
 }
 
 export interface AdminDashboardSnapshot {
     todayBookings: AdminBookingRecord[];
     upcomingBookings: AdminBookingRecord[];
     activity: AdminDashboardActivityRecord[];
+    notificationDeliveryMode: NotificationDeliveryMode;
+    upcomingReminders: AdminUpcomingReminderPreview[];
 }
 
 export interface AdminAvailabilityLookupRequest {
@@ -341,7 +361,7 @@ export async function getAdminCalendarOptions(
 export async function getAdminDashboard(
     user: SafeAdminUser,
     repository: AdminDashboardRepository,
-    options: { now?: Date } = {},
+    options: { now?: Date; notificationDeliveryMode?: NotificationDeliveryMode } = {},
 ): Promise<AdminDashboardSnapshot> {
     const now = options.now ?? new Date();
     const actorScope = buildActorScope(user);
@@ -371,7 +391,13 @@ export async function getAdminDashboard(
         }),
     ]);
 
-    return { todayBookings, upcomingBookings, activity };
+    return {
+        todayBookings,
+        upcomingBookings,
+        activity,
+        notificationDeliveryMode: options.notificationDeliveryMode ?? "mock",
+        upcomingReminders: buildUpcomingReminderPreviews(upcomingBookings, now),
+    };
 }
 
 export async function getAdminAvailability(
@@ -448,7 +474,12 @@ export async function createAdminWalkInBooking(
 ) {
     const request = buildWalkInBookingRequest(user, payload, options);
 
-    return createAdminBookingFromRequest(request, repository);
+    const booking = await createAdminBookingFromRequest(request, repository);
+    await dispatchLifecycleNotification(options.notificationDispatcher, {
+        eventType: "booking_confirmation",
+        bookingId: booking.id,
+    });
+    return booking;
 }
 
 async function createAdminBookingFromRequest(
@@ -788,6 +819,56 @@ function resolveWritableBarberId(
     }
 
     return user.barberId;
+}
+
+function buildUpcomingReminderPreviews(bookings: AdminBookingRecord[], now: Date): AdminUpcomingReminderPreview[] {
+    const rows: AdminUpcomingReminderPreview[] = [];
+
+    for (const booking of bookings) {
+        if (
+            booking.status !== "confirmed" ||
+            (booking.source !== "public" && booking.source !== "manual" && booking.source !== "walk_in")
+        ) {
+            continue;
+        }
+
+        const reminders: Array<{ eventType: "reminder_24h" | "reminder_2h"; offsetMs: number }> = [
+            { eventType: "reminder_24h", offsetMs: 24 * 60 * 60 * 1000 },
+            { eventType: "reminder_2h", offsetMs: 2 * 60 * 60 * 1000 },
+        ];
+        const channels: Array<{ channel: "sms" | "email"; recipientLabel: string; enabled: boolean }> = [
+            { channel: "sms", recipientLabel: booking.customerPhone ?? "Customer SMS", enabled: Boolean(booking.customerPhone) },
+            { channel: "email", recipientLabel: booking.customerEmail ?? "Customer email", enabled: Boolean(booking.customerEmail) },
+        ];
+
+        for (const reminder of reminders) {
+            const scheduledFor = new Date(booking.startTime.getTime() - reminder.offsetMs);
+            if (scheduledFor <= now) {
+                continue;
+            }
+
+            for (const channel of channels) {
+                if (!channel.enabled) {
+                    continue;
+                }
+
+                rows.push({
+                    id: `${booking.id}:${reminder.eventType}:${channel.channel}`,
+                    bookingId: booking.id,
+                    eventType: reminder.eventType,
+                    channel: channel.channel,
+                    customerName: booking.customerName,
+                    barberName: booking.barberName,
+                    locationName: booking.locationName,
+                    appointmentStartTime: booking.startTime,
+                    scheduledFor,
+                    recipientLabel: channel.recipientLabel,
+                });
+            }
+        }
+    }
+
+    return rows.sort((left, right) => left.scheduledFor.getTime() - right.scheduledFor.getTime()).slice(0, 12);
 }
 
 function validateAvailabilityRequest(request: AdminAvailabilityLookupRequest) {

@@ -168,6 +168,7 @@ export interface AdminScheduleFilters {
 }
 
 export type AdminNotificationChannel = "sms" | "email" | "calendar";
+export type AdminNotificationDeliveryMode = "mock" | "dev" | "live";
 export type AdminNotificationRecipientType = "customer" | "barber" | "admin" | "shop";
 export type AdminNotificationEventType =
     | "booking_confirmation"
@@ -200,12 +201,31 @@ export interface AdminDashboardActivity {
     sentAt: string | null;
     scheduledFor: string | null;
     errorMessage: string | null;
+    provider: string | null;
+    providerMessageId: string | null;
+    attemptCount: number;
+    lastAttemptAt: string | null;
+}
+
+export interface AdminUpcomingReminderPreview {
+    id: string;
+    bookingId: string;
+    eventType: "reminder_24h" | "reminder_2h";
+    channel: "sms" | "email";
+    customerName: string;
+    barberName: string;
+    locationName: string;
+    appointmentStartTime: string;
+    scheduledFor: string;
+    recipientLabel: string;
 }
 
 export interface AdminDashboardSnapshot {
     todayBookings: AdminBookingSummary[];
     upcomingBookings: AdminBookingSummary[];
     activity: AdminDashboardActivity[];
+    notificationDeliveryMode: AdminNotificationDeliveryMode;
+    upcomingReminders: AdminUpcomingReminderPreview[];
 }
 
 export interface BlockedTimeFormInput {

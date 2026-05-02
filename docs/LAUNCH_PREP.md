@@ -45,9 +45,9 @@ Still external before public cutover:
 - Owner should verify the observed Fresha recurring schedule that has been entered as the initial production roster.
 - Production owner/admin login has been generated and verified, but the temporary password must be handed off and rotated.
 - Staff notification phone/email contacts must be confirmed and entered if the owner wants live staff notifications.
-- Resend sender/domain and Twilio sending number must be verified with controlled live smoke sends.
+- Twilio and Resend live delivery have passed controlled smoke sends with approved test contacts; raw test contact details are not stored in git.
 - Production cron, logging, backup, and rollback access must be confirmed; the current Vercel Hobby account cannot run the required five-minute cron cadence.
-- Live smoke tests must use only owner-approved test contacts.
+- Live smoke tests must use only approved test contacts.
 - Untracked artifacts must be audited before a launch commit.
 
 Current production deployment state as of May 1, 2026:
@@ -57,7 +57,7 @@ Current production deployment state as of May 1, 2026:
 - `/api/booking/catalog` returns 2 locations, 3 service categories, 37 services, and 4 barbers.
 - The observed Fresha launch schedule has been entered as 24 recurring production shifts, with Yogesh Millwood-only.
 - `owner@leasidefades.com` can log in to the live admin. Temporary credentials are stored only in ignored local launch output pending owner handoff/rotation.
-- Vercel production contains encrypted Twilio/Resend notification variables and the secured reminder endpoint returns `401` without `CRON_SECRET`, confirming the secret exists at runtime. The local Vercel CLI cannot inspect sensitive env values for `npm run notifications:check-live-config`, and no controlled live SMS/email smoke send has been performed yet.
+- Vercel production contains encrypted Twilio/Resend notification variables and the secured reminder endpoint returns `401` without `CRON_SECRET`, confirming the secret exists at runtime. The local Vercel CLI cannot inspect sensitive env values for `npm run notifications:check-live-config`, and controlled live SMS/email smoke has passed with approved test contacts.
 - The Fresha May 1-June 30 appointment import has been applied after owner approval. It inserted 53 `source = "imported"` bookings and did not trigger immediate SMS/email/reminder lifecycle delivery.
 
 ## Production Environment Checklist

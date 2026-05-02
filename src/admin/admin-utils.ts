@@ -1,8 +1,11 @@
 import type {
+    AdminBarberOption,
     AdminBookingFilters,
     AdminBookingStatus,
     AdminBookingSummary,
+    AdminCalendarOptions,
     AdminDay,
+    AdminSchedule,
     AdminScheduleFilters,
     AdminShift,
     BlockedTimeFormInput,
@@ -16,6 +19,26 @@ const statusLabels: Record<AdminBookingStatus, string> = {
     completed: "Completed",
     no_show: "No show",
 };
+
+export interface CalendarWorkingWindow {
+    barberId: string;
+    locationId: string;
+    startTime: string;
+    endTime: string;
+    source: "shift" | "override";
+}
+
+export interface CalendarUnavailableRange {
+    startTime: string;
+    endTime: string;
+}
+
+export interface ScheduledCalendarBarber {
+    barber: AdminBarberOption;
+    workingWindows: CalendarWorkingWindow[];
+    offScheduleBookings: AdminBookingSummary[];
+    scheduled: boolean;
+}
 
 export function buildAdminBookingQuery(filters: AdminBookingFilters) {
     const params = new URLSearchParams();
@@ -165,6 +188,194 @@ export function buildCalendarBoardRows(startTime: string, endTime: string, inter
     };
 }
 
+export function buildCalendarWorkingWindows({
+    schedule,
+    selectedDate,
+    locationId,
+    businessStartTime = "00:00",
+    businessEndTime = "24:00",
+}: {
+    schedule: Pick<AdminSchedule, "shifts" | "shiftOverrides">;
+    selectedDate: string;
+    locationId: string;
+    businessStartTime?: string;
+    businessEndTime?: string;
+}) {
+    const selectedWeekday = parseLocalDate(selectedDate).getUTCDay();
+    const notWorkingBarbers = new Set(
+        schedule.shiftOverrides
+            .filter((override) => override.overrideDate === selectedDate && override.overrideType === "not_working")
+            .map((override) => override.barberId),
+    );
+    const windowsByBarber: Record<string, CalendarWorkingWindow[]> = {};
+
+    for (const shift of schedule.shifts) {
+        if (
+            !shift.active ||
+            shift.locationId !== locationId ||
+            shift.dayOfWeek !== selectedWeekday ||
+            notWorkingBarbers.has(shift.barberId) ||
+            (shift.effectiveFrom && selectedDate < shift.effectiveFrom) ||
+            (shift.effectiveTo && selectedDate > shift.effectiveTo)
+        ) {
+            continue;
+        }
+
+        addCalendarWindow(windowsByBarber, {
+            barberId: shift.barberId,
+            locationId: shift.locationId,
+            startTime: shift.startTime,
+            endTime: shift.endTime,
+            source: "shift",
+        }, businessStartTime, businessEndTime);
+    }
+
+    for (const override of schedule.shiftOverrides) {
+        if (
+            override.overrideDate !== selectedDate ||
+            override.overrideType !== "add" ||
+            override.locationId !== locationId ||
+            !override.startTime ||
+            !override.endTime ||
+            notWorkingBarbers.has(override.barberId)
+        ) {
+            continue;
+        }
+
+        addCalendarWindow(windowsByBarber, {
+            barberId: override.barberId,
+            locationId: override.locationId,
+            startTime: override.startTime,
+            endTime: override.endTime,
+            source: "override",
+        }, businessStartTime, businessEndTime);
+    }
+
+    for (const override of schedule.shiftOverrides) {
+        if (
+            override.overrideDate !== selectedDate ||
+            override.overrideType !== "remove" ||
+            (override.locationId && override.locationId !== locationId) ||
+            !override.startTime ||
+            !override.endTime
+        ) {
+            continue;
+        }
+
+        windowsByBarber[override.barberId] = (windowsByBarber[override.barberId] ?? []).flatMap((window) =>
+            subtractCalendarWindow(window, override.startTime ?? "00:00", override.endTime ?? "00:00"),
+        );
+    }
+
+    for (const barberId of Object.keys(windowsByBarber)) {
+        const normalized = normalizeCalendarWindows(windowsByBarber[barberId]);
+        if (normalized.length > 0 && !notWorkingBarbers.has(barberId)) {
+            windowsByBarber[barberId] = normalized;
+        } else {
+            delete windowsByBarber[barberId];
+        }
+    }
+
+    return windowsByBarber;
+}
+
+export function buildCalendarUnavailableRanges(
+    workingWindows: CalendarWorkingWindow[],
+    businessWindow: { startTime: string; endTime: string },
+): CalendarUnavailableRange[] {
+    const ranges: CalendarUnavailableRange[] = [];
+    let cursor = clockToMinutes(businessWindow.startTime);
+    const businessEnd = clockToMinutes(businessWindow.endTime);
+
+    for (const window of normalizeCalendarWindows(workingWindows)) {
+        const start = Math.max(clockToMinutes(window.startTime), clockToMinutes(businessWindow.startTime));
+        const end = Math.min(clockToMinutes(window.endTime), businessEnd);
+
+        if (start > cursor) {
+            ranges.push({ startTime: minutesToClock(cursor), endTime: minutesToClock(start) });
+        }
+
+        cursor = Math.max(cursor, end);
+    }
+
+    if (cursor < businessEnd) {
+        ranges.push({ startTime: minutesToClock(cursor), endTime: minutesToClock(businessEnd) });
+    }
+
+    return ranges;
+}
+
+export function bookingFallsOutsideWorkingWindows(
+    booking: Pick<AdminBookingSummary, "startTime" | "endTime">,
+    workingWindows: CalendarWorkingWindow[],
+) {
+    if (workingWindows.length === 0) {
+        return true;
+    }
+
+    const start = localClockMinutesFromUtc(booking.startTime);
+    const end = localClockMinutesFromUtc(booking.endTime);
+
+    return !workingWindows.some((window) => {
+        const windowStart = clockToMinutes(window.startTime);
+        const windowEnd = clockToMinutes(window.endTime);
+        return start >= windowStart && end <= windowEnd;
+    });
+}
+
+export function getScheduledCalendarBarbers({
+    options,
+    schedule,
+    user,
+    selectedDate,
+    locationId,
+    requestedBarberId,
+    bookings = [],
+    businessStartTime = "00:00",
+    businessEndTime = "24:00",
+}: {
+    options: AdminCalendarOptions;
+    schedule: Pick<AdminSchedule, "shifts" | "shiftOverrides">;
+    user: SafeAdminUser;
+    selectedDate: string;
+    locationId: string;
+    requestedBarberId?: string;
+    bookings?: AdminBookingSummary[];
+    businessStartTime?: string;
+    businessEndTime?: string;
+}): ScheduledCalendarBarber[] {
+    const windowsByBarber = buildCalendarWorkingWindows({
+        schedule,
+        selectedDate,
+        locationId,
+        businessStartTime,
+        businessEndTime,
+    });
+    const requestedId = user.role === "barber" ? user.barberId : requestedBarberId;
+
+    return options.barbers
+        .filter((barber) => !requestedId || barber.id === requestedId)
+        .map((barber) => {
+            const workingWindows = windowsByBarber[barber.id] ?? [];
+            const offScheduleBookings = bookings.filter(
+                (booking) =>
+                    booking.barberId === barber.id &&
+                    booking.locationId === locationId &&
+                    formatLocalDate(new Date(booking.startTime)) === selectedDate &&
+                    bookingFallsOutsideWorkingWindows(booking, workingWindows),
+            );
+
+            return {
+                barber,
+                workingWindows,
+                offScheduleBookings,
+                scheduled: workingWindows.length > 0,
+            };
+        })
+        .filter((item) => item.scheduled || item.offScheduleBookings.length > 0)
+        .sort((a, b) => a.barber.sortOrder - b.barber.sortOrder || a.barber.displayName.localeCompare(b.barber.displayName));
+}
+
 export function getBookingCardTone(booking: AdminBookingSummary) {
     if (booking.status === "no_show") return "no_show";
     if (booking.status === "cancelled") return "cancelled";
@@ -255,6 +466,102 @@ function formatLocalClockTime(time: string) {
         hour: "numeric",
         minute: "2-digit",
     }).format(date);
+}
+
+function addCalendarWindow(
+    windowsByBarber: Record<string, CalendarWorkingWindow[]>,
+    window: CalendarWorkingWindow,
+    businessStartTime: string,
+    businessEndTime: string,
+) {
+    const clipped = clipCalendarWindow(window, businessStartTime, businessEndTime);
+    if (!clipped) {
+        return;
+    }
+
+    windowsByBarber[clipped.barberId] ??= [];
+    windowsByBarber[clipped.barberId].push(clipped);
+}
+
+function clipCalendarWindow(
+    window: CalendarWorkingWindow,
+    businessStartTime: string,
+    businessEndTime: string,
+) {
+    const start = Math.max(clockToMinutes(window.startTime), clockToMinutes(businessStartTime));
+    const end = Math.min(clockToMinutes(window.endTime), clockToMinutes(businessEndTime));
+
+    if (start >= end) {
+        return null;
+    }
+
+    return {
+        ...window,
+        startTime: minutesToClock(start),
+        endTime: minutesToClock(end),
+    };
+}
+
+function subtractCalendarWindow(
+    window: CalendarWorkingWindow,
+    removeStartTime: string,
+    removeEndTime: string,
+) {
+    const start = clockToMinutes(window.startTime);
+    const end = clockToMinutes(window.endTime);
+    const removeStart = clockToMinutes(removeStartTime);
+    const removeEnd = clockToMinutes(removeEndTime);
+
+    if (removeStart >= end || removeEnd <= start) {
+        return [window];
+    }
+
+    const parts: CalendarWorkingWindow[] = [];
+    if (removeStart > start) {
+        parts.push({ ...window, endTime: minutesToClock(Math.min(removeStart, end)) });
+    }
+    if (removeEnd < end) {
+        parts.push({ ...window, startTime: minutesToClock(Math.max(removeEnd, start)) });
+    }
+
+    return parts;
+}
+
+function normalizeCalendarWindows(windows: CalendarWorkingWindow[]) {
+    const sorted = [...windows]
+        .filter((window) => clockToMinutes(window.startTime) < clockToMinutes(window.endTime))
+        .sort((a, b) => clockToMinutes(a.startTime) - clockToMinutes(b.startTime));
+    const normalized: CalendarWorkingWindow[] = [];
+
+    for (const window of sorted) {
+        const previous = normalized[normalized.length - 1];
+        if (
+            previous &&
+            previous.barberId === window.barberId &&
+            previous.locationId === window.locationId &&
+            previous.source === window.source &&
+            clockToMinutes(window.startTime) <= clockToMinutes(previous.endTime)
+        ) {
+            previous.endTime = minutesToClock(Math.max(clockToMinutes(previous.endTime), clockToMinutes(window.endTime)));
+        } else {
+            normalized.push({ ...window });
+        }
+    }
+
+    return normalized;
+}
+
+function localClockMinutesFromUtc(value: string) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone,
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+    }).formatToParts(new Date(value));
+    const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
+    const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
+
+    return hour * 60 + minute;
 }
 
 function clockToMinutes(time: string) {

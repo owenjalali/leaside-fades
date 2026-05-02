@@ -93,9 +93,11 @@ Use a notification outbox/log table so booking writes and notification attempts 
 
 Phase 9 implements this under `src/server/notifications/*`. Booking/admin/public services call a lifecycle dispatcher only after successful mutations; provider calls stay behind SMS/email interfaces. `NOTIFICATION_DELIVERY_MODE=mock` is local-safe, `dev` logs to the server console, and `live` sends through Twilio and Resend. Notification failures are logged and never roll back booking creation, cancellation, or rescheduling.
 
-Phase 10 adds reminder job dispatch under the same module. `npm run notifications:send-reminders` scans due confirmed public/manual bookings, sends customer 24-hour and 2-hour SMS/email reminders, records `scheduled_for`, and uses idempotency/stale-start checks to avoid duplicate or outdated reminders. Failed provider attempts are retryable on later job runs, while sent, skipped, and in-flight pending rows remain idempotent.
+Phase 10 adds reminder job dispatch under the same module. `npm run notifications:send-reminders` scans due confirmed public/manual/walk-in bookings, sends customer 24-hour and 2-hour SMS/email reminders when customer contact exists, records `scheduled_for`, and uses idempotency/stale-start checks to avoid duplicate or outdated reminders. Failed provider attempts are retryable on later job runs, while sent, skipped, and in-flight pending rows remain idempotent. Imported bookings remain excluded.
 
 Phase 12 closes the launch-critical booking visibility gap. New booking confirmations now plan customer SMS/email and assigned barber SMS/email when `barbers.phone_e164` or `barbers.email` exists. Owner/admin users are informed through the in-app Dashboard Notification Center instead of outbound owner/admin email. Missing customer/staff contacts create skipped attempts and do not fail booking creation.
+
+Phase 13 extends the same booking notification path to staff-created walk-ins when customer contact exists and upgrades the Dashboard Notification Center with delivery mode, channel/status filters, upcoming reminder previews, failed rows, and provider/error details.
 
 ### Permissions Service
 
@@ -525,15 +527,15 @@ Rules:
 - missing/invalid recipient contact logs a skipped attempt and does not throw
 - booking confirmations include customer SMS/email and assigned barber SMS/email when contact exists; owner/admin users see booking activity in the Dashboard Notification Center
 - cancellation and reschedule lifecycle notifications keep the existing customer SMS/email and staff SMS recipient plan
-- walk-ins create no customer or staff notification attempts in Phase 9
+- staff-created walk-ins with customer contact create notification attempts through the shared lifecycle dispatcher; name-only walk-ins log skipped customer contact attempts without failing creation
 - no-shows, schedule changes, password resets, barber invites, and reminders are not Phase 9 lifecycle events
 - customer confirmation messages include management links only when raw URLs are already available from the public booking response
 - raw customer management tokens are never reconstructed from stored hashes and are never persisted in notification metadata
 - reminder jobs run through `npm run notifications:send-reminders`, not an Express timer or HTTP cron endpoint
 - production reminder cron should first pass `npm run notifications:check-live-config`
-- reminder candidates are confirmed public/manual bookings whose `start_time - offset` falls within the configured due window
+- reminder candidates are confirmed public/manual/walk-in bookings whose `start_time - offset` falls within the configured due window
 - reminder jobs re-check current booking status, source, and start time immediately before sending
-- cancelled, completed, no-show, walk-in, and imported bookings do not receive reminders
+- cancelled, completed, no-show, and imported bookings do not receive reminders
 - reminder messages do not include customer management links because raw tokens are not persisted
 
 Every attempt is logged with practical support for:

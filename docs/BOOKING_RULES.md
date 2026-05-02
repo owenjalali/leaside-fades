@@ -53,6 +53,18 @@ Phase 7 schedule management rules:
 - barber users can view relevant schedule context but cannot manage recurring shifts or shift overrides
 - all shift and override mutations are validated server-side and use 15-minute local-time boundaries
 
+## Admin Calendar Visibility
+
+The admin day-board columns are derived from the selected date, selected location, active shifts, and same-day shift overrides.
+
+Rules:
+- show a staff column only when the barber has a working window for that selected location/date
+- static barber-location assignment is not enough to show a day-board column
+- `add`, `remove`, and `not_working` shift overrides must affect displayed working windows
+- non-working time should be shaded visually, and explicit blocked time should render separately
+- if a booking exists outside a staff member's working window, show it with an outside-hours warning instead of deleting or silently hiding the data
+- if no staff are scheduled for the selected location/date, show a clean empty state
+
 ## Booking Window
 
 - Max advance booking: 30 days
@@ -154,7 +166,7 @@ Customers can cancel anytime through a secure cancellation link.
 Cancellation should:
 - update booking status to cancelled
 - free the time slot
-- notify customer/staff after successful mutation for non-walk-ins when valid contact exists
+- notify customer/staff after successful mutation when valid contact exists, except imported bookings
 - update admin calendar
 
 Cancelled bookings must not block future availability.
@@ -172,7 +184,7 @@ Phase 9 cancellation notification rules:
 - dispatch only after the cancellation mutation succeeds
 - notification failure must not roll back cancellation
 - duplicate/idempotent cancellation attempts must not send duplicate messages
-- walk-ins create no cancellation notification attempts
+- walk-ins may create cancellation notification attempts when valid customer/staff contact exists; imported bookings remain excluded
 
 ## Rescheduling
 
@@ -182,7 +194,7 @@ Rescheduling should:
 - validate new slot availability
 - free old slot
 - block new slot
-- notify customer/staff after successful mutation for non-walk-ins when valid contact exists
+- notify customer/staff after successful mutation when valid contact exists, except imported bookings
 - update admin calendar
 
 Rescheduling should use the same transactional conflict checks as booking creation.
@@ -202,7 +214,7 @@ Phase 9 reschedule notification rules:
 - dispatch only after the reschedule transaction commits
 - notification failure must not roll back rescheduling
 - idempotency keys include the new appointment start time or equivalent occurrence marker
-- walk-ins create no reschedule notification attempts
+- walk-ins may create reschedule notification attempts when valid customer/staff contact exists; imported bookings remain excluded
 
 ## Manual Bookings
 
@@ -217,16 +229,20 @@ Current staff-created appointment rules:
 - barber users can create appointments only for their linked barber profile
 - owner/admin users can create appointments for any active eligible barber
 - staff-created appointments use the same transactional availability and overlap path as public bookings
-- staff-created appointments are stored with `source = "manual"` from the unified Add appointment workflow
+- staff-created appointments are stored with `source = "manual"` or `source = "walk_in"` from the unified Add appointment workflow
 - staff-created appointments bypass only the public 30-minute minimum notice by passing a staff-only minimum notice of zero
 - staff-created appointments still enforce active location/barber/service, official business hours, barber shifts, 15-minute boundaries, blocked time, and no-overlap validation
 - no owner override exists
 - Phase 8 does not expose customer management links in the staff-created appointment UI
-- Phase 9 sends/logs manual booking lifecycle notifications after successful create/cancel/reschedule when valid customer/staff contact exists; missing contact creates skipped attempts and does not fail the booking
+- Phase 9 sends/logs staff-created lifecycle notifications after successful create/cancel/reschedule when valid customer/staff contact exists; missing contact creates skipped attempts and does not fail the booking
 
 Legacy walk-in API rules:
 - `POST /api/admin/bookings/walk-in` remains available for compatibility with existing QA and older clients
-- legacy walk-ins are stored with `source = "walk_in"` and continue to create no customer-facing or barber/staff notification attempts by default
+- walk-ins are stored with `source = "walk_in"`
+- customer name is required
+- phone and email are optional
+- if phone/email exists, walk-ins create booking confirmation attempts and are eligible for reminders
+- if neither phone nor email exists, the booking still succeeds and missing customer contact is logged as skipped notification attempts
 
 Phase 13 imported booking rules:
 - imported Fresha appointments are stored with `source = "imported"`
@@ -317,14 +333,14 @@ Notification dispatch rules:
 - booking confirmation sends/logs customer SMS/email and assigned barber SMS/email when contact exists
 - missing or invalid barber phone/email logs skipped staff attempts
 - owner/admin users see booking and delivery activity through the in-app Dashboard Notification Center instead of outbound owner/admin email
-- walk-ins create no notification attempts by default in Phase 9
+- staff-created walk-ins with customer contact create notification attempts through the shared booking dispatcher; name-only walk-ins log skipped missing-contact attempts without failing creation
 - no-shows, schedule changes, password resets, and barber invites remain out of notification scope
 - customer confirmation messages include cancel/reschedule URLs only when raw URLs are available from the booking response
 - raw customer management tokens must never be reconstructed from hashes or persisted in notification logs
 - reminder jobs are run by `npm run notifications:send-reminders`
 - production reminder delivery should pass `npm run notifications:check-live-config` before scheduler enablement
-- reminder jobs send customer SMS/email only for confirmed public/manual bookings
-- cancelled, completed, no-show, walk-in, and imported bookings do not receive reminders
+- reminder jobs send customer SMS/email only for confirmed public/manual/walk-in bookings
+- cancelled, completed, no-show, and imported bookings do not receive reminders
 - reminder jobs re-check current booking status, source, and start time immediately before sending
 - reminder messages do not include cancel/reschedule links because raw management tokens are not stored
 

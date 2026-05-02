@@ -118,13 +118,13 @@ npm run notifications:check-live-config
 ```
 
 Rules:
-- Use only owner-approved test phone numbers and email addresses.
+- Use only approved internal test phone numbers and email addresses.
 - Do not notify real customers during QA.
 - Keep `NOTIFICATION_DELIVERY_MODE=mock` or a staging database until live smoke test approval is explicit.
 
 Smoke steps:
-- If a temporary production smoke endpoint is used because Vercel secrets are write-only locally, protect it with a one-use secret, call it only with owner-approved contacts, remove it immediately afterward, remove the temporary env var, and redeploy clean production.
-- Record provider-level smoke results before booking-flow smoke. On May 1, 2026, controlled Twilio SMS smoke succeeded and controlled Resend email smoke failed because `leasidefades.com` was not verified in Resend.
+- If a temporary production smoke endpoint is used because Vercel secrets are write-only locally, protect it with a one-use secret, call it only with approved internal contacts, remove it immediately afterward, remove the temporary env var, and redeploy clean production.
+- Record provider-level smoke results before booking-flow smoke. Controlled live Twilio SMS and Resend email smoke has passed with approved internal test contacts; raw test contact details are intentionally not stored in git.
 - Create a public test booking.
 - Verify customer SMS/email attempts are sent or logged.
 - Verify assigned staff SMS/email attempts are sent or logged when contact info exists.

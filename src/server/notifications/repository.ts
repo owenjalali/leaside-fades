@@ -119,7 +119,7 @@ class DrizzleNotificationRepository
             .where(
                 and(
                     eq(bookings.status, "confirmed"),
-                    inArray(bookings.source, ["public", "manual"]),
+                    inArray(bookings.source, ["public", "manual", "walk_in"]),
                     gte(bookings.startTime, input.startFrom),
                     lt(bookings.startTime, input.startTo),
                 ),

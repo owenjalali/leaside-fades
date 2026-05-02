@@ -285,6 +285,10 @@ class InMemoryPhase6Repository
                 sentAt: booking.status === "no_show" ? null : booking.startTime,
                 scheduledFor: null,
                 errorMessage: null,
+                provider: booking.status === "no_show" ? null : "mock",
+                providerMessageId: booking.status === "no_show" ? null : `${booking.id}:provider`,
+                attemptCount: booking.status === "no_show" ? 0 : 1,
+                lastAttemptAt: booking.status === "no_show" ? null : booking.startTime,
             }));
     }
 
@@ -968,7 +972,104 @@ describe("Phase 7.5 walk-in and no-show booking operations", () => {
             phoneE164: null,
             email: null,
         });
-        expect(dispatched).toEqual([]);
+        expect(dispatched).toEqual([{ eventType: "booking_confirmation", bookingId: created.id }]);
+    });
+
+    test("allows a Saturday 5 PM walk-in inside a matching location shift", async () => {
+        const repository = new InMemoryPhase6Repository();
+        const dispatched: Parameters<BookingLifecycleNotificationDispatcher>[0][] = [];
+        repository.availabilityData = baseAvailability({
+            businessHours: [
+                {
+                    locationId: locationBId,
+                    dayOfWeek: 6,
+                    openTime: "10:00",
+                    closeTime: "19:00",
+                },
+            ],
+            barberLocations: [{ barberId: barberBId, locationId: locationBId }],
+            shifts: [
+                {
+                    barberId: barberBId,
+                    locationId: locationBId,
+                    dayOfWeek: 6,
+                    startTime: "15:00",
+                    endTime: "19:00",
+                    active: true,
+                },
+            ],
+            bookings: [],
+            blockedTimes: [],
+        });
+
+        const created = await createAdminWalkInBooking(
+            { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+            {
+                locationId: locationBId,
+                serviceIds: [serviceId],
+                barberId: barberBId,
+                startTime: utc(17, 0, "2026-05-02").toISOString(),
+                customerName: "Laura Five",
+                customer: {
+                    phone: "+16475550123",
+                    email: "laura-five@example.com",
+                },
+            },
+            repository,
+            {
+                now: new Date("2026-05-02T18:00:00.000Z"),
+                notificationDispatcher: async (input) => {
+                    dispatched.push(input);
+                    return [];
+                },
+            },
+        );
+
+        expect(created).toMatchObject({
+            source: "walk_in",
+            barberId: barberBId,
+            locationId: locationBId,
+            startTime: utc(17, 0, "2026-05-02"),
+            endTime: utc(17, 30, "2026-05-02"),
+            customerName: "Laura Five",
+            customerPhone: "+16475550123",
+            customerEmail: "laura-five@example.com",
+        });
+        expect(dispatched).toEqual([{ eventType: "booking_confirmation", bookingId: created.id }]);
+    });
+
+    test("walk-in rejects invalid optional contact fields", async () => {
+        await expect(
+            createAdminWalkInBooking(
+                { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+                {
+                    locationId: locationAId,
+                    serviceIds: [serviceId],
+                    barberId: barberAId,
+                    startTime: utc(10).toISOString(),
+                    customerName: "Invalid Email",
+                    customer: { email: "not-an-email" },
+                },
+                new InMemoryPhase6Repository(),
+                { now },
+            ),
+        ).rejects.toMatchObject({ status: 400 });
+
+        await expect(
+            createAdminWalkInBooking(
+                { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+                {
+                    locationId: locationAId,
+                    serviceIds: [serviceId],
+                    barberId: barberAId,
+                    startTime: utc(10).toISOString(),
+                    customerName: "Invalid Phone",
+                    customer: { phone: "123" },
+                },
+                new InMemoryPhase6Repository(),
+                { now },
+            ),
+        ).rejects.toMatchObject({ status: 400 });
     });
 
     test("booking mutation still succeeds when notification delivery fails after mutation", async () => {

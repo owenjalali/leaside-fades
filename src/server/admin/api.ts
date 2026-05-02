@@ -50,6 +50,7 @@ import {
     updateAdminShiftOverride,
     type AdminScheduleRepository,
 } from "./schedule-service.ts";
+import { resolveNotificationDeliveryMode } from "../notifications/index.ts";
 import { createTeamInviteDelivery } from "./team-invite-delivery.ts";
 import { createDrizzleTeamOnboardingRepository } from "./team-repository.ts";
 import {
@@ -487,7 +488,10 @@ export async function handleAdminDashboard(
         const dashboard = await getAdminDashboard(
             session.user,
             dependencies.bookingsRepository ?? createDrizzleAdminBookingsRepository(),
-            { now: dependencies.now?.() ?? new Date() },
+            {
+                now: dependencies.now?.() ?? new Date(),
+                notificationDeliveryMode: resolveNotificationDeliveryMode(process.env),
+            },
         );
 
         response.set("Cache-Control", "no-store");

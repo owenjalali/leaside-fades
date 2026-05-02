@@ -173,6 +173,10 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
                 recipientType: notifications.recipientType,
                 recipientPhone: notifications.recipientPhone,
                 recipientEmail: notifications.recipientEmail,
+                provider: notifications.provider,
+                providerMessageId: notifications.providerMessageId,
+                attemptCount: notifications.attemptCount,
+                lastAttemptAt: notifications.lastAttemptAt,
                 errorMessage: notifications.errorMessage,
                 sentAt: notifications.sentAt,
                 scheduledFor: notifications.scheduledFor,
@@ -255,6 +259,10 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
             sentAt: row.sentAt,
             scheduledFor: row.scheduledFor,
             errorMessage: row.errorMessage,
+            provider: row.provider,
+            providerMessageId: row.providerMessageId,
+            attemptCount: row.attemptCount,
+            lastAttemptAt: row.lastAttemptAt,
         }));
         const noShowActivity = noShowRows.map<AdminDashboardActivityRecord>((row) => ({
             id: `${row.bookingId}:no-show`,
@@ -278,6 +286,10 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
             sentAt: null,
             scheduledFor: null,
             errorMessage: null,
+            provider: null,
+            providerMessageId: null,
+            attemptCount: 0,
+            lastAttemptAt: null,
         }));
 
         return [...notificationActivity, ...noShowActivity]

@@ -94,8 +94,6 @@ async function main() {
             DEV_OWNER_PASSWORD: ownerPassword,
             DEV_OWNER_NAME: "Phase 9 QA Owner",
         });
-        const ownerAdminEmailCount = await countActiveOwnerAdminEmails(db);
-
         const { default: app } = await import(new URL("../../../server.js", import.meta.url).href);
         const ownerAgent = request.agent(app);
         await ownerAgent
@@ -114,7 +112,7 @@ async function main() {
         const cancellationToken = tokenFromActionUrl(confirmationBooking.body.cancelUrl, "cancel");
         const rescheduleToken = tokenFromActionUrl(confirmationBooking.body.rescheduleUrl, "reschedule");
         await assertLifecycleRows(db, confirmationBooking.body.id, "booking_confirmation", {
-            sent: 4 + ownerAdminEmailCount,
+            sent: 4,
             skipped: 0,
             attemptCount: 1,
         });
@@ -122,7 +120,7 @@ async function main() {
             cancellationToken,
             rescheduleToken,
         ]);
-        logStep("Public booking confirmation logged customer, assigned staff, and owner/admin attempts without raw token persistence.");
+        logStep("Public booking confirmation logged customer and assigned staff attempts without raw token persistence.");
 
         await request(app).post(`/api/booking/manage/${cancellationToken}/cancel`).expect(200);
         await assertLifecycleRows(db, confirmationBooking.body.id, "cancellation_confirmation", {
@@ -176,18 +174,17 @@ async function main() {
         });
         usedStarts.add(skippedSlot.startTime);
         await assertLifecycleRows(db, skippedBooking.body.id, "booking_confirmation", {
-            sent: 2 + ownerAdminEmailCount,
+            sent: 2,
             skipped: 2,
             attemptCount: 1,
         });
         await assertSkippedStaffContacts(db, skippedBooking.body.id);
-        logStep("Missing staff phone/email safely logged skipped staff attempts while customer and owner/admin notices sent.");
+        logStep("Missing staff phone/email safely logged skipped staff attempts while customer notices sent.");
 
         await setBarberContact(db, seedRows.barberId, {
             phoneE164: "+16475550200",
             email: `phase9-qa-staff-${runId}@${QA_EMAIL_DOMAIN}`,
         });
-        const notificationCountBeforeWalkIn = await countRows(db, notifications);
         const walkInSlot = await findFirstAvailableAdminSlot(ownerAgent, seedRows, usedStarts);
         usedStarts.add(walkInSlot.startTime);
         const walkInResponse = await ownerAgent
@@ -206,9 +203,12 @@ async function main() {
             })
             .expect(201);
         assert.equal(walkInResponse.body.booking.source, "walk_in");
-        assert.equal(await countRows(db, notifications), notificationCountBeforeWalkIn);
-        await assertNoNotificationsForBooking(db, walkInResponse.body.booking.id);
-        logStep("Walk-ins created no customer or staff notification attempts, even with local contacts.");
+        await assertLifecycleRows(db, walkInResponse.body.booking.id, "booking_confirmation", {
+            sent: 4,
+            skipped: 0,
+            attemptCount: 1,
+        });
+        logStep("Walk-ins with customer contact create customer and staff booking confirmation attempts.");
 
         console.log("Phase 9 notifications QA passed.");
     } catch (error) {

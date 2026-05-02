@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import {
     Ban,
     Bell,
@@ -12,10 +12,13 @@ import {
     Clock,
     LayoutDashboard,
     LogOut,
+    Mail,
     MapPin,
+    MessageSquare,
     RefreshCw,
     Scissors,
     Search,
+    AlertTriangle,
     UserRound,
     X,
 } from "lucide-react";
@@ -46,14 +49,18 @@ import {
     addDaysToLocalDate,
     buildBookingDragPayload,
     buildCalendarBoardRows,
+    buildCalendarUnavailableRanges,
     buildMonthDays,
     buildWeekDays,
+    bookingFallsOutsideWorkingWindows,
     formatAdminStatus,
     formatLocalDateTime,
     formatLocalTime,
     getBookingCardTone,
+    getScheduledCalendarBarbers,
     groupBookingsByLocalDate,
     todayLocalDate,
+    type ScheduledCalendarBarber,
 } from "./admin-utils";
 import type {
     AdminAvailability,
@@ -68,6 +75,7 @@ import type {
     AdminSchedule,
     AdminServiceOption,
     AdminSlot,
+    AdminUpcomingReminderPreview,
     SafeAdminUser,
 } from "./types";
 
@@ -424,7 +432,44 @@ function AdminWorkspace({
     const groupedBookings = useMemo(() => groupBookingsByLocalDate(bookings), [bookings]);
     const visibleDays = view === "month" ? buildMonthDays(selectedDate) : buildWeekDays(selectedDate);
     const activeLocationId = options ? resolveDefaultLocationId(options, user, filters.locationId) : "";
-    const visibleBarbers = options ? getVisibleBarbers(options, user, activeLocationId, filters.barberId) : [];
+    const businessWindow = businessWindowForDate(selectedDate);
+    const staticVisibleBarbers = options ? getVisibleBarbers(options, user, activeLocationId, filters.barberId) : [];
+    const calendarBarberItems = useMemo(() => {
+        if (!options) return [];
+
+        if (!schedule) {
+            return staticVisibleBarbers.map((barber) => ({
+                barber,
+                workingWindows: [],
+                offScheduleBookings: [],
+                scheduled: true,
+            }));
+        }
+
+        return getScheduledCalendarBarbers({
+            options,
+            schedule,
+            user,
+            selectedDate,
+            locationId: activeLocationId,
+            requestedBarberId: filters.barberId,
+            bookings,
+            businessStartTime: businessWindow.start,
+            businessEndTime: businessWindow.end,
+        });
+    }, [
+        activeLocationId,
+        bookings,
+        businessWindow.end,
+        businessWindow.start,
+        filters.barberId,
+        options,
+        schedule,
+        selectedDate,
+        staticVisibleBarbers,
+        user,
+    ]);
+    const visibleBarbers = view === "day" ? calendarBarberItems.map((item) => item.barber) : staticVisibleBarbers;
     const isDayCalendarPath =
         !isDashboardPath &&
         !isSchedulePath &&
@@ -445,6 +490,7 @@ function AdminWorkspace({
                     filters={filters}
                     options={options}
                     user={user}
+                    schedule={schedule}
                     loading={isDashboardPath ? dashboardLoading : loading}
                     isDashboardPath={isDashboardPath}
                     isSchedulePath={isSchedulePath}
@@ -492,12 +538,11 @@ function AdminWorkspace({
                         <DayCalendarBoard
                             bookings={bookings}
                             schedule={schedule}
-                            options={options}
                             user={user}
                             selectedDate={selectedDate}
                             locationId={activeLocationId}
-                            barbers={visibleBarbers}
-                            loading={loading}
+                            barberItems={calendarBarberItems}
+                            loading={loading || !schedule}
                             draggingBookingId={draggingBookingId}
                             pendingDragId={pendingDragId}
                             appointmentPreview={appointmentPreview}
@@ -623,6 +668,7 @@ function CalendarTopbar({
     filters,
     options,
     user,
+    schedule,
     loading,
     isDashboardPath,
     isSchedulePath,
@@ -637,6 +683,7 @@ function CalendarTopbar({
     filters: AdminBookingFilters;
     options: AdminCalendarOptions | null;
     user: SafeAdminUser;
+    schedule: AdminSchedule | null;
     loading: boolean;
     isDashboardPath: boolean;
     isSchedulePath: boolean;
@@ -649,23 +696,37 @@ function CalendarTopbar({
     const selectedDate = filters.from || todayLocalDate();
     const step = view === "month" ? 30 : view === "week" || view === "list" ? 7 : 1;
     const locationId = options ? resolveDefaultLocationId(options, user, filters.locationId) : filters.locationId ?? "";
-    const availableBarbers = options ? getVisibleBarbers(options, user, locationId) : [];
+    const businessWindow = businessWindowForDate(selectedDate);
+    const availableBarbers =
+        options && schedule && view === "day"
+            ? getScheduledCalendarBarbers({
+                  options,
+                  schedule,
+                  user,
+                  selectedDate,
+                  locationId,
+                  businessStartTime: businessWindow.start,
+                  businessEndTime: businessWindow.end,
+              }).map((item) => item.barber)
+            : options
+              ? getVisibleBarbers(options, user, locationId)
+              : [];
 
     return (
-        <header className="sticky top-0 z-20 max-h-[44dvh] shrink-0 overflow-y-auto border-b border-[#cfdacf] bg-white/95 px-4 py-4 backdrop-blur lg:max-h-none lg:overflow-visible lg:px-6 2xl:px-8 2xl:py-5">
-            <div className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,auto)_minmax(0,1fr)] 2xl:items-center 2xl:gap-5">
-                <div className="flex min-w-0 flex-wrap items-center gap-3">
-                    <button className="text-button bg-white" onClick={() => onDate(todayLocalDate())} disabled={isSchedulePath}>
+        <header className="sticky top-0 z-20 shrink-0 overflow-visible border-b border-[#cfdacf] bg-white/95 px-3 py-3 backdrop-blur lg:px-6 2xl:px-8 2xl:py-4">
+            <div className="grid min-w-0 gap-3 2xl:grid-cols-[minmax(0,auto)_minmax(0,1fr)] 2xl:items-center 2xl:gap-5">
+                <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+                    <button className="text-button min-h-11 bg-white px-4 py-2 text-base" onClick={() => onDate(todayLocalDate())} disabled={isSchedulePath}>
                         Today
                     </button>
-                    <button className="icon-button" onClick={() => onDate(addDaysToLocalDate(selectedDate, -step))} title="Previous" disabled={isSchedulePath}>
+                    <button className="icon-button min-h-11 min-w-11" onClick={() => onDate(addDaysToLocalDate(selectedDate, -step))} title="Previous" disabled={isSchedulePath}>
                         <ChevronLeft size={24} />
                     </button>
-                    <button className="icon-button" onClick={() => onDate(addDaysToLocalDate(selectedDate, step))} title="Next" disabled={isSchedulePath}>
+                    <button className="icon-button min-h-11 min-w-11" onClick={() => onDate(addDaysToLocalDate(selectedDate, step))} title="Next" disabled={isSchedulePath}>
                         <ChevronRight size={24} />
                     </button>
-                    <div className="min-w-0 px-2 2xl:px-4">
-                        <p className="truncate text-3xl font-black text-forest">{isSchedulePath ? title : formatDateTitle(selectedDate, view)}</p>
+                    <div className="min-w-[12rem] flex-1 px-1 sm:flex-none 2xl:px-4">
+                        <p className="truncate text-2xl font-black text-forest sm:text-3xl">{isSchedulePath ? title : formatDateTitle(selectedDate, view)}</p>
                         <p className="text-sm font-bold uppercase tracking-[0.12em] text-charcoal/50">{isSchedulePath ? "Setup" : title}</p>
                     </div>
                 </div>
@@ -673,7 +734,7 @@ function CalendarTopbar({
                     {!isSchedulePath && !isDashboardPath && (
                         <>
                             <select
-                                className="input h-14 min-w-[min(14rem,100%)] flex-[1_1_15rem] 2xl:max-w-72"
+                                className="input h-12 min-w-[min(13rem,100%)] flex-[1_1_14rem] text-base 2xl:max-w-72"
                                 value={locationId}
                                 onChange={(event) => onChangeFilters({ ...filters, locationId: event.target.value })}
                             >
@@ -684,7 +745,7 @@ function CalendarTopbar({
                                 ))}
                             </select>
                             <select
-                                className="input h-14 min-w-[min(14rem,100%)] flex-[1_1_15rem] 2xl:max-w-72"
+                                className="input h-12 min-w-[min(13rem,100%)] flex-[1_1_14rem] text-base 2xl:max-w-72"
                                 value={filters.barberId ?? ""}
                                 onChange={(event) => onChangeFilters({ ...filters, barberId: event.target.value })}
                                 disabled={user.role === "barber"}
@@ -697,7 +758,7 @@ function CalendarTopbar({
                                 ))}
                             </select>
                             <select
-                                className="input h-14 min-w-[min(12rem,100%)] flex-[1_1_12rem] 2xl:max-w-56"
+                                className="input h-12 min-w-[min(11rem,100%)] flex-[1_1_11rem] text-base 2xl:max-w-56"
                                 value={filters.status ?? ""}
                                 onChange={(event) => onChangeFilters({ ...filters, status: event.target.value as AdminBookingFilters["status"] })}
                             >
@@ -711,17 +772,17 @@ function CalendarTopbar({
                                 {(["day", "week", "month", "list"] as AdminView[]).map((item) => (
                                     <button
                                         key={item}
-                                        className={view === item ? "segmented-active min-h-12 shrink-0 px-5 py-2.5 text-base" : "segmented min-h-12 shrink-0 border-0 bg-transparent px-5 py-2.5 text-base"}
+                                        className={view === item ? "segmented-active min-h-11 shrink-0 px-4 py-2 text-base" : "segmented min-h-11 shrink-0 border-0 bg-transparent px-4 py-2 text-base"}
                                         onClick={() => onView(item)}
                                     >
                                         {item}
                                     </button>
                                 ))}
                             </div>
-                            <button className="icon-button" onClick={onRefresh} title="Refresh bookings">
+                            <button className="icon-button min-h-11 min-w-11" onClick={onRefresh} title="Refresh bookings">
                                 <RefreshCw size={24} className={loading ? "animate-spin" : ""} />
                             </button>
-                            <button className="icon-text-button" onClick={onNewBooking}>
+                            <button className="icon-text-button min-h-11 px-4 py-2 text-base" onClick={onNewBooking}>
                                 <CalendarPlus size={22} />
                                 Add appointment
                             </button>
@@ -756,6 +817,8 @@ function DashboardPage({
     const today = dashboard?.todayBookings ?? [];
     const upcoming = dashboard?.upcomingBookings ?? [];
     const activity = dashboard?.activity ?? [];
+    const upcomingReminders = dashboard?.upcomingReminders ?? [];
+    const deliveryMode = dashboard?.notificationDeliveryMode ?? "mock";
 
     if (loading && !dashboard) {
         return (
@@ -771,7 +834,7 @@ function DashboardPage({
             <section className="grid gap-4 xl:grid-cols-3">
                 <DashboardStat title="Today" value={`${today.length}`} label="appointments" />
                 <DashboardStat title="Upcoming" value={`${upcoming.length}`} label="next 7 days" />
-                <DashboardStat title="Activity" value={`${activity.length}`} label="recent items" />
+                <DashboardStat title="Reminders" value={`${upcomingReminders.length}`} label={`${deliveryMode} mode`} />
             </section>
             <section className="grid gap-5 2xl:grid-cols-[1fr_1.15fr]">
                 <DashboardAppointments
@@ -780,7 +843,12 @@ function DashboardPage({
                     bookings={today}
                     onOpenBooking={onOpenBooking}
                 />
-                <NotificationCenter activity={activity} onOpenBooking={onOpenBooking} />
+                <NotificationCenter
+                    activity={activity}
+                    upcomingReminders={upcomingReminders}
+                    deliveryMode={deliveryMode}
+                    onOpenBooking={onOpenBooking}
+                />
             </section>
             <DashboardAppointments
                 title="Upcoming appointments"
@@ -846,49 +914,162 @@ function DashboardAppointments({
 
 function NotificationCenter({
     activity,
+    upcomingReminders,
+    deliveryMode,
     onOpenBooking,
 }: {
     activity: AdminDashboardActivity[];
+    upcomingReminders: AdminUpcomingReminderPreview[];
+    deliveryMode: AdminDashboardSnapshot["notificationDeliveryMode"];
     onOpenBooking: (bookingId: string) => void;
 }) {
+    const [filter, setFilter] = useState<NotificationCenterFilter>("all");
+    const filteredActivity = activity.filter((item) => notificationFilterMatches(item, filter));
+    const failedActivity = activity.filter((item) => item.status === "failed").slice(0, 4);
+
     return (
         <section className="rounded-md border border-[#d7e0d7] bg-white shadow-sm">
-            <div className="flex items-center gap-2 border-b border-[#d7e0d7] px-5 py-4">
-                <Bell size={21} className="text-green" />
-                <h2 className="text-2xl font-black text-forest">Notification Center</h2>
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#d7e0d7] px-5 py-4">
+                <div className="flex items-center gap-2">
+                    <Bell size={21} className="text-green" />
+                    <h2 className="text-2xl font-black text-forest">Notification Center</h2>
+                </div>
+                <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.1em] ${deliveryModeTone(deliveryMode)}`}>
+                    {deliveryMode} mode
+                </span>
             </div>
-            {activity.length === 0 ? (
-                <p className="p-5 text-lg font-bold text-charcoal/55">No recent appointment activity.</p>
-            ) : (
-                <div className="max-h-[620px] divide-y divide-[#e1e8e1] overflow-y-auto">
-                    {activity.map((item) => (
+            <div className="space-y-4 p-4 sm:p-5">
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                    {notificationFilters.map((item) => (
                         <button
-                            key={item.id}
-                            className="grid w-full gap-3 px-5 py-4 text-left transition hover:bg-[#f8fbf8] md:grid-cols-[1fr_auto]"
-                            onClick={() => onOpenBooking(item.bookingId)}
+                            key={item}
+                            className={`shrink-0 rounded-full px-3 py-2 text-xs font-black uppercase tracking-[0.08em] transition ${
+                                filter === item ? "bg-forest text-white" : "bg-[#eef5f1] text-charcoal/65 hover:bg-mint"
+                            }`}
+                            onClick={() => setFilter(item)}
                         >
-                            <span className="min-w-0">
-                                <span className="block text-sm font-black uppercase tracking-[0.12em] text-green">{activityLabel(item.eventType)}</span>
-                                <span className="mt-1 block truncate text-xl font-black text-forest">{item.customerName}</span>
-                                <span className="block truncate text-base font-bold text-charcoal/62">
-                                    {item.services.join(", ") || "Appointment"} with {item.barberName}
-                                </span>
-                                <span className="mt-2 block truncate text-sm font-bold text-charcoal/50">
-                                    {formatLocalDateTime(item.appointmentStartTime)} - {item.locationName}
-                                </span>
-                            </span>
-                            <span className="flex flex-wrap items-start gap-2 md:justify-end">
-                                <ActivityPill label={formatAdminStatus(item.appointmentStatus)} tone={item.appointmentStatus} />
-                                <ActivityPill label={activityStatusLabel(item)} tone={item.status} />
-                                <span className="rounded-full bg-[#eef5f1] px-3 py-1 text-xs font-black uppercase tracking-[0.08em] text-charcoal/60">
-                                    {item.recipientLabel}
-                                </span>
-                            </span>
+                            {notificationFilterLabel(item)}
                         </button>
                     ))}
                 </div>
-            )}
+
+                <div>
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                        <h3 className="text-lg font-black text-forest">Upcoming reminders</h3>
+                        <span className="text-sm font-bold text-charcoal/45">{upcomingReminders.length} scheduled</span>
+                    </div>
+                    {upcomingReminders.length === 0 ? (
+                        <p className="rounded-md border border-dashed border-[#d7e0d7] bg-[#f8fbf8] p-4 text-sm font-bold text-charcoal/55">
+                            No upcoming reminders with customer contact info.
+                        </p>
+                    ) : (
+                        <div className="grid gap-2">
+                            {upcomingReminders.slice(0, 5).map((item) => (
+                                <button
+                                    key={item.id}
+                                    className="grid gap-2 rounded-md border border-[#e1e8e1] bg-[#fbfdfb] p-3 text-left transition hover:border-green/40 hover:bg-[#f5fbf6] sm:grid-cols-[1fr_auto]"
+                                    onClick={() => onOpenBooking(item.bookingId)}
+                                >
+                                    <span className="min-w-0">
+                                        <span className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.08em] text-green">
+                                            <ChannelIcon channel={item.channel} />
+                                            {activityLabel(item.eventType)}
+                                        </span>
+                                        <span className="mt-1 block truncate text-lg font-black text-forest">{item.customerName}</span>
+                                        <span className="block truncate text-sm font-bold text-charcoal/55">
+                                            {formatLocalDateTime(item.scheduledFor)} for {formatLocalDateTime(item.appointmentStartTime)}
+                                        </span>
+                                    </span>
+                                    <ActivityPill label="Scheduled" tone="pending" />
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {failedActivity.length > 0 && (
+                    <div>
+                        <div className="mb-2 flex items-center gap-2">
+                            <AlertTriangle size={18} className="text-red-600" />
+                            <h3 className="text-lg font-black text-forest">Failed notifications</h3>
+                        </div>
+                        <div className="grid gap-2">
+                            {failedActivity.map((item) => (
+                                <NotificationActivityCard key={`failed-${item.id}`} item={item} onOpenBooking={onOpenBooking} compact />
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                <div>
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                        <h3 className="text-lg font-black text-forest">Recent delivery</h3>
+                        <span className="text-sm font-bold text-charcoal/45">{filteredActivity.length} shown</span>
+                    </div>
+                    {filteredActivity.length === 0 ? (
+                        <p className="rounded-md border border-dashed border-[#d7e0d7] bg-[#f8fbf8] p-4 text-sm font-bold text-charcoal/55">
+                            No notifications match this filter.
+                        </p>
+                    ) : (
+                        <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
+                            {filteredActivity.map((item) => (
+                                <NotificationActivityCard key={item.id} item={item} onOpenBooking={onOpenBooking} />
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
         </section>
+    );
+}
+
+type NotificationCenterFilter = "all" | "sent" | "scheduled" | "failed" | "sms" | "email";
+
+const notificationFilters: NotificationCenterFilter[] = ["all", "sent", "scheduled", "failed", "sms", "email"];
+
+function NotificationActivityCard({
+    item,
+    onOpenBooking,
+    compact = false,
+}: {
+    item: AdminDashboardActivity;
+    onOpenBooking: (bookingId: string) => void;
+    compact?: boolean;
+}) {
+    return (
+        <button
+            className="grid w-full gap-3 rounded-md border border-[#e1e8e1] bg-white p-3 text-left transition hover:border-green/35 hover:bg-[#f8fbf8] sm:grid-cols-[1fr_auto]"
+            onClick={() => onOpenBooking(item.bookingId)}
+        >
+            <span className="min-w-0">
+                <span className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.08em] text-green">
+                    <ChannelIcon channel={item.channel} />
+                    {activityLabel(item.eventType)}
+                </span>
+                <span className="mt-1 block truncate text-lg font-black text-forest">{item.customerName}</span>
+                {!compact && (
+                    <span className="block truncate text-sm font-bold text-charcoal/62">
+                        {item.services.join(", ") || "Appointment"} with {item.barberName}
+                    </span>
+                )}
+                <span className="mt-1 block truncate text-sm font-bold text-charcoal/50">
+                    {formatLocalDateTime(item.appointmentStartTime)} - {item.locationName}
+                </span>
+                {(item.provider || item.errorMessage) && (
+                    <span className="mt-2 block text-xs font-bold text-charcoal/50">
+                        {item.provider ? `Provider: ${item.provider}` : "Provider pending"}
+                        {item.providerMessageId ? ` | ${item.providerMessageId}` : ""}
+                        {item.errorMessage ? ` | ${item.errorMessage}` : ""}
+                    </span>
+                )}
+            </span>
+            <span className="flex flex-wrap items-start gap-2 sm:justify-end">
+                <ActivityPill label={channelLabel(item.channel)} tone={item.channel} />
+                <ActivityPill label={activityStatusLabel(item)} tone={item.status} />
+                <ActivityPill label={item.recipientLabel} tone="recipient" />
+                {item.attemptCount > 1 && <ActivityPill label={`${item.attemptCount} tries`} tone="failed" />}
+            </span>
+        </button>
     );
 }
 
@@ -898,6 +1079,10 @@ function ActivityPill({ label, tone }: { label: string; tone: string }) {
             ? "bg-red-100 text-red-800"
             : tone === "skipped" || tone === "cancelled" || tone === "no_show"
               ? "bg-amber-100 text-amber-800"
+              : tone === "sms"
+                ? "bg-blue-100 text-blue-800"
+                : tone === "email"
+                  ? "bg-violet-100 text-violet-800"
               : tone === "sent" || tone === "confirmed"
                 ? "bg-green/20 text-forest"
                 : "bg-[#eef5f1] text-charcoal/65";
@@ -908,11 +1093,10 @@ function ActivityPill({ label, tone }: { label: string; tone: string }) {
 function DayCalendarBoard({
     bookings,
     schedule,
-    options,
     user,
     selectedDate,
     locationId,
-    barbers,
+    barberItems,
     loading,
     draggingBookingId,
     pendingDragId,
@@ -925,11 +1109,10 @@ function DayCalendarBoard({
 }: {
     bookings: AdminBookingSummary[];
     schedule: AdminSchedule | null;
-    options: AdminCalendarOptions | null;
     user: SafeAdminUser;
     selectedDate: string;
     locationId: string;
-    barbers: AdminBarberOption[];
+    barberItems: ScheduledCalendarBarber[];
     loading: boolean;
     draggingBookingId: string | null;
     pendingDragId: string | null;
@@ -948,13 +1131,16 @@ function DayCalendarBoard({
     const window = businessWindowForDate(selectedDate);
     const boardRows = buildCalendarBoardRows(window.start, window.end, 15);
     const slots = boardRows.bookableSlots;
-    const bookingsBySlot = useMemo(() => indexBookingsByBarberAndTime(bookings, selectedDate, locationId), [bookings, locationId, selectedDate]);
-    const barberColumnMin = barbers.length >= 3 ? 190 : barbers.length === 2 ? 260 : 320;
-    const boardMinWidth = 132 + Math.max(barbers.length, 1) * barberColumnMin;
+    const barbers = barberItems.map((item) => item.barber);
+    const barberColumnMin = barbers.length >= 3 ? 180 : barbers.length === 2 ? 250 : 320;
+    const boardMinWidth = 88 + Math.max(barbers.length, 1) * barberColumnMin;
     const gridTemplateColumns = `${TIME_GUTTER_WIDTH} repeat(${Math.max(barbers.length, 1)}, minmax(${barberColumnMin}px, 1fr))`;
     const headerAvatarSize = barbers.length >= 3 ? "md" : "lg";
+    const boardHeight = slots.length * SLOT_HEIGHT;
+    const offScheduleBookings = barberItems.flatMap((item) => item.offScheduleBookings);
+    const currentLineStyle = selectedDate === todayLocalDate() ? currentTimeLineStyle(window) : null;
 
-    if (!options || loading) {
+    if (!schedule || loading) {
         return (
             <section className="flex min-h-[640px] items-center justify-center rounded-md border border-[#d6ded6] bg-white text-xl font-bold text-charcoal/60">
                 <RefreshCw size={24} className="mr-3 animate-spin" />
@@ -965,15 +1151,19 @@ function DayCalendarBoard({
 
     if (barbers.length === 0) {
         return (
-            <section className="rounded-md border border-[#d6ded6] bg-white p-8 text-xl font-bold text-charcoal/60">
-                No active barbers are available for this calendar filter.
+            <section className="flex min-h-[520px] flex-col items-center justify-center rounded-md border border-[#d6ded6] bg-white p-8 text-center shadow-sm">
+                <CalendarDays size={34} className="text-green" />
+                <p className="mt-4 text-2xl font-black text-forest">No team members scheduled at this location today.</p>
+                <p className="mt-2 max-w-lg text-base font-bold text-charcoal/55">
+                    Use the date or location controls above to check another day board.
+                </p>
             </section>
         );
     }
 
     return (
         <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border border-[#d4ddd4] bg-white shadow-sm">
-            <div className="shrink-0 flex flex-wrap items-center justify-between gap-4 border-b border-[#cfdacf] px-6 py-5">
+            <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-[#cfdacf] px-4 py-4 sm:px-6">
                 <div className="flex items-center gap-3 text-2xl font-black text-forest">
                     <CalendarDays size={28} />
                     Day board
@@ -981,110 +1171,150 @@ function DayCalendarBoard({
                 </div>
                 <CalendarLegend />
             </div>
-            <div className="min-h-0 flex-1 overflow-auto overscroll-contain pb-6">
+            {offScheduleBookings.length > 0 && (
+                <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900 sm:px-6">
+                    {offScheduleBookings.length} booking{offScheduleBookings.length === 1 ? "" : "s"} sit outside scheduled working hours and are flagged on the board.
+                </div>
+            )}
+            <div className="min-h-0 flex-1 overflow-auto overscroll-contain bg-[#fbfdfb] pb-6">
                 <div style={{ minWidth: `max(100%, ${boardMinWidth}px)` }}>
                     <div className="sticky top-0 z-10 grid border-b border-[#c5d0c5] bg-white" style={{ gridTemplateColumns }}>
-                        <div className="sticky left-0 z-20 border-r border-[#d2dcd2] bg-white px-4 py-5 text-base font-black uppercase tracking-[0.12em] text-charcoal/55 2xl:px-5 2xl:py-6">Time</div>
-                        {barbers.map((barber) => (
-                            <div key={barber.id} className="flex min-w-0 items-center gap-3 border-r border-[#d2dcd2] px-4 py-4 last:border-r-0 2xl:gap-4 2xl:px-5 2xl:py-5">
-                                <BarberAvatar barber={barber} size={headerAvatarSize} />
-                                <span className="min-w-0 truncate text-xl font-black text-forest 2xl:text-2xl">{barber.displayName}</span>
+                        <div className="sticky left-0 z-20 border-r border-[#d2dcd2] bg-white px-3 py-4 text-sm font-black uppercase tracking-[0.12em] text-charcoal/55 sm:px-4 2xl:px-5">Time</div>
+                        {barberItems.map((item) => (
+                            <div key={item.barber.id} className="flex min-w-0 items-center gap-3 border-r border-[#d2dcd2] px-3 py-3 last:border-r-0 sm:px-4 2xl:gap-4 2xl:px-5">
+                                <BarberAvatar barber={item.barber} size={headerAvatarSize} />
+                                <span className="min-w-0">
+                                    <span className="block truncate text-lg font-black text-forest 2xl:text-xl">{item.barber.displayName}</span>
+                                    <span className="block truncate text-xs font-black uppercase tracking-[0.08em] text-charcoal/45">
+                                        {item.workingWindows.map((range) => `${formatClockLabel(range.startTime)}-${formatClockLabel(range.endTime)}`).join(", ") || "Off schedule"}
+                                    </span>
+                                </span>
                             </div>
                         ))}
                     </div>
-                    {slots.map((slot) => {
-                        const isHour = slot.endsWith(":00");
-
-                        return (
-                            <div key={slot} className={`grid ${calendarRowLineClasses(slot)} last:border-b-0`} style={{ gridTemplateColumns, minHeight: SLOT_HEIGHT }}>
-                                <div className="sticky left-0 z-[3] border-r border-[#d2dcd2] bg-white px-3 py-4 text-right text-base font-bold text-charcoal/65 2xl:px-5 2xl:text-lg">
-                                    {isHour ? formatClockLabel(slot) : ""}
+                    <div className="grid" style={{ gridTemplateColumns }}>
+                        <div className="sticky left-0 z-[5] border-r border-[#c5d0c5] bg-white" style={{ height: boardHeight }}>
+                            {slots.map((slot) => (
+                                <div
+                                    key={`time-${slot}`}
+                                    className={`absolute left-0 right-0 px-2 pr-3 text-right text-sm font-black ${
+                                        slot.endsWith(":00") ? "text-charcoal/70" : "text-charcoal/35"
+                                    }`}
+                                    style={{ top: timeTopFromClock(slot, window.start), height: SLOT_HEIGHT }}
+                                >
+                                    {slot.endsWith(":00") ? formatClockLabel(slot) : ""}
                                 </div>
-                                {barbers.map((barber) => {
-                                    const startTime = localDateTimeToIso(selectedDate, slot);
-                                    const key = slotKey(barber.id, slot);
-                                    const cellBookings = bookingsBySlot[key] ?? [];
-                                    const blocks = blockedTimesForSlot(schedule?.blockedTimes ?? [], {
-                                        barberId: barber.id,
-                                        locationId,
-                                        selectedDate,
-                                        slot,
-                                    });
-                                    const isCurrent = selectedDate === todayLocalDate() && currentSlotContains(slot);
-                                    const previewState = appointmentPreviewForSlot(appointmentPreview, {
-                                        barberId: barber.id,
-                                        locationId,
-                                        selectedDate,
-                                        slot,
-                                    });
+                            ))}
+                        </div>
+                        {barberItems.map((item) => {
+                            const barberBookings = layoutCalendarBookings(
+                                bookingsForBarberDay(bookings, selectedDate, locationId, item.barber.id),
+                                window.start,
+                                window.end,
+                            );
+                            const unavailableRanges = buildCalendarUnavailableRanges(item.workingWindows, {
+                                startTime: window.start,
+                                endTime: window.end,
+                            });
+                            const blockedOverlays = blockedTimeOverlaysForBarber(schedule.blockedTimes, {
+                                barberId: item.barber.id,
+                                locationId,
+                                selectedDate,
+                                businessWindow: window,
+                            });
 
-                                    return (
+                            return (
+                                <div
+                                    key={item.barber.id}
+                                    className="relative border-r border-[#d4ddd4] bg-white last:border-r-0"
+                                    style={{ height: boardHeight }}
+                                >
+                                    {slots.map((slot) => {
+                                        const startTime = localDateTimeToIso(selectedDate, slot);
+                                        const slotEnd = addMinutesToIso(startTime, 30);
+
+                                        return (
+                                            <button
+                                                key={`${item.barber.id}-${slot}`}
+                                                className={`group absolute left-0 right-0 z-[2] border-b ${calendarRowLineClasses(slot)} outline-none transition hover:bg-[#dff6e7]/55 focus:bg-[#dff6e7]/70 ${
+                                                    draggingBookingId ? "hover:ring-2 hover:ring-inset hover:ring-green/45" : ""
+                                                }`}
+                                                style={{ top: timeTopFromClock(slot, window.start), height: SLOT_HEIGHT }}
+                                                onClick={() => onSlot(item.barber.id, startTime)}
+                                                onDragOver={(event) => {
+                                                    if (draggingBookingId) event.preventDefault();
+                                                }}
+                                                onDrop={(event) => {
+                                                    event.preventDefault();
+                                                    const bookingId = event.dataTransfer.getData("text/plain") || draggingBookingId;
+                                                    const booking = bookings.find((candidate) => candidate.id === bookingId);
+                                                    if (booking) void onDropBooking(booking, item.barber.id, locationId, startTime);
+                                                }}
+                                                title={`Create appointment ${formatLocalTime(startTime)}-${formatLocalTime(slotEnd)}`}
+                                            >
+                                                <span className="pointer-events-none absolute inset-x-2 top-1 hidden rounded border border-green/30 bg-mint/50 px-2 py-1 text-xs font-black text-forest opacity-0 transition group-hover:opacity-100 md:block">
+                                                    {formatLocalTime(startTime)} - {formatLocalTime(slotEnd)}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                    {unavailableRanges.map((range) => (
                                         <div
-                                            key={`${barber.id}-${slot}`}
-                                            role="button"
-                                            tabIndex={0}
-                                            className={`group relative overflow-hidden border-r border-[#d8e1d8] bg-white px-2.5 py-1.5 outline-none last:border-r-0 hover:bg-[#f6fbf7] ${
-                                                isCurrent ? "before:absolute before:left-0 before:right-0 before:top-0 before:z-[2] before:h-1 before:bg-red-500" : ""
-                                            } ${draggingBookingId ? "ring-inset hover:ring-2 hover:ring-green/40" : ""}`}
-                                            onClick={() => onSlot(barber.id, startTime)}
-                                            onKeyDown={(event) => {
-                                                if (event.key === "Enter") onSlot(barber.id, startTime);
+                                            key={`${item.barber.id}-off-${range.startTime}-${range.endTime}`}
+                                            className="pointer-events-none absolute inset-x-0 z-[1] border-y border-[#d4d8d2]/70 opacity-90"
+                                            style={{
+                                                ...rangeStyleFromClock(range.startTime, range.endTime, window.start, window.end),
+                                                backgroundImage:
+                                                    "repeating-linear-gradient(135deg, rgba(74,85,75,0.12) 0 6px, rgba(74,85,75,0.03) 6px 12px)",
                                             }}
-                                            onDragOver={(event) => {
-                                                if (draggingBookingId) event.preventDefault();
-                                            }}
-                                            onDrop={(event) => {
-                                                event.preventDefault();
-                                                const bookingId = event.dataTransfer.getData("text/plain") || draggingBookingId;
-                                                const booking = bookings.find((candidate) => candidate.id === bookingId);
-                                                if (booking) void onDropBooking(booking, barber.id, locationId, startTime);
-                                            }}
+                                        />
+                                    ))}
+                                    {blockedOverlays.map((block) => (
+                                        <div
+                                            key={block.id}
+                                            className="pointer-events-none absolute inset-x-2 z-[3] rounded-md border border-[#a8aaa8] bg-[#e8e9e8]/95 px-3 py-2 text-sm font-black text-charcoal/70 shadow-sm"
+                                            style={block.style}
                                         >
-                                            {previewState.active && (
-                                                <div
-                                                    className={`pointer-events-none absolute inset-0 z-0 border-x border-[#6d5dfc]/45 bg-[#ece9ff]/95 ${
-                                                        previewState.starts ? "rounded-t-md border-t" : ""
-                                                    } ${previewState.ends ? "rounded-b-md border-b" : ""}`}
-                                                />
-                                            )}
-                                            {previewState.starts && (
-                                                <div className="pointer-events-none absolute inset-x-0 top-0 z-[2] flex h-full items-center px-4 text-sm font-black text-[#4d3cff]">
-                                                    {previewState.label}
-                                                </div>
-                                            )}
-                                            {blocks.length > 0 && (
-                                                <div className="absolute inset-x-3 bottom-2 z-[2] rounded bg-charcoal/10 px-3 py-1.5 text-sm font-black text-charcoal/60">
-                                                    {blocks[0].reason || "Blocked"}
-                                                </div>
-                                            )}
-                                            <div className="relative z-[1] space-y-2">
-                                                {cellBookings.map((booking) => (
-                                                    <BookingCard
-                                                        key={booking.id}
-                                                        booking={booking}
-                                                        user={user}
-                                                        pending={pendingDragId === booking.id}
-                                                        onOpen={onOpen}
-                                                        onDragStart={onDragStart}
-                                                        onDragEnd={onDragEnd}
-                                                    />
-                                                ))}
-                                            </div>
+                                            {block.reason || "Blocked"}
                                         </div>
-                                    );
-                                })}
-                            </div>
-                        );
-                    })}
+                                    ))}
+                                    {appointmentPreview?.barberId === item.barber.id && appointmentPreview.locationId === locationId && (
+                                        <div
+                                            className="pointer-events-none absolute inset-x-2 z-[4] rounded-md border border-[#6d5dfc]/45 bg-[#ece9ff]/90 px-3 py-2 text-sm font-black text-[#4d3cff]"
+                                            style={rangeStyleFromIso(appointmentPreview.startTime, appointmentPreview.endTime, window.start, window.end)}
+                                        >
+                                            {formatLocalTime(appointmentPreview.startTime)} - {formatLocalTime(appointmentPreview.endTime)}
+                                        </div>
+                                    )}
+                                    {currentLineStyle && (
+                                        <div className="pointer-events-none absolute left-0 right-0 z-[5] h-0.5 bg-red-500" style={currentLineStyle} />
+                                    )}
+                                    {barberBookings.map(({ booking, style }) => (
+                                        <BookingCard
+                                            key={booking.id}
+                                            booking={booking}
+                                            user={user}
+                                            pending={pendingDragId === booking.id}
+                                            offSchedule={bookingFallsOutsideWorkingWindows(booking, item.workingWindows)}
+                                            style={style}
+                                            onOpen={onOpen}
+                                            onDragStart={onDragStart}
+                                            onDragEnd={onDragEnd}
+                                        />
+                                    ))}
+                                </div>
+                            );
+                        })}
+                    </div>
                     <div className="grid border-t-2 border-[#9fb29f] bg-[#f7faf7]" style={{ gridTemplateColumns, minHeight: 56 }}>
-                        <div className="sticky left-0 z-[3] border-r border-[#c5d0c5] bg-[#f7faf7] px-3 py-4 text-right text-base font-black text-forest 2xl:px-5 2xl:text-lg">
+                        <div className="sticky left-0 z-[5] border-r border-[#c5d0c5] bg-[#f7faf7] px-3 py-4 text-right text-base font-black text-forest 2xl:px-5 2xl:text-lg">
                             {formatClockLabel(boardRows.closeBoundary)}
                         </div>
-                        {barbers.map((barber) => (
+                        {barberItems.map((item) => (
                             <div
-                                key={`${barber.id}-${boardRows.closeBoundary}-close`}
+                                key={`${item.barber.id}-${boardRows.closeBoundary}-close`}
                                 className="border-r border-[#d8e1d8] px-3 py-4 text-sm font-black uppercase tracking-[0.12em] text-charcoal/45 last:border-r-0"
-                                aria-label={`Closed after ${formatClockLabel(boardRows.closeBoundary)} for ${barber.displayName}`}
+                                aria-label={`Closed after ${formatClockLabel(boardRows.closeBoundary)} for ${item.barber.displayName}`}
                             />
                         ))}
                     </div>
@@ -1098,6 +1328,8 @@ function BookingCard({
     booking,
     user,
     pending,
+    offSchedule = false,
+    style,
     onOpen,
     onDragStart,
     onDragEnd,
@@ -1105,20 +1337,25 @@ function BookingCard({
     booking: AdminBookingSummary;
     user: SafeAdminUser;
     pending: boolean;
+    offSchedule?: boolean;
+    style?: CSSProperties;
     onOpen: (bookingId: string) => void;
     onDragStart: (bookingId: string) => void;
     onDragEnd: () => void;
 }) {
     const tone = getBookingCardTone(booking);
     const draggable = booking.status === "confirmed" && (user.role !== "barber" || booking.barberId === user.barberId);
-    const height = Math.max(58, Math.ceil(booking.totalDurationMinutes / 15) * SLOT_HEIGHT - 8);
+    const height = Math.max(54, Math.ceil(booking.totalDurationMinutes / 15) * SLOT_HEIGHT - 8);
 
     return (
         <button
-            className={`relative z-[1] w-full overflow-hidden rounded-md border-l-[5px] px-3 py-2 text-left text-base shadow-sm transition hover:shadow-md ${bookingToneClasses(tone)} ${
+            className={`absolute z-[6] overflow-hidden rounded-md border-l-[5px] px-3 py-2 text-left text-sm shadow-sm transition hover:z-[7] hover:shadow-md ${bookingToneClasses(tone)} ${
                 pending ? "opacity-60" : ""
-            }`}
-            style={{ minHeight: height }}
+            } ${offSchedule ? "ring-2 ring-amber-400" : ""}`}
+            style={{
+                minHeight: height,
+                ...style,
+            }}
             draggable={draggable}
             onClick={(event) => {
                 event.stopPropagation();
@@ -1133,12 +1370,17 @@ function BookingCard({
             onDragEnd={onDragEnd}
             title={draggable ? "Drag to reschedule" : "Open booking"}
         >
-            <span className="block text-sm font-black">{formatLocalTime(booking.startTime)}</span>
-            <span className="block truncate font-black leading-tight">{booking.customerName}</span>
-            <span className="block truncate text-sm opacity-75">{booking.services.join(", ")}</span>
-            <span className="mt-1 inline-flex rounded-full bg-white/65 px-2 py-0.5 text-xs font-black uppercase tracking-[0.08em]">
+            <span className="block text-xs font-black">{formatLocalTime(booking.startTime)}</span>
+            <span className="block truncate text-base font-black leading-tight">{booking.customerName}</span>
+            <span className="block truncate text-xs opacity-75">{booking.services.join(", ")}</span>
+            <span className="mt-1 inline-flex rounded-full bg-white/65 px-2 py-0.5 text-[0.68rem] font-black uppercase tracking-[0.08em]">
                 {booking.source === "walk_in" ? "Walk-in" : formatAdminStatus(booking.status)}
             </span>
+            {offSchedule && (
+                <span className="ml-1 mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[0.68rem] font-black uppercase tracking-[0.08em] text-amber-900">
+                    Outside hours
+                </span>
+            )}
         </button>
     );
 }
@@ -1517,21 +1759,21 @@ function AddAppointmentDrawer({
     }
 
     return (
-        <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-3xl min-w-0 flex-col border-l border-[#cfdacf] bg-white shadow-2xl xl:static xl:inset-auto xl:z-auto xl:h-[100dvh] xl:max-w-none xl:shadow-none">
-            <div className="flex items-start justify-between gap-4 border-b border-[#cfdacf] px-7 py-7">
+        <aside className="fixed inset-0 z-50 flex w-full min-w-0 flex-col bg-white shadow-2xl xl:static xl:inset-auto xl:z-auto xl:h-[100dvh] xl:max-w-none xl:border-l xl:border-[#cfdacf] xl:shadow-none">
+            <div className="flex items-start justify-between gap-4 border-b border-[#cfdacf] px-5 py-5 sm:px-7 sm:py-6">
                 <div>
                     <p className="text-sm font-bold uppercase tracking-[0.14em] text-charcoal/50">Staff create</p>
-                    <h2 className="text-4xl font-black text-forest">Add appointment</h2>
+                    <h2 className="text-3xl font-black text-forest sm:text-4xl">Add appointment</h2>
                 </div>
                 <button className="icon-button" onClick={onClose} title="Close appointment drawer">
                     <X size={24} />
                 </button>
             </div>
             <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-                <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-7 pb-8">
+                <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 pb-8 sm:px-7 sm:py-6">
                     {error && <Notice tone="error" message={error} onClear={() => setError("")} />}
-                    <div className="rounded-md border border-[#d8e1d8] bg-[#f8fbf8] p-4">
-                        <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-md border border-[#cddbcc] bg-[#f8fbf8] p-3 sm:p-4">
+                        <div className="grid gap-3 md:grid-cols-3">
                             <SummaryMetric label="Duration" value={`${totalDurationMinutes || 0} min`} />
                             <SummaryMetric label="Price" value={priceSummary} />
                             <SummaryMetric label="Time" value={`${formatLocalTime(previewStartTime)} - ${formatLocalTime(previewEndTime)}`} />
@@ -1558,7 +1800,7 @@ function AddAppointmentDrawer({
                             </button>
                         </div>
                     </Field>
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-3 md:grid-cols-2">
                         <Field label="Location">
                             <LocationSelect value={locationId} options={options.locations} onChange={setLocationId} />
                         </Field>
@@ -1566,7 +1808,7 @@ function AddAppointmentDrawer({
                             <BarberSelect value={barberId} options={selectableBarbers} user={user} onChange={setBarberId} />
                         </Field>
                         {selectedBarber && (
-                            <div className="sm:col-span-2">
+                            <div className="md:col-span-2">
                                 <BarberPreview barber={selectedBarber} />
                             </div>
                         )}
@@ -1599,19 +1841,22 @@ function AddAppointmentDrawer({
                             />
                         </div>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-md border border-[#d8e1d8] bg-[#f8fbf8] p-4">
+                        <p className="mb-3 text-sm font-bold text-charcoal/55">Add a phone or email to send confirmation and reminders.</p>
+                        <div className="grid gap-3 md:grid-cols-2">
                         <Field label="Phone optional">
                             <input className="input" value={phone} onChange={(event) => setPhone(event.target.value)} />
                         </Field>
                         <Field label="Email optional">
                             <input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
                         </Field>
+                        </div>
                     </div>
                     <Field label="Internal notes">
                         <textarea className="input min-h-20" value={internalNotes} onChange={(event) => setInternalNotes(event.target.value)} />
                     </Field>
                 </div>
-                <div className="shrink-0 border-t border-[#d4ddd4] bg-white px-7 py-5 shadow-[0_-12px_24px_rgba(16,56,38,0.08)]">
+                <div className="shrink-0 border-t border-[#d4ddd4] bg-white px-5 py-4 shadow-[0_-12px_24px_rgba(16,56,38,0.08)] sm:px-7 sm:py-5">
                     <button className="primary-button w-full" type="submit" disabled={submitting || !selectedSlot || !exactSlotAvailable}>
                         {submitting ? "Creating" : bookingSource === "walk_in" ? "Create walk-in" : "Create appointment"}
                     </button>
@@ -1625,7 +1870,7 @@ function SummaryMetric({ label, value }: { label: string; value: string }) {
     return (
         <div className="rounded-md bg-white px-4 py-3">
             <p className="text-xs font-black uppercase tracking-[0.12em] text-charcoal/45">{label}</p>
-            <p className="truncate text-xl font-black text-forest">{value}</p>
+            <p className="break-words text-lg font-black leading-tight text-forest sm:text-xl">{value}</p>
         </div>
     );
 }
@@ -2347,6 +2592,121 @@ function calendarRowLineClasses(slot: string) {
     return "border-b border-[#dbe4db]";
 }
 
+function bookingsForBarberDay(
+    bookings: AdminBookingSummary[],
+    selectedDate: string,
+    locationId: string,
+    barberId: string,
+) {
+    return bookings
+        .filter(
+            (booking) =>
+                booking.barberId === barberId &&
+                booking.locationId === locationId &&
+                localDateFromIso(booking.startTime) === selectedDate,
+        )
+        .sort((a, b) => a.startTime.localeCompare(b.startTime));
+}
+
+function layoutCalendarBookings(bookings: AdminBookingSummary[], businessStartTime: string, businessEndTime: string) {
+    const lanes: number[] = [];
+    const positioned = bookings.map((booking) => {
+        const start = new Date(booking.startTime).getTime();
+        const end = new Date(booking.endTime).getTime();
+        let lane = lanes.findIndex((laneEnd) => laneEnd <= start);
+
+        if (lane === -1) {
+            lane = lanes.length;
+            lanes.push(end);
+        } else {
+            lanes[lane] = end;
+        }
+
+        return { booking, lane };
+    });
+    const laneCount = Math.max(1, lanes.length);
+
+    return positioned.map(({ booking, lane }) => ({
+        booking,
+        style: {
+            ...rangeStyleFromIso(booking.startTime, booking.endTime, businessStartTime, businessEndTime),
+            left: `calc(${(lane / laneCount) * 100}% + 6px)`,
+            width: `calc(${100 / laneCount}% - 12px)`,
+        } satisfies CSSProperties,
+    }));
+}
+
+function blockedTimeOverlaysForBarber(
+    blockedTimes: AdminBlockedTime[],
+    input: {
+        barberId: string;
+        locationId: string;
+        selectedDate: string;
+        businessWindow: { start: string; end: string };
+    },
+): Array<{ id: string; reason: string | null; style: CSSProperties }> {
+    const boardStart = new Date(localDateTimeToIso(input.selectedDate, input.businessWindow.start));
+    const boardEnd = new Date(localDateTimeToIso(input.selectedDate, input.businessWindow.end));
+
+    return blockedTimes
+        .filter((blockedTime) => blockedAppliesToCell(blockedTime, input.barberId, input.locationId))
+        .map((blockedTime) => {
+            const start = new Date(blockedTime.startTime);
+            const end = new Date(blockedTime.endTime);
+            if (start >= boardEnd || end <= boardStart) {
+                return null;
+            }
+
+            const clippedStart = new Date(Math.max(start.getTime(), boardStart.getTime()));
+            const clippedEnd = new Date(Math.min(end.getTime(), boardEnd.getTime()));
+            return {
+                id: blockedTime.id,
+                reason: blockedTime.reason,
+                style: rangeStyleFromIso(
+                    clippedStart.toISOString(),
+                    clippedEnd.toISOString(),
+                    input.businessWindow.start,
+                    input.businessWindow.end,
+                ),
+            };
+        })
+        .filter((item): item is NonNullable<typeof item> => Boolean(item));
+}
+
+function rangeStyleFromClock(startTime: string, endTime: string, businessStartTime: string, businessEndTime: string) {
+    const businessStart = clockToMinutes(businessStartTime);
+    const businessEnd = clockToMinutes(businessEndTime);
+    const start = Math.max(clockToMinutes(startTime), businessStart);
+    const end = Math.min(clockToMinutes(endTime), businessEnd);
+
+    return {
+        top: Math.max(0, ((start - businessStart) / 15) * SLOT_HEIGHT),
+        height: Math.max(18, ((end - start) / 15) * SLOT_HEIGHT),
+    } satisfies CSSProperties;
+}
+
+function rangeStyleFromIso(startTime: string, endTime: string, businessStartTime: string, businessEndTime: string) {
+    return rangeStyleFromClock(localClockFromIso(startTime), localClockFromIso(endTime), businessStartTime, businessEndTime);
+}
+
+function timeTopFromClock(time: string, businessStartTime: string) {
+    return Math.max(0, ((clockToMinutes(time) - clockToMinutes(businessStartTime)) / 15) * SLOT_HEIGHT);
+}
+
+function currentTimeLineStyle(window: { start: string; end: string }) {
+    const now = clockToMinutes(localClockFromDate(new Date()));
+    const start = clockToMinutes(window.start);
+    const end = clockToMinutes(window.end);
+
+    if (now < start || now > end) {
+        return null;
+    }
+
+    return {
+        top: ((now - start) / 15) * SLOT_HEIGHT,
+    } satisfies CSSProperties;
+}
+
 function blockedTimesForSlot(
     blockedTimes: AdminBlockedTime[],
     input: { barberId: string; locationId: string; selectedDate: string; slot: string },
@@ -2531,6 +2891,36 @@ function activityLabel(eventType: AdminDashboardActivity["eventType"]) {
         case "no_show":
             return "No-show marked";
     }
+}
+
+function notificationFilterMatches(item: AdminDashboardActivity, filter: NotificationCenterFilter) {
+    if (filter === "all") return true;
+    if (filter === "scheduled") return Boolean(item.scheduledFor) || item.status === "pending";
+    if (filter === "sms" || filter === "email") return item.channel === filter;
+    return item.status === filter;
+}
+
+function notificationFilterLabel(filter: NotificationCenterFilter) {
+    if (filter === "sms") return "SMS";
+    return filter[0].toUpperCase() + filter.slice(1);
+}
+
+function channelLabel(channel: AdminDashboardActivity["channel"] | AdminUpcomingReminderPreview["channel"]) {
+    if (channel === "sms") return "SMS";
+    if (channel === "email") return "Email";
+    return "Calendar";
+}
+
+function ChannelIcon({ channel }: { channel: AdminDashboardActivity["channel"] | AdminUpcomingReminderPreview["channel"] }) {
+    if (channel === "sms") return <MessageSquare size={15} />;
+    if (channel === "email") return <Mail size={15} />;
+    return <CalendarClock size={15} />;
+}
+
+function deliveryModeTone(mode: AdminDashboardSnapshot["notificationDeliveryMode"]) {
+    if (mode === "live") return "bg-green/20 text-forest";
+    if (mode === "dev") return "bg-amber-100 text-amber-800";
+    return "bg-[#eef5f1] text-charcoal/65";
 }
 
 function activityStatusLabel(item: AdminDashboardActivity) {

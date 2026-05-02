@@ -296,23 +296,36 @@ describe("Phase 9 notification dispatcher", () => {
         expect(repository.attempts.every((attempt) => attempt.attemptCount === 2)).toBe(true);
     });
 
-    test("does not create lifecycle notification attempts for walk-ins or imported bookings", async () => {
+    test("creates lifecycle notification attempts for contacted walk-ins but not imported bookings", async () => {
         const repository = new InMemoryNotificationRepository();
         repository.contexts.set("walk-in-booking", { ...context, bookingId: "walk-in-booking", source: "walk_in" });
         repository.contexts.set("imported-booking", { ...context, bookingId: "imported-booking", source: "imported" });
+        const providerSet = providers() as NotificationProviderSet & {
+            calls: Array<{ channel: NotificationChannel }>;
+        };
 
-        for (const bookingId of ["walk-in-booking", "imported-booking"]) {
-            const result = await dispatchBookingLifecycleNotification({
-                eventType: "booking_confirmation",
-                bookingId,
-                repository,
-                providers: providers(),
-            });
+        const walkInResult = await dispatchBookingLifecycleNotification({
+            eventType: "booking_confirmation",
+            bookingId: "walk-in-booking",
+            repository,
+            providers: providerSet,
+        });
+        const importedResult = await dispatchBookingLifecycleNotification({
+            eventType: "booking_confirmation",
+            bookingId: "imported-booking",
+            repository,
+            providers: providerSet,
+        });
 
-            expect(result).toEqual([]);
-        }
-
-        expect(repository.attempts).toEqual([]);
+        expect(walkInResult.map((item) => item.status).sort()).toEqual(["sent", "sent", "sent", "sent"]);
+        expect(providerSet.calls.map((call) => call.channel).sort()).toEqual(["email", "email", "sms", "sms"]);
+        expect(importedResult).toEqual([]);
+        expect(repository.attempts.map((attempt) => attempt.bookingId)).toEqual([
+            "walk-in-booking",
+            "walk-in-booking",
+            "walk-in-booking",
+            "walk-in-booking",
+        ]);
     });
 
     test("uses the rescheduled start time in reschedule idempotency keys", async () => {
@@ -414,13 +427,31 @@ describe("Phase 10 reminder dispatcher", () => {
         expect(repository.attempts).toEqual([]);
     });
 
+    test("sends reminder attempts for contacted walk-ins", async () => {
+        const repository = new InMemoryNotificationRepository();
+        repository.contexts.set("walk-in-booking", { ...context, bookingId: "walk-in-booking", source: "walk_in" });
+        const providerSet = providers() as NotificationProviderSet & { calls: Array<{ channel: NotificationChannel }> };
+
+        const result = await dispatchBookingReminderNotification({
+            eventType: "reminder_2h",
+            bookingId: "walk-in-booking",
+            repository,
+            providers: providerSet,
+            scheduledFor: new Date("2026-05-04T12:00:00.000Z"),
+            expectedStartTime: context.startTime,
+        });
+
+        expect(result.map((item) => item.status).sort()).toEqual(["sent", "sent"]);
+        expect(providerSet.calls.map((call) => call.channel).sort()).toEqual(["email", "sms"]);
+        expect(repository.attempts.every((attempt) => attempt.bookingId === "walk-in-booking")).toBe(true);
+    });
+
     test("does not create reminder attempts for cancelled or imported bookings", async () => {
         const repository = new InMemoryNotificationRepository();
         const ineligibleBookings: BookingNotificationContext[] = [
             { ...context, bookingId: "cancelled-booking", status: "cancelled" },
             { ...context, bookingId: "completed-booking", status: "completed" },
             { ...context, bookingId: "no-show-booking", status: "no_show" },
-            { ...context, bookingId: "walk-in-booking", source: "walk_in" },
             { ...context, bookingId: "imported-booking", source: "imported" },
         ];
         for (const booking of ineligibleBookings) {
