@@ -534,3 +534,11 @@ After owner approval, cancel the two known production test bookings that blocked
 
 Reason:
 The conflicts were confirmed test data, and the reviewed dry-run reported zero blocked rows after cancellation. Imported bookings need to appear on the new platform without triggering immediate lifecycle notifications or reminder jobs during cutover.
+
+### 2026-05-01 - Use cron-job.org For Five-Minute Production Reminders
+
+Decision:
+Use cron-job.org job `7551064` as the production five-minute scheduler for `GET https://www.leasidefades.com/api/jobs/send-reminders`, secured with `Authorization: Bearer <CRON_SECRET>`. Rotate `CRON_SECRET` in Vercel Production and in cron-job.org together.
+
+Reason:
+The current Vercel Hobby plan blocks five-minute Vercel Cron schedules. An external scheduler keeps 24-hour and 2-hour reminders operational without upgrading immediately, while the secret-gated endpoint prevents public reminder triggers.

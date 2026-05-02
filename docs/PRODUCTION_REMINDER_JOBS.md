@@ -94,6 +94,15 @@ Vercel setup:
 }
 ```
 
+cron-job.org setup:
+- Production currently uses cron-job.org job `7551064`, titled `Leaside Fades reminders`.
+- The job is enabled and calls `https://www.leasidefades.com/api/jobs/send-reminders` to avoid the apex-domain redirect.
+- The schedule is every five minutes (`*/5 * * * *`) in `America/Toronto`.
+- The job sends a custom header named `Authorization` with value `Bearer <CRON_SECRET>`.
+- The 10:20 PM America/Toronto run on May 1, 2026 succeeded with `200 OK` after switching from the apex domain to `www`. A prior 10:15 PM run failed with `307 Temporary Redirect` and can be ignored as setup history.
+- If `CRON_SECRET` is rotated in Vercel, update the cron-job.org header value at the same time and redeploy production so the serverless function receives the new value.
+- Do not create a second scheduler for the same production environment unless this job is disabled first.
+
 Linux cron example:
 
 ```cron
