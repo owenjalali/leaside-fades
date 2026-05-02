@@ -297,7 +297,8 @@
 - [x] Local HTTP smoke test against `node server.js` validates public booking, admin visibility, customer cancel, customer reschedule, and notification rows
 - [x] Runtime-imported server modules avoid TypeScript parameter properties that Node's strip-only TypeScript loader cannot execute
 - [ ] Production env vars configured
-- [ ] Production env vars verified with `npm run notifications:check-live-config`
+- [x] Production notification env vars verified in Vercel runtime through a temporary secret-gated smoke endpoint
+- [ ] Local `npm run notifications:check-live-config` against production-equivalent secrets (blocked while Vercel write-only values pull empty locally)
 - [x] `https://leasidefades.com` loads the production site shell
 - [x] `https://leasidefades.com/book` loads the booking app shell
 - [x] Vercel Neon production database integration `leaside-fades-db` is attached
@@ -311,17 +312,18 @@
 - [x] Production admin calendar internal board scroll reaches the weekday 7:00 PM boundary
 - [ ] Google Places API key and Place ID verified in production
 - [ ] Google Maps, Instagram, and Facebook links verified in production
-- [ ] Resend sender/domain verified for `bookings@leasidefades.com`
-- [ ] Twilio production number verified SMS-capable
+- [ ] Resend sender/domain verified for `bookings@leasidefades.com` (controlled email smoke failed because `leasidefades.com` is not verified in Resend)
+- [x] Twilio production number verified SMS-capable through controlled live smoke
 - [x] Database migration applied
 - [x] Seed data verified
 - [ ] Booking flow tested end-to-end
 - [ ] Admin flow tested end-to-end
 - [ ] Barber flow tested end-to-end
 - [ ] Customer/staff booking confirmation delivery and owner/admin dashboard visibility tested in production/staging logs
-- [ ] Controlled live notification smoke test sent only to owner/test phone and email
+- [x] Controlled live SMS smoke test sent only to owner/test phone
+- [ ] Controlled live email smoke test sent only to owner/test email
 - [ ] Reminder job manually tested against a safe controlled fixture or staging database
-- [ ] Production reminder scheduler enabled only after smoke tests pass
+- [x] Production reminder scheduler enabled through cron-job.org and first successful `200 OK` run observed
 - [ ] Untracked artifacts audited before launch commit
 - [ ] Owner-approved recurring shifts entered before exposing `/book`
 - [x] Observed Fresha launch recurring shifts entered as initial production schedule pending owner verification

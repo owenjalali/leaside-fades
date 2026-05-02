@@ -5,7 +5,7 @@ Use this checklist before replacing public Fresha booking links with `/book`.
 Current launch-prep note:
 - `leasidefades.com`, `/book`, and the production database are live.
 - The initial production schedule has been entered from the Phase 11 observed Fresha roster and still needs owner verification below.
-- Live SMS/email delivery is not approved until Twilio/Resend credentials are configured and a controlled smoke test passes.
+- Controlled Twilio SMS smoke has passed. Live email delivery is not approved until the Resend sending domain is verified and a controlled email smoke test passes.
 - Fresha future-booking import remains pending until the extraction report is reviewed and explicitly approved.
 
 ## Business Data
