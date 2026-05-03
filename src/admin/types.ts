@@ -178,6 +178,7 @@ export type AdminNotificationEventType =
     | "reminder_2h"
     | "no_show";
 export type AdminNotificationStatus = "pending" | "sent" | "failed" | "skipped" | AdminBookingStatus;
+export type AdminNotificationFailureCategory = "provider_config" | "provider_rejected" | "unknown";
 
 export interface AdminDashboardActivity {
     id: string;
@@ -205,6 +206,9 @@ export interface AdminDashboardActivity {
     providerMessageId: string | null;
     attemptCount: number;
     lastAttemptAt: string | null;
+    isActiveFailure: boolean;
+    failureCategory: AdminNotificationFailureCategory | null;
+    failureSummary: string | null;
 }
 
 export interface AdminUpcomingReminderPreview {

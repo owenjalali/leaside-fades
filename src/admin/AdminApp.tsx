@@ -54,13 +54,18 @@ import {
     buildWeekDays,
     bookingFallsOutsideWorkingWindows,
     calendarRangeFitsWorkingWindows,
+    compactNotificationFailureMessage,
     formatAdminStatus,
     formatLocalDateTime,
     formatLocalTime,
     getBookingCardTone,
+    getActiveNotificationFailures,
     getScheduledCalendarBarbers,
     groupBookingsByLocalDate,
+    notificationFilterMatches,
+    notificationFilters,
     todayLocalDate,
+    type NotificationCenterFilter,
     type ScheduledCalendarBarber,
 } from "./admin-utils";
 import type {
@@ -926,7 +931,7 @@ function NotificationCenter({
 }) {
     const [filter, setFilter] = useState<NotificationCenterFilter>("all");
     const filteredActivity = activity.filter((item) => notificationFilterMatches(item, filter));
-    const failedActivity = activity.filter((item) => item.status === "failed").slice(0, 4);
+    const activeFailures = getActiveNotificationFailures(activity);
 
     return (
         <section className="rounded-md border border-[#d7e0d7] bg-white shadow-sm">
@@ -988,19 +993,30 @@ function NotificationCenter({
                     )}
                 </div>
 
-                {failedActivity.length > 0 && (
-                    <div>
-                        <div className="mb-2 flex items-center gap-2">
-                            <AlertTriangle size={18} className="text-red-600" />
-                            <h3 className="text-lg font-black text-forest">Failed notifications</h3>
-                        </div>
+                <div>
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                        <span className="flex items-center gap-2">
+                            {activeFailures.length > 0 ? (
+                                <AlertTriangle size={18} className="text-red-600" />
+                            ) : (
+                                <Check size={18} className="text-green" />
+                            )}
+                            <h3 className="text-lg font-black text-forest">Delivery issues</h3>
+                        </span>
+                        <span className="text-sm font-bold text-charcoal/45">{activeFailures.length} active</span>
+                    </div>
+                    {activeFailures.length === 0 ? (
+                        <p className="rounded-md border border-dashed border-[#d7e0d7] bg-[#f8fbf8] p-4 text-sm font-bold text-charcoal/55">
+                            No active delivery issues.
+                        </p>
+                    ) : (
                         <div className="grid gap-2">
-                            {failedActivity.map((item) => (
-                                <NotificationActivityCard key={`failed-${item.id}`} item={item} onOpenBooking={onOpenBooking} compact />
+                            {activeFailures.map((item) => (
+                                <NotificationActivityCard key={`active-failure-${item.id}`} item={item} onOpenBooking={onOpenBooking} compact />
                             ))}
                         </div>
-                    </div>
-                )}
+                    )}
+                </div>
 
                 <div>
                     <div className="mb-2 flex items-center justify-between gap-3">
@@ -1024,10 +1040,6 @@ function NotificationCenter({
     );
 }
 
-type NotificationCenterFilter = "all" | "sent" | "scheduled" | "failed" | "sms" | "email";
-
-const notificationFilters: NotificationCenterFilter[] = ["all", "sent", "scheduled", "failed", "sms", "email"];
-
 function NotificationActivityCard({
     item,
     onOpenBooking,
@@ -1037,6 +1049,8 @@ function NotificationActivityCard({
     onOpenBooking: (bookingId: string) => void;
     compact?: boolean;
 }) {
+    const providerDetail = compactNotificationFailureMessage(item.errorMessage, item.failureSummary);
+
     return (
         <button
             className="grid w-full gap-3 rounded-md border border-[#e1e8e1] bg-white p-3 text-left transition hover:border-green/35 hover:bg-[#f8fbf8] sm:grid-cols-[1fr_auto]"
@@ -1056,17 +1070,18 @@ function NotificationActivityCard({
                 <span className="mt-1 block truncate text-sm font-bold text-charcoal/50">
                     {formatLocalDateTime(item.appointmentStartTime)} - {item.locationName}
                 </span>
-                {(item.provider || item.errorMessage) && (
+                {(item.provider || providerDetail) && (
                     <span className="mt-2 block text-xs font-bold text-charcoal/50">
                         {item.provider ? `Provider: ${item.provider}` : "Provider pending"}
                         {item.providerMessageId ? ` | ${item.providerMessageId}` : ""}
-                        {item.errorMessage ? ` | ${item.errorMessage}` : ""}
+                        {providerDetail ? ` | ${providerDetail}` : ""}
                     </span>
                 )}
             </span>
             <span className="flex flex-wrap items-start gap-2 sm:justify-end">
                 <ActivityPill label={channelLabel(item.channel)} tone={item.channel} />
                 <ActivityPill label={activityStatusLabel(item)} tone={item.status} />
+                {item.status === "failed" && !item.isActiveFailure && <ActivityPill label="Historical" tone="historical" />}
                 <ActivityPill label={item.recipientLabel} tone="recipient" />
                 {item.attemptCount > 1 && <ActivityPill label={`${item.attemptCount} tries`} tone="failed" />}
             </span>
@@ -1078,6 +1093,8 @@ function ActivityPill({ label, tone }: { label: string; tone: string }) {
     const classes =
         tone === "failed"
             ? "bg-red-100 text-red-800"
+            : tone === "historical"
+              ? "bg-[#eef5f1] text-charcoal/55"
             : tone === "skipped" || tone === "cancelled" || tone === "no_show"
               ? "bg-amber-100 text-amber-800"
               : tone === "sms"
@@ -2931,13 +2948,6 @@ function activityLabel(eventType: AdminDashboardActivity["eventType"]) {
         case "no_show":
             return "No-show marked";
     }
-}
-
-function notificationFilterMatches(item: AdminDashboardActivity, filter: NotificationCenterFilter) {
-    if (filter === "all") return true;
-    if (filter === "scheduled") return Boolean(item.scheduledFor) || item.status === "pending";
-    if (filter === "sms" || filter === "email") return item.channel === filter;
-    return item.status === filter;
 }
 
 function notificationFilterLabel(filter: NotificationCenterFilter) {

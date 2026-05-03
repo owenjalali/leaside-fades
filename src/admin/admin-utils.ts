@@ -4,6 +4,7 @@ import type {
     AdminBookingStatus,
     AdminBookingSummary,
     AdminCalendarOptions,
+    AdminDashboardActivity,
     AdminDay,
     AdminSchedule,
     AdminScheduleFilters,
@@ -62,6 +63,34 @@ export function buildAdminScheduleQuery(filters: AdminScheduleFilters) {
     }
 
     return params.toString();
+}
+
+export type NotificationCenterFilter = "all" | "sent" | "scheduled" | "failed" | "sms" | "email";
+
+export const notificationFilters: NotificationCenterFilter[] = ["all", "sent", "scheduled", "failed", "sms", "email"];
+
+export function getActiveNotificationFailures(activity: AdminDashboardActivity[]) {
+    return activity.filter((item) => item.status === "failed" && item.isActiveFailure).slice(0, 4);
+}
+
+export function notificationFilterMatches(item: AdminDashboardActivity, filter: NotificationCenterFilter) {
+    if (filter === "all") return true;
+    if (filter === "scheduled") return Boolean(item.scheduledFor) || item.status === "pending";
+    if (filter === "sms" || filter === "email") return item.channel === filter;
+    return item.status === filter;
+}
+
+export function compactNotificationFailureMessage(errorMessage: string | null, failureSummary: string | null) {
+    if (failureSummary) {
+        return failureSummary;
+    }
+
+    const compacted = (errorMessage ?? "").replace(/\s+/g, " ").trim();
+    if (!compacted) {
+        return null;
+    }
+
+    return compacted.length > 117 ? `${compacted.slice(0, 114)}...` : compacted;
 }
 
 export function buildWeekDays(selectedDate: string) {

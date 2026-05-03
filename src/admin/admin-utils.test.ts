@@ -14,13 +14,23 @@ import {
     bookingFallsOutsideWorkingWindows,
     calendarRangeFitsWorkingWindows,
     formatAdminStatus,
+    compactNotificationFailureMessage,
     getBookingCardTone,
+    getActiveNotificationFailures,
     getScheduledCalendarBarbers,
     formatScheduleWindow,
     groupBookingsByLocalDate,
     groupShiftsByBarberAndWeekday,
+    notificationFilterMatches,
 } from "./admin-utils";
-import type { AdminBookingSummary, AdminCalendarOptions, AdminSchedule, AdminShift, SafeAdminUser } from "./types";
+import type {
+    AdminBookingSummary,
+    AdminCalendarOptions,
+    AdminDashboardActivity,
+    AdminSchedule,
+    AdminShift,
+    SafeAdminUser,
+} from "./types";
 
 const bookingA: AdminBookingSummary = {
     id: "booking-a",
@@ -45,6 +55,38 @@ const bookingB: AdminBookingSummary = {
     startTime: "2026-04-28T15:00:00.000Z",
     endTime: "2026-04-28T15:30:00.000Z",
 };
+
+const failedNotificationActivity = {
+    id: "failed-historical",
+    bookingId: "booking-a",
+    eventType: "booking_confirmation",
+    status: "failed",
+    channel: "email",
+    recipientType: "customer",
+    recipientLabel: "Customer Email a***@example.com",
+    customerName: "Ada Lovelace",
+    barberId: "barber-a",
+    barberName: "Sam To",
+    locationName: "Leaside Fades Eglinton",
+    appointmentStatus: "confirmed",
+    appointmentSource: "public",
+    appointmentStartTime: "2026-05-02T19:00:00.000Z",
+    appointmentEndTime: "2026-05-02T19:30:00.000Z",
+    services: ["Men's Cut"],
+    createdAt: "2026-05-02T13:00:00.000Z",
+    updatedAt: "2026-05-02T13:00:00.000Z",
+    sentAt: null,
+    scheduledFor: null,
+    errorMessage:
+        "The leasidefades.com domain is not verified. Please, add and verify your domain on https://resend.com/domains",
+    provider: "resend",
+    providerMessageId: null,
+    attemptCount: 15,
+    lastAttemptAt: "2026-05-02T13:00:00.000Z",
+    isActiveFailure: false,
+    failureCategory: "provider_config",
+    failureSummary: "Email provider configuration issue",
+} as AdminDashboardActivity;
 
 describe("Phase 6 admin UI utilities", () => {
     test("builds Sunday-start week days for the selected date", () => {
@@ -90,6 +132,26 @@ describe("Phase 6 admin UI utilities", () => {
     test("formats booking status labels for compact UI surfaces", () => {
         expect(formatAdminStatus("confirmed")).toBe("Confirmed");
         expect(formatAdminStatus("no_show")).toBe("No show");
+    });
+
+    test("keeps historical failed notifications in failed history while excluding them from active issues", () => {
+        const activeFailure = {
+            ...failedNotificationActivity,
+            id: "active-failure",
+            isActiveFailure: true,
+        };
+
+        expect(getActiveNotificationFailures([failedNotificationActivity, activeFailure])).toEqual([
+            activeFailure,
+        ]);
+        expect(notificationFilterMatches(failedNotificationActivity, "failed")).toBe(true);
+    });
+
+    test("trims long provider failure messages for dashboard cards", () => {
+        expect(compactNotificationFailureMessage(failedNotificationActivity.errorMessage, failedNotificationActivity.failureSummary)).toBe(
+            "Email provider configuration issue",
+        );
+        expect(compactNotificationFailureMessage("x".repeat(180), null)).toHaveLength(117);
     });
 });
 

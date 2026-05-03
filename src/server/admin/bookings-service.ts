@@ -107,6 +107,8 @@ export interface AdminDashboardActivityScope {
     limit: number;
 }
 
+export type AdminNotificationFailureCategory = "provider_config" | "provider_rejected" | "unknown";
+
 export interface AdminDashboardActivityRecord {
     id: string;
     bookingId: string;
@@ -133,6 +135,9 @@ export interface AdminDashboardActivityRecord {
     providerMessageId: string | null;
     attemptCount: number;
     lastAttemptAt: Date | null;
+    isActiveFailure?: boolean;
+    failureCategory?: AdminNotificationFailureCategory | null;
+    failureSummary?: string | null;
 }
 
 export interface AdminUpcomingReminderPreview {
@@ -394,7 +399,7 @@ export async function getAdminDashboard(
     return {
         todayBookings,
         upcomingBookings,
-        activity,
+        activity: classifyDashboardActivityFailures(activity, now),
         notificationDeliveryMode: options.notificationDeliveryMode ?? "mock",
         upcomingReminders: buildUpcomingReminderPreviews(upcomingBookings, now),
     };
@@ -819,6 +824,106 @@ function resolveWritableBarberId(
     }
 
     return user.barberId;
+}
+
+function classifyDashboardActivityFailures(
+    activity: AdminDashboardActivityRecord[],
+    now: Date,
+): AdminDashboardActivityRecord[] {
+    return activity.map((item) => {
+        const failureCategory = classifyNotificationFailure(item);
+
+        return {
+            ...item,
+            isActiveFailure: isNotificationFailureStillActionable(item, now),
+            failureCategory,
+            failureSummary: failureCategory ? notificationFailureSummary(item, failureCategory) : null,
+        };
+    });
+}
+
+function isNotificationFailureStillActionable(item: AdminDashboardActivityRecord, now: Date) {
+    if (item.status !== "failed") {
+        return false;
+    }
+
+    if (item.appointmentStatus === "completed" || item.appointmentStatus === "no_show") {
+        return false;
+    }
+
+    if (
+        item.eventType === "booking_confirmation" ||
+        item.eventType === "reminder_24h" ||
+        item.eventType === "reminder_2h"
+    ) {
+        return item.appointmentStatus === "confirmed" && item.appointmentStartTime.getTime() > now.getTime();
+    }
+
+    if (item.eventType === "reschedule_confirmation") {
+        return (
+            item.appointmentStatus === "confirmed" &&
+            item.appointmentStartTime.getTime() > now.getTime() &&
+            isRecentNotificationFailure(item, now)
+        );
+    }
+
+    if (item.eventType === "cancellation_confirmation") {
+        return item.appointmentStatus === "cancelled" && isRecentNotificationFailure(item, now);
+    }
+
+    return false;
+}
+
+function isRecentNotificationFailure(item: AdminDashboardActivityRecord, now: Date) {
+    const recentWindowMs = 24 * 60 * 60 * 1000;
+    const attemptedAt = item.lastAttemptAt ?? item.updatedAt;
+    return attemptedAt.getTime() >= now.getTime() - recentWindowMs;
+}
+
+function classifyNotificationFailure(item: AdminDashboardActivityRecord): AdminNotificationFailureCategory | null {
+    if (item.status !== "failed") {
+        return null;
+    }
+
+    const provider = item.provider?.toLowerCase() ?? "";
+    const error = item.errorMessage?.toLowerCase() ?? "";
+    const text = `${provider} ${error}`;
+
+    if (
+        text.includes("domain is not verified") ||
+        text.includes("resend.com/domains") ||
+        text.includes("required for live notification delivery") ||
+        text.includes("api key") ||
+        text.includes("configuration")
+    ) {
+        return "provider_config";
+    }
+
+    if (item.errorMessage || item.provider) {
+        return "provider_rejected";
+    }
+
+    return "unknown";
+}
+
+function notificationFailureSummary(
+    item: AdminDashboardActivityRecord,
+    category: AdminNotificationFailureCategory,
+) {
+    if (category === "provider_config") {
+        return item.channel === "sms" ? "SMS provider configuration issue" : "Email provider configuration issue";
+    }
+
+    if (category === "provider_rejected") {
+        return compactNotificationFailureText(item.errorMessage ?? "Provider rejected delivery.");
+    }
+
+    return "Notification delivery failed";
+}
+
+function compactNotificationFailureText(value: string) {
+    const compacted = value.replace(/\s+/g, " ").trim();
+    return compacted.length > 117 ? `${compacted.slice(0, 114)}...` : compacted;
 }
 
 function buildUpcomingReminderPreviews(bookings: AdminBookingRecord[], now: Date): AdminUpcomingReminderPreview[] {

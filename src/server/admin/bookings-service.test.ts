@@ -235,6 +235,7 @@ class InMemoryPhase6Repository
     customers: CreateBookingRequest["customer"][] = [];
     bookingServices: Array<BookingServiceSnapshot & { bookingId: string }> = [];
     availabilityData: AvailabilityData = baseAvailability();
+    activityRecords: AdminDashboardActivityRecord[] | null = null;
     listCalls: any[] = [];
     transactionCount = 0;
 
@@ -260,6 +261,12 @@ class InMemoryPhase6Repository
     }
 
     async listDashboardActivityForAdminScope(scope: any): Promise<AdminDashboardActivityRecord[]> {
+        if (this.activityRecords) {
+            return this.activityRecords
+                .filter((activity) => !scope.barberId || activity.barberId === scope.barberId)
+                .slice(0, scope.limit);
+        }
+
         return this.bookings
             .filter((booking) => !scope.barberId || booking.barberId === scope.barberId)
             .slice(0, scope.limit)
@@ -470,6 +477,39 @@ class InMemoryPhase6Repository
         booking.totalDurationMinutes = input.totalDurationMinutes;
         return booking;
     }
+}
+
+function dashboardActivityFixture(
+    overrides: Partial<AdminDashboardActivityRecord> = {},
+): AdminDashboardActivityRecord {
+    return {
+        id: "activity-fixture",
+        bookingId: "booking-fixture",
+        eventType: "booking_confirmation",
+        status: "sent",
+        channel: "email",
+        recipientType: "customer",
+        recipientLabel: "Customer Email a***@example.com",
+        customerName: "Ada Lovelace",
+        barberId: barberAId,
+        barberName: "Sam To",
+        locationName: "Leaside Fades Eglinton",
+        appointmentStatus: "confirmed",
+        appointmentSource: "public",
+        appointmentStartTime: new Date("2026-05-03T19:00:00.000Z"),
+        appointmentEndTime: new Date("2026-05-03T19:30:00.000Z"),
+        services: ["Men's Cut"],
+        createdAt: new Date("2026-05-03T13:55:00.000Z"),
+        updatedAt: new Date("2026-05-03T13:55:00.000Z"),
+        sentAt: null,
+        scheduledFor: null,
+        errorMessage: null,
+        provider: "mock",
+        providerMessageId: null,
+        attemptCount: 1,
+        lastAttemptAt: new Date("2026-05-03T13:55:00.000Z"),
+        ...overrides,
+    };
 }
 
 describe("Phase 6 admin calendar and booking management service", () => {
@@ -690,6 +730,83 @@ describe("Phase 6 admin calendar and booking management service", () => {
         expect(ownerDashboard.activity.map((item) => item.bookingId).sort()).toEqual(["booking-a", "booking-b"]);
         expect(barberDashboard.todayBookings.map((booking) => booking.id)).toEqual(["booking-a"]);
         expect(barberDashboard.activity.map((item) => item.bookingId)).toEqual(["booking-a"]);
+    });
+
+    test("dashboard classifies failed notification activity as active only while still actionable", async () => {
+        const repository = new InMemoryPhase6Repository();
+        const currentTime = new Date("2026-05-03T14:00:00.000Z");
+        repository.activityRecords = [
+            dashboardActivityFixture({
+                id: "future-provider-config-failure",
+                bookingId: "future-booking",
+                status: "failed",
+                eventType: "booking_confirmation",
+                channel: "email",
+                recipientLabel: "Customer Email a***@example.com",
+                appointmentStatus: "confirmed",
+                appointmentStartTime: new Date("2026-05-03T19:00:00.000Z"),
+                appointmentEndTime: new Date("2026-05-03T19:30:00.000Z"),
+                provider: "resend",
+                errorMessage:
+                    "The leasidefades.com domain is not verified. Please, add and verify your domain on https://resend.com/domains",
+            }),
+            dashboardActivityFixture({
+                id: "past-provider-config-failure",
+                bookingId: "past-booking",
+                status: "failed",
+                eventType: "reminder_2h",
+                channel: "email",
+                recipientLabel: "Customer Email b***@example.com",
+                appointmentStatus: "confirmed",
+                appointmentStartTime: new Date("2026-05-02T19:00:00.000Z"),
+                appointmentEndTime: new Date("2026-05-02T19:30:00.000Z"),
+                provider: "resend",
+                errorMessage:
+                    "The leasidefades.com domain is not verified. Please, add and verify your domain on https://resend.com/domains",
+            }),
+            dashboardActivityFixture({
+                id: "future-provider-rejected-failure",
+                bookingId: "future-sms-booking",
+                status: "failed",
+                eventType: "reminder_24h",
+                channel: "sms",
+                recipientLabel: "Customer SMS ***0199",
+                appointmentStatus: "confirmed",
+                appointmentStartTime: new Date("2026-05-04T19:00:00.000Z"),
+                appointmentEndTime: new Date("2026-05-04T19:30:00.000Z"),
+                provider: "twilio",
+                errorMessage: "The destination phone number is unreachable.",
+            }),
+        ];
+
+        const dashboard = await getAdminDashboard(
+            { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+            repository,
+            { now: currentTime },
+        );
+
+        expect(dashboard.activity).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: "future-provider-config-failure",
+                    isActiveFailure: true,
+                    failureCategory: "provider_config",
+                    failureSummary: "Email provider configuration issue",
+                }),
+                expect.objectContaining({
+                    id: "past-provider-config-failure",
+                    isActiveFailure: false,
+                    failureCategory: "provider_config",
+                    failureSummary: "Email provider configuration issue",
+                }),
+                expect.objectContaining({
+                    id: "future-provider-rejected-failure",
+                    isActiveFailure: true,
+                    failureCategory: "provider_rejected",
+                    failureSummary: "The destination phone number is unreachable.",
+                }),
+            ]),
+        );
     });
 
     test("manual booking rejects overlapping confirmed bookings", async () => {

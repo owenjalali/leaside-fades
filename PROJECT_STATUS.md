@@ -54,6 +54,7 @@ Phase 12 launch-prep status:
 - Calendar empty-slot actions are disabled anywhere a 30-minute staff-created appointment would fall outside the selected barber's working window or overlap blocked time; those non-working cells render with stronger grey diagonal shading.
 - Calendar staff columns are computed from selected date, selected location, active shifts, and shift overrides. Static barber-location assignment alone no longer makes a staff member appear on that day board.
 - `/admin/dashboard` Notification Center now includes delivery-mode, status/channel filters, upcoming reminder previews, failed rows, provider/error details, and SMS/email badges.
+- Notification Center failed rows are classified as active delivery issues vs historical audit entries. Past Resend/domain verification failures stay in Failed history but no longer dominate the main dashboard once they are no longer actionable.
 - Public Fresha booking fallbacks were replaced with the custom booking flow at `https://leasidefades.com/book`, with a staff login link exposed in the public footer.
 - Public `Book Now` CTAs now open `/book` directly instead of a location dropdown; location selection remains inside the booking flow, while `Call` CTAs remain location-specific.
 - Vercel production routing is configured for `/book`, `/booking`, and `/admin` while `/api/*` remains on the Express serverless route.

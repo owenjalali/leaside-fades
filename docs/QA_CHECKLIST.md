@@ -358,4 +358,5 @@
 - [x] Admin calendar flags bookings that sit outside scheduled working hours
 - [x] Mobile add appointment flow uses a full-screen form with sticky create action
 - [x] Notification Center shows delivery mode, filters, upcoming reminder previews, failed rows, channel badges, and provider/error details
+- [x] Notification Center separates active delivery issues from historical failed notification audit rows
 - [x] Playwright MCP browser QA verified `/admin/calendar` and the Notification Center at iPhone width, 1280x720, 1440x900, and 1912x970

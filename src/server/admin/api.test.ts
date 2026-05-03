@@ -361,6 +361,7 @@ class InMemoryAdminBookingsRepository
     customers: CreateBookingRequest["customer"][] = [];
     bookingServices: Array<BookingServiceSnapshot & { bookingId: string }> = [];
     availabilityData = baseAvailability();
+    activityRecords: AdminDashboardActivityRecord[] | null = null;
 
     async listBookingsForAdminScope(scope: any) {
         const bookings = this.bookings.filter((booking) => {
@@ -383,6 +384,12 @@ class InMemoryAdminBookingsRepository
     }
 
     async listDashboardActivityForAdminScope(scope: any): Promise<AdminDashboardActivityRecord[]> {
+        if (this.activityRecords) {
+            return this.activityRecords
+                .filter((activity) => !scope.barberId || activity.barberId === scope.barberId)
+                .slice(0, scope.limit);
+        }
+
         return this.bookings
             .filter((booking) => !scope.barberId || booking.barberId === scope.barberId)
             .slice(0, scope.limit)
@@ -568,6 +575,39 @@ class InMemoryAdminBookingsRepository
         booking.totalDurationMinutes = input.totalDurationMinutes;
         return booking;
     }
+}
+
+function dashboardActivityFixture(
+    overrides: Partial<AdminDashboardActivityRecord> = {},
+): AdminDashboardActivityRecord {
+    return {
+        id: "activity-fixture",
+        bookingId: "booking-fixture",
+        eventType: "booking_confirmation",
+        status: "sent",
+        channel: "email",
+        recipientType: "customer",
+        recipientLabel: "Customer Email a***@example.com",
+        customerName: "Ada Lovelace",
+        barberId: "barber-a",
+        barberName: "Sam To",
+        locationName: "Leaside Fades Eglinton",
+        appointmentStatus: "confirmed",
+        appointmentSource: "public",
+        appointmentStartTime: new Date("2026-05-03T19:00:00.000Z"),
+        appointmentEndTime: new Date("2026-05-03T19:30:00.000Z"),
+        services: ["Men's Cut"],
+        createdAt: new Date("2026-05-03T13:55:00.000Z"),
+        updatedAt: new Date("2026-05-03T13:55:00.000Z"),
+        sentAt: null,
+        scheduledFor: null,
+        errorMessage: null,
+        provider: "mock",
+        providerMessageId: null,
+        attemptCount: 1,
+        lastAttemptAt: new Date("2026-05-03T13:55:00.000Z"),
+        ...overrides,
+    };
 }
 
 async function createTestApp() {
@@ -1128,6 +1168,61 @@ describe("Phase 6 admin calendar and booking management API", () => {
         expect(JSON.stringify(response.body.activity)).not.toContain("token");
         expect(JSON.stringify(response.body.activity)).not.toContain("cancelUrl");
         expect(JSON.stringify(response.body.activity)).not.toContain("rescheduleUrl");
+    });
+
+    test("owner dashboard serializes active and historical notification failure metadata", async () => {
+        const { app, bookingsRepository } = await createTestApp();
+        bookingsRepository.activityRecords = [
+            dashboardActivityFixture({
+                id: "active-resend-failure",
+                bookingId: "booking-a",
+                status: "failed",
+                eventType: "booking_confirmation",
+                channel: "email",
+                provider: "resend",
+                errorMessage:
+                    "The leasidefades.com domain is not verified. Please, add and verify your domain on https://resend.com/domains",
+                appointmentStartTime: new Date("2026-05-03T19:00:00.000Z"),
+                appointmentEndTime: new Date("2026-05-03T19:30:00.000Z"),
+            }),
+            dashboardActivityFixture({
+                id: "historical-resend-failure",
+                bookingId: "booking-b",
+                status: "failed",
+                eventType: "reminder_2h",
+                channel: "email",
+                provider: "resend",
+                errorMessage:
+                    "The leasidefades.com domain is not verified. Please, add and verify your domain on https://resend.com/domains",
+                appointmentStartTime: new Date("2026-04-26T19:00:00.000Z"),
+                appointmentEndTime: new Date("2026-04-26T19:30:00.000Z"),
+            }),
+        ];
+        const agent = request.agent(app);
+
+        await agent
+            .post("/api/admin/auth/login")
+            .send({ email: "owner@example.com", password: "correct-password" })
+            .expect(200);
+
+        const response = await agent.get("/api/admin/dashboard").expect(200);
+
+        expect(response.body.activity).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: "active-resend-failure",
+                    isActiveFailure: true,
+                    failureCategory: "provider_config",
+                    failureSummary: "Email provider configuration issue",
+                }),
+                expect.objectContaining({
+                    id: "historical-resend-failure",
+                    isActiveFailure: false,
+                    failureCategory: "provider_config",
+                    failureSummary: "Email provider configuration issue",
+                }),
+            ]),
+        );
     });
 
     test("barber cannot read or mutate another barber's bookings through Phase 6 routes", async () => {
