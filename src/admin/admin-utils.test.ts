@@ -12,6 +12,7 @@ import {
     buildMonthDays,
     buildWeekDays,
     bookingFallsOutsideWorkingWindows,
+    calendarRangeFitsWorkingWindows,
     formatAdminStatus,
     getBookingCardTone,
     getScheduledCalendarBarbers,
@@ -378,13 +379,25 @@ describe("Phase 13 admin calendar schedule visibility utilities", () => {
 
     test("computes non-working ranges and flags bookings outside scheduled hours", () => {
         const windows = [
-            { barberId: "laura", locationId: "millwood", startTime: "15:00", endTime: "19:00", source: "shift" as const },
+            { barberId: "laura", locationId: "millwood", startTime: "15:30", endTime: "19:00", source: "shift" as const },
         ];
 
         expect(buildCalendarUnavailableRanges(windows, { startTime: "10:00", endTime: "19:00" })).toEqual([
-            { startTime: "10:00", endTime: "15:00" },
+            { startTime: "10:00", endTime: "15:30" },
         ]);
         expect(bookingFallsOutsideWorkingWindows({ ...bookingA, startTime: "2026-05-02T21:00:00.000Z", endTime: "2026-05-02T21:30:00.000Z" }, windows)).toBe(false);
         expect(bookingFallsOutsideWorkingWindows({ ...bookingA, startTime: "2026-05-02T18:30:00.000Z", endTime: "2026-05-02T19:00:00.000Z" }, windows)).toBe(true);
+    });
+
+    test("marks only ranges fully inside working windows as clickable", () => {
+        const windows = [
+            { barberId: "laura", locationId: "millwood", startTime: "15:30", endTime: "19:00", source: "shift" as const },
+        ];
+
+        expect(calendarRangeFitsWorkingWindows({ startTime: "15:00", endTime: "15:30" }, windows)).toBe(false);
+        expect(calendarRangeFitsWorkingWindows({ startTime: "15:15", endTime: "15:45" }, windows)).toBe(false);
+        expect(calendarRangeFitsWorkingWindows({ startTime: "15:30", endTime: "16:00" }, windows)).toBe(true);
+        expect(calendarRangeFitsWorkingWindows({ startTime: "18:30", endTime: "19:00" }, windows)).toBe(true);
+        expect(calendarRangeFitsWorkingWindows({ startTime: "18:45", endTime: "19:15" }, windows)).toBe(false);
     });
 });

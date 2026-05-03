@@ -53,6 +53,7 @@ import {
     buildMonthDays,
     buildWeekDays,
     bookingFallsOutsideWorkingWindows,
+    calendarRangeFitsWorkingWindows,
     formatAdminStatus,
     formatLocalDateTime,
     formatLocalTime,
@@ -1232,25 +1233,47 @@ function DayCalendarBoard({
                                     {slots.map((slot) => {
                                         const startTime = localDateTimeToIso(selectedDate, slot);
                                         const slotEnd = addMinutesToIso(startTime, 30);
+                                        const slotEndClock = localClockFromIso(slotEnd);
+                                        const fitsWorkingWindow = calendarRangeFitsWorkingWindows(
+                                            { startTime: slot, endTime: slotEndClock },
+                                            item.workingWindows,
+                                        );
+                                        const blocked = blockedTimesOverlapRange(schedule.blockedTimes, {
+                                            barberId: item.barber.id,
+                                            locationId,
+                                            startTime,
+                                            endTime: slotEnd,
+                                        });
+                                        const canCreateHere = fitsWorkingWindow && !blocked;
 
                                         return (
                                             <button
                                                 key={`${item.barber.id}-${slot}`}
-                                                className={`group absolute left-0 right-0 z-[2] border-b ${calendarRowLineClasses(slot)} outline-none transition hover:bg-[#dff6e7]/55 focus:bg-[#dff6e7]/70 ${
-                                                    draggingBookingId ? "hover:ring-2 hover:ring-inset hover:ring-green/45" : ""
+                                                className={`group absolute left-0 right-0 z-[2] border-b ${calendarRowLineClasses(slot)} outline-none transition ${
+                                                    canCreateHere ? "hover:bg-[#dff6e7]/55 focus:bg-[#dff6e7]/70" : "cursor-not-allowed"
+                                                } ${
+                                                    draggingBookingId && canCreateHere ? "hover:ring-2 hover:ring-inset hover:ring-green/45" : ""
                                                 }`}
                                                 style={{ top: timeTopFromClock(slot, window.start), height: SLOT_HEIGHT }}
-                                                onClick={() => onSlot(item.barber.id, startTime)}
+                                                disabled={!canCreateHere}
+                                                onClick={() => {
+                                                    if (canCreateHere) onSlot(item.barber.id, startTime);
+                                                }}
                                                 onDragOver={(event) => {
-                                                    if (draggingBookingId) event.preventDefault();
+                                                    if (draggingBookingId && canCreateHere) event.preventDefault();
                                                 }}
                                                 onDrop={(event) => {
                                                     event.preventDefault();
+                                                    if (!canCreateHere) return;
                                                     const bookingId = event.dataTransfer.getData("text/plain") || draggingBookingId;
                                                     const booking = bookings.find((candidate) => candidate.id === bookingId);
                                                     if (booking) void onDropBooking(booking, item.barber.id, locationId, startTime);
                                                 }}
-                                                title={`Create appointment ${formatLocalTime(startTime)}-${formatLocalTime(slotEnd)}`}
+                                                title={
+                                                    canCreateHere
+                                                        ? `Create appointment ${formatLocalTime(startTime)}-${formatLocalTime(slotEnd)}`
+                                                        : `Unavailable ${formatLocalTime(startTime)}-${formatLocalTime(slotEnd)}`
+                                                }
                                             >
                                                 <span className="pointer-events-none absolute inset-x-2 top-1 hidden rounded border border-green/30 bg-mint/50 px-2 py-1 text-xs font-black text-forest opacity-0 transition group-hover:opacity-100 md:block">
                                                     {formatLocalTime(startTime)} - {formatLocalTime(slotEnd)}
@@ -1261,18 +1284,19 @@ function DayCalendarBoard({
                                     {unavailableRanges.map((range) => (
                                         <div
                                             key={`${item.barber.id}-off-${range.startTime}-${range.endTime}`}
-                                            className="pointer-events-none absolute inset-x-0 z-[1] border-y border-[#d4d8d2]/70 opacity-90"
+                                            className="pointer-events-none absolute inset-x-0 z-[3] border-y border-[#c7cec7]/90 opacity-100"
                                             style={{
                                                 ...rangeStyleFromClock(range.startTime, range.endTime, window.start, window.end),
+                                                backgroundColor: "rgba(235, 238, 235, 0.94)",
                                                 backgroundImage:
-                                                    "repeating-linear-gradient(135deg, rgba(74,85,75,0.12) 0 6px, rgba(74,85,75,0.03) 6px 12px)",
+                                                    "repeating-linear-gradient(135deg, rgba(78, 89, 80, 0.18) 0 7px, rgba(255, 255, 255, 0.65) 7px 14px)",
                                             }}
                                         />
                                     ))}
                                     {blockedOverlays.map((block) => (
                                         <div
                                             key={block.id}
-                                            className="pointer-events-none absolute inset-x-2 z-[3] rounded-md border border-[#a8aaa8] bg-[#e8e9e8]/95 px-3 py-2 text-sm font-black text-charcoal/70 shadow-sm"
+                                            className="pointer-events-none absolute inset-x-2 z-[4] rounded-md border border-[#a8aaa8] bg-[#e2e4e2]/95 px-3 py-2 text-sm font-black text-charcoal/70 shadow-sm"
                                             style={block.style}
                                         >
                                             {block.reason || "Blocked"}
@@ -1280,7 +1304,7 @@ function DayCalendarBoard({
                                     ))}
                                     {appointmentPreview?.barberId === item.barber.id && appointmentPreview.locationId === locationId && (
                                         <div
-                                            className="pointer-events-none absolute inset-x-2 z-[4] rounded-md border border-[#6d5dfc]/45 bg-[#ece9ff]/90 px-3 py-2 text-sm font-black text-[#4d3cff]"
+                                            className="pointer-events-none absolute inset-x-2 z-[5] rounded-md border border-[#6d5dfc]/45 bg-[#ece9ff]/90 px-3 py-2 text-sm font-black text-[#4d3cff]"
                                             style={rangeStyleFromIso(appointmentPreview.startTime, appointmentPreview.endTime, window.start, window.end)}
                                         >
                                             {formatLocalTime(appointmentPreview.startTime)} - {formatLocalTime(appointmentPreview.endTime)}
@@ -2715,6 +2739,22 @@ function blockedTimesForSlot(
     const end = new Date(start.getTime() + 15 * 60 * 1000);
 
     return blockedTimes.filter((blockedTime) => {
+        if (!blockedAppliesToCell(blockedTime, input.barberId, input.locationId)) {
+            return false;
+        }
+
+        return start < new Date(blockedTime.endTime) && end > new Date(blockedTime.startTime);
+    });
+}
+
+function blockedTimesOverlapRange(
+    blockedTimes: AdminBlockedTime[],
+    input: { barberId: string; locationId: string; startTime: string; endTime: string },
+) {
+    const start = new Date(input.startTime);
+    const end = new Date(input.endTime);
+
+    return blockedTimes.some((blockedTime) => {
         if (!blockedAppliesToCell(blockedTime, input.barberId, input.locationId)) {
             return false;
         }

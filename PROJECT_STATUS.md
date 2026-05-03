@@ -51,6 +51,7 @@ Phase 12 launch-prep status:
 - Missing customer/staff contacts create skipped notification attempts and do not fail booking creation.
 - Notification metadata remains token-safe: raw customer management tokens and raw cancel/reschedule URLs are not persisted.
 - `/admin/calendar` now uses a mobile-first staff day-board with shift-based staff columns, horizontal mobile scrolling, sticky time/staff headers, diagonal unavailable zones, blocked-time overlays, outside-hours warning badges, current-time line, tap/click slot creation, and a visible closing boundary row so weekday boards reach 7:00 PM without creating a 7:00 PM bookable slot.
+- Calendar empty-slot actions are disabled anywhere a 30-minute staff-created appointment would fall outside the selected barber's working window or overlap blocked time; those non-working cells render with stronger grey diagonal shading.
 - Calendar staff columns are computed from selected date, selected location, active shifts, and shift overrides. Static barber-location assignment alone no longer makes a staff member appear on that day board.
 - `/admin/dashboard` Notification Center now includes delivery-mode, status/channel filters, upcoming reminder previews, failed rows, provider/error details, and SMS/email badges.
 - Public Fresha booking fallbacks were replaced with the custom booking flow at `https://leasidefades.com/book`, with a staff login link exposed in the public footer.
@@ -726,6 +727,8 @@ Phase 13 launch cutover/UI/import tooling verification:
 - `npm run qa:phase9-notifications` (passed)
 - `npm run qa:phase10-reminders` (passed)
 - Playwright MCP browser QA against `http://127.0.0.1:3002/admin/calendar` verified the mobile day board at iPhone width, full-screen mobile Add appointment/Walk-in form, desktop calendar/drawer at 1280x720, calendar at 1440x900 and 1912x970, and the redesigned Notification Center at desktop and mobile widths.
+- `npm run test -- src/admin/admin-utils.test.ts` (17 tests passed after adding non-working slot clickability regression coverage)
+- `npm run build` (`tsc && vite build` passed)
 - `npm run test -- src/admin/admin-utils.test.ts src/server/notifications/dispatcher.test.ts` (2 files, 25 tests passed)
 - `npm run build` (`tsc && vite build` passed; Vite printed a non-fatal warning because the local environment had `NODE_ENV=production`)
 - Playwright MCP parity spot-check captured live admin calendar screenshots for May 1 Eglinton, May 1 Millwood, May 3 Eglinton, and May 30 Eglinton under `output/playwright/`.

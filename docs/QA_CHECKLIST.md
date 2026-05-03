@@ -354,6 +354,7 @@
 - [x] Admin calendar day-board columns are based on selected date/location shifts and shift overrides
 - [x] Admin calendar shows a clean empty state when no staff are scheduled at a location/date
 - [x] Admin calendar shades non-working time and renders explicit blocked-time overlays
+- [x] Admin calendar prevents empty-slot creation from non-working or blocked greyed-out cells
 - [x] Admin calendar flags bookings that sit outside scheduled working hours
 - [x] Mobile add appointment flow uses a full-screen form with sticky create action
 - [x] Notification Center shows delivery mode, filters, upcoming reminder previews, failed rows, channel badges, and provider/error details

@@ -323,6 +323,27 @@ export function bookingFallsOutsideWorkingWindows(
     });
 }
 
+export function calendarRangeFitsWorkingWindows(
+    range: { startTime: string; endTime: string },
+    workingWindows: CalendarWorkingWindow[],
+) {
+    if (workingWindows.length === 0) {
+        return false;
+    }
+
+    const start = clockToMinutes(range.startTime);
+    const end = clockToMinutes(range.endTime);
+    if (start >= end) {
+        return false;
+    }
+
+    return normalizeCalendarWindows(workingWindows).some((window) => {
+        const windowStart = clockToMinutes(window.startTime);
+        const windowEnd = clockToMinutes(window.endTime);
+        return start >= windowStart && end <= windowEnd;
+    });
+}
+
 export function getScheduledCalendarBarbers({
     options,
     schedule,
