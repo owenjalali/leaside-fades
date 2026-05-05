@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { AvailabilityData } from "../availability/index.ts";
 import type {
@@ -17,6 +17,16 @@ import type { BookingLifecycleNotificationDispatcher } from "../notifications/in
 const locationId = "11111111-1111-1111-1111-111111111111";
 const barberId = "22222222-2222-2222-2222-222222222222";
 const serviceId = "33333333-3333-3333-3333-333333333333";
+const now = new Date(Date.UTC(2026, 4, 3, 14));
+
+beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(now);
+});
+
+afterEach(() => {
+    vi.useRealTimers();
+});
 
 function utc(hour: number, minute = 0) {
     return new Date(Date.UTC(2026, 4, 4, hour, minute));

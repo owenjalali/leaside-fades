@@ -53,6 +53,9 @@ Phase 12 launch-prep status:
 - `/admin/calendar` now uses a mobile-first staff day-board with shift-based staff columns, horizontal mobile scrolling, sticky time/staff headers, diagonal unavailable zones, blocked-time overlays, outside-hours warning badges, current-time line, tap/click slot creation, and a visible closing boundary row so weekday boards reach 7:00 PM without creating a 7:00 PM bookable slot.
 - Calendar empty-slot actions are disabled anywhere a 30-minute staff-created appointment would fall outside the selected barber's working window or overlap blocked time; those non-working cells render with stronger grey diagonal shading.
 - Calendar staff columns are computed from selected date, selected location, active shifts, and shift overrides. Static barber-location assignment alone no longer makes a staff member appear on that day board.
+- `/admin/calendar` mobile rescue now keeps the admin rail/topbar compact, moves location/barber/status filters into an overlay panel, preserves visible day-board grid height on 320px-class phones, and keeps the Add appointment drawer framed to the viewport with a sticky create action.
+- `/admin/calendar` tablet/mobile polish now resets the day-board scroll to opening time when the visible date/location/staff context changes, expands the Sam-only board into a full-width working surface, and labels single-staff views as `1 staff` instead of `1 columns`.
+- `/admin/calendar` Add appointment split-pane polish now protects the calendar working width when the drawer opens, constrains the desktop create drawer to an inspector-width panel, and uses auto-fit drawer grids so summary, contact, time, and slot controls wrap naturally instead of looking crunched.
 - `/admin/dashboard` Notification Center now includes delivery-mode, status/channel filters, upcoming reminder previews, failed rows, provider/error details, and SMS/email badges.
 - Notification Center failed rows are classified as active delivery issues vs historical audit entries. Past Resend/domain verification failures stay in Failed history but no longer dominate the main dashboard once they are no longer actionable.
 - Public Fresha booking fallbacks were replaced with the custom booking flow at `https://leasidefades.com/book`, with a staff login link exposed in the public footer.
@@ -66,6 +69,8 @@ Phase 12 launch-prep status:
 - Observed launch recurring shifts from the Phase 11 Fresha inspection were entered as the initial production schedule after the Phase 13 launch "Go": 24 recurring shifts, with Yogesh remaining Millwood-only. Owner should still verify this roster before full public cutover.
 - Production availability smoke check for Men's Cut on 2026-05-02 returned bookable availability: Eglinton has Sam To slots only, and Millwood has Yogesh Kumar, Laura Nguyen, and Shayan Hussain slots.
 - Playwright verified the live `/admin/calendar` frame at 1912x970, 1440x900, 1280x720, and mobile width. The page no longer body-scrolls, the left rail is not clipped, Laura remains visible/reachable, the desktop drawer opens as a split pane, and the internal board scroll reaches the weekday 7:00 PM boundary.
+- Playwright MCP and headless Chrome CDP stress-tested the local rebuilt `/admin/calendar` at 320x568, 340x600, 340x720, 375x667, 390x844, 414x896, 768x1024, 1280x720, 1440x900, and 1920x900. The board retained visible 44px slots, horizontal staff-column reach, vertical closing-boundary reach, slot-tap creation, topbar Add creation, framed drawers, and stable filter open/close behavior without creating appointments. Follow-up tablet checks at 744x860 verified the Sam-only Eglinton board opens at 10:00 AM after context changes, labels as `1 staff`, and no longer looks collapsed at the 7:00 PM boundary.
+- Backend admin/session and public booking tests now freeze their fixture dates so session cookies do not expire against the real system date and May 2026 booking fixtures do not become "past dates" as the wall clock advances.
 - A secured `GET /api/jobs/send-reminders` endpoint exists for reminder schedulers and requires `CRON_SECRET` before it will run. Vercel Hobby blocked the desired five-minute Vercel Cron registration, so production reminders now use an external cron-job.org scheduler.
 - cron-job.org job `7551064` is enabled as `Leaside Fades reminders`, calls `https://www.leasidefades.com/api/jobs/send-reminders` every five minutes, and sends `Authorization: Bearer <CRON_SECRET>`. `CRON_SECRET` was rotated in Vercel Production on May 1, 2026 and production was redeployed so the endpoint returns `401` without authorization. The 10:20 PM America/Toronto scheduled run succeeded with `200 OK`; the earlier 10:15 PM run failed with `307 Temporary Redirect` before the job URL was corrected from the apex domain to `www`.
 - Vercel production contains encrypted Twilio/Resend notification environment variables. A temporary secret-gated production smoke endpoint verified the live notification runtime, then was removed and production was redeployed cleanly. Controlled live SMS and email smoke tests have passed with approved test contacts; the raw test contact details are intentionally not stored in git.
@@ -471,16 +476,18 @@ Phase 4 manual DB-backed QA:
 
 ## Files Changed in Latest Session
 
-Phase 13 admin calendar polish and notification fix files changed in the latest session:
+Phase 12/13 admin calendar mobile polish and deterministic test-clock files changed in the latest session:
 - `src/admin/AdminApp.tsx`
 - `src/admin/admin-utils.ts`
 - `src/admin/admin-utils.test.ts`
 - `src/admin/types.ts`
 - `src/server/admin/api.ts`
 - `src/server/admin/api.test.ts`
+- `src/server/admin/schedule-api.test.ts`
 - `src/server/admin/bookings-service.ts`
 - `src/server/admin/bookings-service.test.ts`
 - `src/server/admin/repository.ts`
+- `src/server/public-booking/service.test.ts`
 - `src/server/notifications/dispatcher.ts`
 - `src/server/notifications/dispatcher.test.ts`
 - `src/server/notifications/repository.ts`
@@ -721,6 +728,11 @@ Prior Phase 4 files from the previous session remain changed in this working tre
 ## Commands / Tests Run
 
 Phase 13 launch cutover/UI/import tooling verification:
+- `npm run test -- src/server/admin/api.test.ts src/server/admin/schedule-api.test.ts src/server/public-booking/service.test.ts` (red before deterministic test clocks: 20 stale date/session fixture failures; passing after fix: 3 files, 39 tests passed)
+- `npm run build` (`tsc && vite build` passed after the de-crunched Add appointment split-pane/drawer UI changes)
+- Headless Chrome CDP stress-tested local `/admin/calendar` at 320x568, 340x600, 340x720, 375x667, 390x844, 414x896, 768x1024, 1280x720, 1440x900, and 1920x900 with no horizontal overflow, visible board height, visible slots, closing-boundary reach, framed Add drawer, visible sticky create action, and no appointment submissions.
+- Headless Chrome CDP verified the Sam-only Eglinton board at 744x860: `1 staff` label, 712px board width, visible slots, no horizontal overflow, and framed full-width Add drawer.
+- `npm run test` (28 files, 215 tests passed)
 - `npm run test -- src/admin/admin-utils.test.ts src/server/admin/bookings-service.test.ts src/server/notifications/dispatcher.test.ts` (3 files, 63 tests passed)
 - `npm run test` (28 files, 209 tests passed)
 - `npm run build` (`tsc && vite build` passed)
@@ -957,6 +969,7 @@ Phase 6 hardening verification:
 - Do not include customer management links in reminder messages because raw cancellation/reschedule tokens cannot be reconstructed from hashed storage.
 - Retry failed provider notification attempts on later dispatch/job runs while keeping sent, skipped, and pending rows idempotent.
 - Require `npm run notifications:check-live-config` as the production reminder preflight before enabling a live scheduler.
+- Keep mobile admin calendar filters out of the day-board height budget so the booking grid remains usable on 320px-class phones.
 
 ## Do-Not-Break Rules
 
@@ -970,4 +983,4 @@ Phase 6 hardening verification:
 
 ## Latest Session Summary
 
-Phase 12/13 launch cutover implementation is in progress. The admin calendar viewport cut-off bug was addressed with a bounded app shell, internal board scrolling, desktop split-pane drawers, sticky board headers, and a weekday 7:00 PM visual close boundary; Phase 13 now further upgrades the day board to use shift-based staff columns, unavailable shading, blocked overlays, current-time/preview affordances, mobile horizontal scrolling, and full-screen mobile appointment creation. Staff-created walk-ins with customer contact now reuse the booking-confirmation and reminder infrastructure, while imported bookings stay non-notifying/non-reminded. Public Fresha booking fallbacks now point to the custom booking flow, Book Now CTAs open `/book` directly without a dropdown, and the marketing Services section is generated from the same 37-service launch catalog source as booking. Vercel routing config exists for production app routes, and Phase 13 Fresha import tooling has a dry-run/report/apply gate with imported bookings excluded from lifecycle notifications and reminder jobs. Vercel production is deployed for `leasidefades.com`, production PostgreSQL is connected through the Vercel Neon `leaside-fades-db` integration, migrations/seed have been applied, owner/Sam admin login has been verified, observed Fresha launch shifts have been entered as the initial production recurring schedule, and the May 1-June 30 Fresha appointment import has been applied as 53 `source = "imported"` production bookings. Vercel production has encrypted Twilio/Resend env vars, and controlled live SMS/email smoke has passed with approved test contacts. Production reminders use cron-job.org job `7551064` every five minutes against the secured `www.leasidefades.com` reminder endpoint after a May 1, 2026 `CRON_SECRET` rotation and redeploy; the 10:20 PM America/Toronto scheduled run succeeded with `200 OK`. Remaining launch items are operational: scheduler history monitoring, owner password handoff/rotation, owner verification of shifts/services/staff contacts, and final owner signoff.
+Phase 12/13 launch cutover implementation is in progress. The admin calendar viewport cut-off bug was addressed with a bounded app shell, internal board scrolling, desktop split-pane drawers, sticky board headers, and a weekday 7:00 PM visual close boundary; Phase 13 now further upgrades the day board to use shift-based staff columns, unavailable shading, blocked overlays, current-time/preview affordances, mobile horizontal scrolling, and full-screen mobile appointment creation. The May 5 mobile rescue compacts the phone rail/topbar, moves filters into an overlay panel, preserves visible 44px day-board slots on 320px-class phones, keeps slot/topbar Add flows framed inside a full-height drawer, resets tablet/mobile boards to opening time when date/location/staff context changes, and de-crunches the desktop Add appointment split pane so opening the drawer no longer squeezes the calendar or form controls out of frame. Stale admin session/public booking tests now use deterministic fixture clocks, and the full suite is back to 215 passing tests. Staff-created walk-ins with customer contact now reuse the booking-confirmation and reminder infrastructure, while imported bookings stay non-notifying/non-reminded. Public Fresha booking fallbacks now point to the custom booking flow, Book Now CTAs open `/book` directly without a dropdown, and the marketing Services section is generated from the same 37-service launch catalog source as booking. Vercel routing config exists for production app routes, and Phase 13 Fresha import tooling has a dry-run/report/apply gate with imported bookings excluded from lifecycle notifications and reminder jobs. Vercel production is deployed for `leasidefades.com`, production PostgreSQL is connected through the Vercel Neon `leaside-fades-db` integration, migrations/seed have been applied, owner/Sam admin login has been verified, observed Fresha launch shifts have been entered as the initial production recurring schedule, and the May 1-June 30 Fresha appointment import has been applied as 53 `source = "imported"` production bookings. Vercel production has encrypted Twilio/Resend env vars, and controlled live SMS/email smoke has passed with approved test contacts. Production reminders use cron-job.org job `7551064` every five minutes against the secured `www.leasidefades.com` reminder endpoint after a May 1, 2026 `CRON_SECRET` rotation and redeploy; the 10:20 PM America/Toronto scheduled run succeeded with `200 OK`. Remaining launch items are operational: scheduler history monitoring, owner password handoff/rotation, owner verification of shifts/services/staff contacts, and final owner signoff.

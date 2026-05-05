@@ -550,3 +550,19 @@ The admin day-board shows staff columns from selected location/date working wind
 
 Reason:
 Staff need the calendar to match who is actually scheduled at a shop that day, especially on mobile. Contacted walk-ins are real customer appointments and should receive the same confirmation/reminder behavior as contacted manual appointments without generating customer management tokens or changing the database schema.
+
+### 2026-05-05 - Keep Mobile Calendar Filters Out Of The Board Height Budget
+
+Decision:
+On mobile, `/admin/calendar` uses a compact rail/topbar, keeps date navigation/view/Add controls visible, and moves location/barber/status filters into an overlay panel. The day-board owns the remaining viewport height with internal horizontal and vertical scrolling, resets to the opening time when date/location/staff context changes, and Add appointment stays a full-height framed drawer with a sticky create action.
+
+Reason:
+The phone layout failure came from admin chrome and filters consuming the viewport until the calendar grid had no usable height. The follow-up tablet issue came from the board retaining a closing-boundary scroll position after context changes, making one-staff calendars look collapsed. The fix keeps the scheduling backend unchanged while making appointment slots visible and tappable on 320px-class phones and less cramped on tablet-width views.
+
+### 2026-05-05 - Keep The Add Appointment Drawer From Crunching The Calendar
+
+Decision:
+When the Add appointment drawer is open, `/admin/calendar` protects a usable calendar column width, constrains the desktop drawer to an inspector-width panel, and uses auto-fit drawer grids so summary metrics, selectors, contact fields, and slot buttons wrap by available space instead of viewport breakpoint alone. Browser QA selectors were added to the admin shell, board, and drawer to make viewport regression checks repeatable.
+
+Reason:
+The desktop split-pane state could visually squeeze the calendar and drawer controls because the form internals responded to the full browser width rather than the narrower drawer column. The fix preserves the existing booking APIs and scheduling rules while making the operational surface fit the frame on phones, tablets, and desktop drawer layouts.

@@ -312,6 +312,14 @@
 - [x] Production `/admin/calendar` Playwright frame check passed at 1912x970, 1440x900, 1280x720, and mobile width
 - [x] Production admin calendar with Add appointment drawer open keeps Laura/staff reachable and avoids page/body clipping
 - [x] Production admin calendar internal board scroll reaches the weekday 7:00 PM boundary
+- [x] Admin calendar mobile rail/topbar are compact enough for the day-board grid to remain visible at 320x568
+- [x] Admin calendar mobile filters open as an overlay and close without permanently hiding or resizing away the day board
+- [x] Admin calendar mobile slot taps and topbar Add both open a fully framed Add appointment drawer with the create action visible
+- [x] Local Playwright MCP stress test covered `/admin/calendar` at 320x568, 340x600, 340x720, 375x667, 390x844, 414x896, 768x1024, 1280x720, and 1440x900 without creating appointments
+- [x] Tablet-width Sam-only calendar resets to the 10:00 AM opening rows after date/location/staff context changes and does not remain stuck at the 7:00 PM boundary
+- [x] Headless Chrome CDP stress test covered `/admin/calendar` at 320x568, 340x600, 340x720, 375x667, 390x844, 414x896, 768x1024, 1280x720, 1440x900, and 1920x900 with no body horizontal overflow, visible board height, closing-boundary reach, framed Add drawer, and visible sticky create action
+- [x] Desktop Add appointment split pane at 1280x720, 1440x900, and 1920x900 keeps the calendar board in frame instead of crunching the board/form controls
+- [x] Admin API/session and public booking fixture tests freeze their date clocks so session cookies and May 2026 availability fixtures remain deterministic as real time advances
 - [ ] Google Places API key and Place ID verified in production
 - [ ] Google Maps, Instagram, and Facebook links verified in production
 - [x] Resend live email smoke verified with an approved test contact

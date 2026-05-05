@@ -41,6 +41,32 @@ export interface ScheduledCalendarBarber {
     scheduled: boolean;
 }
 
+export const mobileAdminCalendarLayoutBudget = {
+    viewportHeightPx: 568,
+    railHeightPx: 56,
+    topbarHeightPx: 144,
+    contentVerticalPaddingPx: 16,
+    boardHeaderHeightPx: 88,
+    slotHeightPx: 44,
+};
+
+export function estimateMobileCalendarGridHeight({
+    viewportHeightPx,
+    railHeightPx,
+    topbarHeightPx,
+    contentVerticalPaddingPx,
+    boardHeaderHeightPx,
+    slotHeightPx,
+}: typeof mobileAdminCalendarLayoutBudget) {
+    const availableGridHeightPx =
+        viewportHeightPx - railHeightPx - topbarHeightPx - contentVerticalPaddingPx - boardHeaderHeightPx;
+
+    return {
+        availableGridHeightPx,
+        visibleSlotRows: Math.floor(Math.max(0, availableGridHeightPx) / slotHeightPx),
+    };
+}
+
 export function buildAdminBookingQuery(filters: AdminBookingFilters) {
     const params = new URLSearchParams();
 

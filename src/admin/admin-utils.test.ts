@@ -13,6 +13,7 @@ import {
     buildWeekDays,
     bookingFallsOutsideWorkingWindows,
     calendarRangeFitsWorkingWindows,
+    estimateMobileCalendarGridHeight,
     formatAdminStatus,
     compactNotificationFailureMessage,
     getBookingCardTone,
@@ -21,6 +22,7 @@ import {
     formatScheduleWindow,
     groupBookingsByLocalDate,
     groupShiftsByBarberAndWeekday,
+    mobileAdminCalendarLayoutBudget,
     notificationFilterMatches,
 } from "./admin-utils";
 import type {
@@ -217,6 +219,16 @@ describe("Phase 7 schedule UI utilities", () => {
 });
 
 describe("Phase 7.5 calendar-first UI utilities", () => {
+    test("keeps a usable mobile day-board viewport budget on the shortest supported phones", () => {
+        const budget = estimateMobileCalendarGridHeight({
+            ...mobileAdminCalendarLayoutBudget,
+            viewportHeightPx: 568,
+        });
+
+        expect(budget.availableGridHeightPx).toBeGreaterThanOrEqual(220);
+        expect(budget.visibleSlotRows).toBeGreaterThanOrEqual(5);
+    });
+
     test("builds 15-minute day-board slots inside business hours", () => {
         expect(buildCalendarTimeSlots("10:00", "11:00")).toEqual([
             "10:00",

@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { hashPassword } from "../auth/password.ts";
 import type {
@@ -22,6 +22,15 @@ const barberUserId = "22222222-2222-2222-2222-222222222222";
 const barberA = "33333333-3333-3333-3333-333333333333";
 const barberB = "44444444-4444-4444-4444-444444444444";
 const locationA = "55555555-5555-5555-5555-555555555555";
+
+beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(now);
+});
+
+afterEach(() => {
+    vi.useRealTimers();
+});
 
 class InMemoryAuthRepository implements AuthRepository {
     users: AuthUserRecord[] = [];

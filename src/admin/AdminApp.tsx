@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import {
     Ban,
     Bell,
@@ -18,6 +18,7 @@ import {
     RefreshCw,
     Scissors,
     Search,
+    SlidersHorizontal,
     AlertTriangle,
     UserRound,
     X,
@@ -99,8 +100,8 @@ type DrawerState =
     | null;
 
 const TIME_ZONE = "America/Toronto";
-const SLOT_HEIGHT = 42;
-const TIME_GUTTER_WIDTH = "clamp(88px, 7vw, 132px)";
+const SLOT_HEIGHT = 44;
+const TIME_GUTTER_WIDTH = "clamp(66px, 7vw, 132px)";
 
 const defaultFilters = (date = todayLocalDate(), view: AdminView = "day"): AdminBookingFilters => ({
     ...dateRangeForView(view, date),
@@ -482,12 +483,16 @@ function AdminWorkspace({
         !detailId &&
         !path.startsWith("/admin/bookings") &&
         view === "day";
+    const drawerOpen = Boolean(drawer);
     const workspaceColumns = drawer
-        ? "lg:grid-cols-[clamp(88px,8vw,132px)_minmax(0,1fr)] xl:grid-cols-[clamp(88px,8vw,132px)_minmax(0,1fr)_minmax(24rem,34rem)]"
+        ? "lg:grid-cols-[clamp(88px,8vw,132px)_minmax(0,1fr)] xl:grid-cols-[clamp(88px,8vw,132px)_minmax(46rem,1fr)_minmax(22rem,28rem)] 2xl:grid-cols-[clamp(88px,8vw,132px)_minmax(54rem,1fr)_minmax(24rem,30rem)]"
         : "lg:grid-cols-[clamp(88px,8vw,132px)_minmax(0,1fr)]";
 
     return (
-        <main className={`flex h-dvh min-h-0 flex-col overflow-hidden bg-[#f4f7f2] text-[clamp(18px,1.3vw,20px)] text-charcoal lg:grid ${workspaceColumns}`}>
+        <main
+            data-admin-workspace
+            className={`flex h-dvh min-h-0 flex-col overflow-hidden bg-[#f4f7f2] text-base text-charcoal sm:text-[17px] lg:grid lg:text-[clamp(18px,1.3vw,20px)] ${workspaceColumns}`}
+        >
             <AdminRail path={path} user={user} onNavigate={onNavigate} onLogout={onLogout} />
             <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                 <CalendarTopbar
@@ -500,6 +505,7 @@ function AdminWorkspace({
                     loading={isDashboardPath ? dashboardLoading : loading}
                     isDashboardPath={isDashboardPath}
                     isSchedulePath={isSchedulePath}
+                    compactWorkspace={drawerOpen}
                     onView={changeView}
                     onDate={applyDate}
                     onChangeFilters={setFilters}
@@ -507,7 +513,7 @@ function AdminWorkspace({
                     onNewBooking={() => openAddAppointment()}
                 />
                 <section
-                    className={`min-h-0 min-w-0 flex-1 px-4 pb-5 pt-4 lg:px-7 ${
+                    className={`min-h-0 min-w-0 flex-1 px-2 pb-2 pt-2 sm:px-4 sm:pb-5 sm:pt-4 lg:px-7 ${
                         isDayCalendarPath ? "flex flex-col overflow-hidden" : "overflow-y-auto"
                     }`}
                 >
@@ -627,41 +633,41 @@ function AdminRail({
     ];
 
     return (
-        <aside className="sticky top-0 z-30 flex min-h-20 items-center justify-between gap-3 border-b border-white/10 bg-[#08110e] px-4 text-white lg:h-screen lg:min-h-screen lg:flex-col lg:items-stretch lg:border-b-0 lg:px-3 lg:py-6 2xl:px-4">
+        <aside className="sticky top-0 z-30 flex h-14 min-h-14 items-center justify-between gap-2 border-b border-white/10 bg-[#08110e] px-2 text-white lg:h-screen lg:min-h-screen lg:flex-col lg:items-stretch lg:gap-3 lg:border-b-0 lg:px-3 lg:py-6 2xl:px-4">
             <button
-                className="flex min-w-0 items-center gap-3 rounded-md px-2 py-2 text-left lg:flex-col lg:justify-center"
+                className="flex min-w-0 items-center gap-2 rounded-md px-1 py-1 text-left lg:flex-col lg:justify-center lg:gap-3 lg:px-2 lg:py-2"
                 onClick={() => onNavigate(user.role === "barber" ? "/admin/calendar" : "/admin/dashboard")}
                 title="Leaside Fades"
             >
-                <span className="flex size-14 items-center justify-center overflow-hidden rounded-md bg-white p-1.5 2xl:size-16">
+                <span className="flex size-8 items-center justify-center overflow-hidden rounded-md bg-white p-1 lg:size-14 lg:p-1.5 2xl:size-16">
                     <img src="/assets/logo-transparent.png" alt="Leaside Fades" className="h-full w-full object-contain" />
                 </span>
                 <span className="hidden text-sm font-black uppercase tracking-[0.16em] text-white/70 lg:block">Leaside</span>
             </button>
-            <nav className="flex flex-1 items-center justify-center gap-2 lg:flex-col lg:justify-start">
+            <nav className="flex flex-1 items-center justify-center gap-1 lg:flex-col lg:justify-start lg:gap-2">
                 {items.map((item) => {
                     const Icon = item.icon;
                     const active = path.startsWith(item.path);
                     return (
                         <button
                             key={item.path}
-                            className={`flex size-14 items-center justify-center rounded-md transition 2xl:size-16 lg:w-full ${
+                            className={`flex size-10 items-center justify-center rounded-md transition lg:size-14 lg:w-full 2xl:size-16 ${
                                 active ? "bg-green text-[#08110e]" : "text-white/72 hover:bg-white/10 hover:text-white"
                             }`}
                             onClick={() => onNavigate(item.path)}
                             title={item.label}
                         >
-                            <Icon size={28} />
+                            <Icon className="size-5 lg:size-7" />
                         </button>
                     );
                 })}
             </nav>
             <div className="flex items-center gap-1 lg:flex-col">
-                <button className="flex size-12 items-center justify-center rounded-md bg-white/8 text-white 2xl:size-14" title={`${user.displayName} (${user.role})`}>
+                <button className="hidden size-12 items-center justify-center rounded-md bg-white/8 text-white lg:flex 2xl:size-14" title={`${user.displayName} (${user.role})`}>
                     <UserRound size={26} />
                 </button>
-                <button className="flex size-12 items-center justify-center rounded-md text-white/72 hover:bg-white/10 hover:text-white 2xl:size-14" onClick={onLogout} title="Sign out">
-                    <LogOut size={26} />
+                <button className="flex size-10 items-center justify-center rounded-md text-white/72 hover:bg-white/10 hover:text-white lg:size-12 2xl:size-14" onClick={onLogout} title="Sign out">
+                    <LogOut className="size-5 lg:size-6" />
                 </button>
             </div>
         </aside>
@@ -678,6 +684,7 @@ function CalendarTopbar({
     loading,
     isDashboardPath,
     isSchedulePath,
+    compactWorkspace,
     onView,
     onDate,
     onChangeFilters,
@@ -693,16 +700,20 @@ function CalendarTopbar({
     loading: boolean;
     isDashboardPath: boolean;
     isSchedulePath: boolean;
+    compactWorkspace: boolean;
     onView: (view: AdminView) => void;
     onDate: (date: string) => void;
     onChangeFilters: (filters: AdminBookingFilters) => void;
     onRefresh: () => Promise<void>;
     onNewBooking: () => void;
 }) {
+    const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
     const selectedDate = filters.from || todayLocalDate();
     const step = view === "month" ? 30 : view === "week" || view === "list" ? 7 : 1;
     const locationId = options ? resolveDefaultLocationId(options, user, filters.locationId) : filters.locationId ?? "";
     const businessWindow = businessWindowForDate(selectedDate);
+    const showCalendarControls = !isSchedulePath && !isDashboardPath;
+    const viewItems: AdminView[] = ["day", "week", "month", "list"];
     const availableBarbers =
         options && schedule && view === "day"
             ? getScheduledCalendarBarbers({
@@ -714,13 +725,143 @@ function CalendarTopbar({
                   businessStartTime: businessWindow.start,
                   businessEndTime: businessWindow.end,
               }).map((item) => item.barber)
-            : options
+              : options
               ? getVisibleBarbers(options, user, locationId)
               : [];
+    const desktopShellClass = compactWorkspace
+        ? "hidden min-w-0 gap-3 lg:flex lg:flex-col"
+        : "hidden min-w-0 gap-3 lg:grid 2xl:grid-cols-[minmax(0,auto)_minmax(0,1fr)] 2xl:items-center 2xl:gap-5";
+    const desktopTitleBlockClass = compactWorkspace
+        ? "min-w-[12rem] flex-1 px-1"
+        : "min-w-[12rem] flex-1 px-1 sm:flex-none 2xl:px-4";
+    const desktopTitleClass = compactWorkspace
+        ? "truncate text-2xl font-black text-forest 2xl:text-3xl"
+        : "truncate text-2xl font-black text-forest sm:text-3xl";
+    const desktopControlsClass = compactWorkspace
+        ? "flex min-w-0 flex-wrap items-center gap-2"
+        : "flex min-w-0 flex-wrap items-center gap-3 2xl:justify-end";
+    const desktopLocationSelectClass = compactWorkspace
+        ? "input h-11 min-w-[min(11rem,100%)] flex-[1_1_12rem] px-3 py-2 text-sm 2xl:max-w-60"
+        : "input h-12 min-w-[min(13rem,100%)] flex-[1_1_14rem] text-base 2xl:max-w-72";
+    const desktopBarberSelectClass = compactWorkspace
+        ? "input h-11 min-w-[min(11rem,100%)] flex-[1_1_12rem] px-3 py-2 text-sm 2xl:max-w-60"
+        : "input h-12 min-w-[min(13rem,100%)] flex-[1_1_14rem] text-base 2xl:max-w-72";
+    const desktopStatusSelectClass = compactWorkspace
+        ? "input h-11 min-w-[min(10rem,100%)] flex-[1_1_10rem] px-3 py-2 text-sm 2xl:max-w-48"
+        : "input h-12 min-w-[min(11rem,100%)] flex-[1_1_11rem] text-base 2xl:max-w-56";
+    const desktopSegmentButtonClass = (item: AdminView) =>
+        view === item
+            ? compactWorkspace
+                ? "segmented-active min-h-10 shrink-0 px-3 py-2 text-sm"
+                : "segmented-active min-h-11 shrink-0 px-4 py-2 text-base"
+            : compactWorkspace
+              ? "segmented min-h-10 shrink-0 border-0 bg-transparent px-3 py-2 text-sm"
+              : "segmented min-h-11 shrink-0 border-0 bg-transparent px-4 py-2 text-base";
+    const desktopRefreshButtonClass = compactWorkspace ? "icon-button min-h-10 min-w-10" : "icon-button min-h-11 min-w-11";
+    const desktopAddButtonClass = compactWorkspace
+        ? "icon-text-button min-h-10 shrink-0 px-3 py-2 text-sm"
+        : "icon-text-button min-h-11 px-4 py-2 text-base";
 
     return (
-        <header className="sticky top-0 z-20 shrink-0 overflow-visible border-b border-[#cfdacf] bg-white/95 px-3 py-3 backdrop-blur lg:px-6 2xl:px-8 2xl:py-4">
-            <div className="grid min-w-0 gap-3 2xl:grid-cols-[minmax(0,auto)_minmax(0,1fr)] 2xl:items-center 2xl:gap-5">
+        <header data-admin-calendar-topbar className="sticky top-0 z-20 shrink-0 overflow-visible border-b border-[#cfdacf] bg-white/95 px-2 py-2 backdrop-blur lg:px-6 lg:py-3 2xl:px-8 2xl:py-4">
+            <div className="relative space-y-2 lg:hidden">
+                <div className="flex min-w-0 items-center gap-1.5">
+                    <button className="text-button !min-h-10 shrink-0 bg-white px-3 py-1.5 text-sm" onClick={() => onDate(todayLocalDate())} disabled={isSchedulePath}>
+                        Today
+                    </button>
+                    <button className="icon-button !min-h-10 !w-10 shrink-0" onClick={() => onDate(addDaysToLocalDate(selectedDate, -step))} title="Previous" disabled={isSchedulePath}>
+                        <ChevronLeft size={21} />
+                    </button>
+                    <button className="icon-button !min-h-10 !w-10 shrink-0" onClick={() => onDate(addDaysToLocalDate(selectedDate, step))} title="Next" disabled={isSchedulePath}>
+                        <ChevronRight size={21} />
+                    </button>
+                    <div className="min-w-0 flex-1 px-1">
+                        <p className="truncate text-lg font-black leading-tight text-forest">{isSchedulePath ? title : formatDateTitle(selectedDate, view)}</p>
+                        <p className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-charcoal/50">{isSchedulePath ? "Setup" : title}</p>
+                    </div>
+                    <button className="icon-button !min-h-10 !w-10 shrink-0" onClick={onRefresh} title={isDashboardPath ? "Refresh dashboard" : "Refresh bookings"}>
+                        <RefreshCw size={20} className={loading ? "animate-spin" : ""} />
+                    </button>
+                </div>
+
+                {showCalendarControls && (
+                    <div className="flex min-w-0 items-center gap-1.5">
+                        <button
+                            className="icon-text-button !min-h-10 shrink-0 px-3 py-1.5 text-sm"
+                            type="button"
+                            onClick={() => setMobileFiltersOpen((value) => !value)}
+                            aria-expanded={mobileFiltersOpen}
+                        >
+                            <SlidersHorizontal size={18} />
+                            Filters
+                        </button>
+                        <div className="flex min-w-0 flex-1 overflow-x-auto rounded-md border border-forest/10 bg-[#f7faf7] p-1">
+                            {viewItems.map((item) => (
+                                <button
+                                    key={item}
+                                    className={view === item ? "segmented-active !min-h-9 shrink-0 px-3 py-1.5 text-sm" : "segmented !min-h-9 shrink-0 border-0 bg-transparent px-3 py-1.5 text-sm"}
+                                    onClick={() => onView(item)}
+                                >
+                                    {item}
+                                </button>
+                            ))}
+                        </div>
+                        <button className="icon-text-button !min-h-10 shrink-0 px-3 py-1.5 text-sm" onClick={onNewBooking}>
+                            <CalendarPlus size={18} />
+                            Add<span className="hidden sm:inline"> appointment</span>
+                        </button>
+                    </div>
+                )}
+
+                {showCalendarControls && mobileFiltersOpen && (
+                    <div className="absolute left-0 right-0 top-full z-30 mt-2 grid gap-2 rounded-md border border-[#d4ddd4] bg-[#f8fbf8] p-2 shadow-[0_16px_32px_rgba(16,56,38,0.18)]">
+                        <select
+                            className="input h-9 !min-h-9 px-3 py-1.5 text-sm"
+                            value={locationId}
+                            onChange={(event) => onChangeFilters({ ...filters, locationId: event.target.value })}
+                        >
+                            {options?.locations.map((location) => (
+                                <option key={location.id} value={location.id}>
+                                    {location.name}
+                                </option>
+                            ))}
+                        </select>
+                        <select
+                            className="input h-9 !min-h-9 px-3 py-1.5 text-sm"
+                            value={filters.barberId ?? ""}
+                            onChange={(event) => onChangeFilters({ ...filters, barberId: event.target.value })}
+                            disabled={user.role === "barber"}
+                        >
+                            {user.role !== "barber" && <option value="">All team members</option>}
+                            {availableBarbers.map((barber) => (
+                                <option key={barber.id} value={barber.id}>
+                                    {barber.displayName}
+                                </option>
+                            ))}
+                        </select>
+                        <select
+                            className="input h-9 !min-h-9 px-3 py-1.5 text-sm"
+                            value={filters.status ?? ""}
+                            onChange={(event) => onChangeFilters({ ...filters, status: event.target.value as AdminBookingFilters["status"] })}
+                        >
+                            <option value="">All statuses</option>
+                            <option value="confirmed">Confirmed</option>
+                            <option value="cancelled">Cancelled</option>
+                            <option value="completed">Completed</option>
+                            <option value="no_show">No show</option>
+                        </select>
+                    </div>
+                )}
+
+                {isDashboardPath && (
+                    <button className="primary-button inline-flex !min-h-10 w-full items-center justify-center gap-2 px-3 py-2 text-sm" onClick={onNewBooking}>
+                        <CalendarPlus size={18} />
+                        Add appointment
+                    </button>
+                )}
+            </div>
+
+            <div className={desktopShellClass}>
                 <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
                     <button className="text-button min-h-11 bg-white px-4 py-2 text-base" onClick={() => onDate(todayLocalDate())} disabled={isSchedulePath}>
                         Today
@@ -731,16 +872,16 @@ function CalendarTopbar({
                     <button className="icon-button min-h-11 min-w-11" onClick={() => onDate(addDaysToLocalDate(selectedDate, step))} title="Next" disabled={isSchedulePath}>
                         <ChevronRight size={24} />
                     </button>
-                    <div className="min-w-[12rem] flex-1 px-1 sm:flex-none 2xl:px-4">
-                        <p className="truncate text-2xl font-black text-forest sm:text-3xl">{isSchedulePath ? title : formatDateTitle(selectedDate, view)}</p>
+                    <div className={desktopTitleBlockClass}>
+                        <p className={desktopTitleClass}>{isSchedulePath ? title : formatDateTitle(selectedDate, view)}</p>
                         <p className="text-sm font-bold uppercase tracking-[0.12em] text-charcoal/50">{isSchedulePath ? "Setup" : title}</p>
                     </div>
                 </div>
-                <div className="flex min-w-0 flex-wrap items-center gap-3 2xl:justify-end">
-                    {!isSchedulePath && !isDashboardPath && (
+                <div className={desktopControlsClass}>
+                    {showCalendarControls && (
                         <>
                             <select
-                                className="input h-12 min-w-[min(13rem,100%)] flex-[1_1_14rem] text-base 2xl:max-w-72"
+                                className={desktopLocationSelectClass}
                                 value={locationId}
                                 onChange={(event) => onChangeFilters({ ...filters, locationId: event.target.value })}
                             >
@@ -751,7 +892,7 @@ function CalendarTopbar({
                                 ))}
                             </select>
                             <select
-                                className="input h-12 min-w-[min(13rem,100%)] flex-[1_1_14rem] text-base 2xl:max-w-72"
+                                className={desktopBarberSelectClass}
                                 value={filters.barberId ?? ""}
                                 onChange={(event) => onChangeFilters({ ...filters, barberId: event.target.value })}
                                 disabled={user.role === "barber"}
@@ -764,7 +905,7 @@ function CalendarTopbar({
                                 ))}
                             </select>
                             <select
-                                className="input h-12 min-w-[min(11rem,100%)] flex-[1_1_11rem] text-base 2xl:max-w-56"
+                                className={desktopStatusSelectClass}
                                 value={filters.status ?? ""}
                                 onChange={(event) => onChangeFilters({ ...filters, status: event.target.value as AdminBookingFilters["status"] })}
                             >
@@ -775,21 +916,21 @@ function CalendarTopbar({
                                 <option value="no_show">No show</option>
                             </select>
                             <div className="flex max-w-full shrink-0 overflow-x-auto rounded-md border border-forest/10 bg-[#f7faf7] p-1">
-                                {(["day", "week", "month", "list"] as AdminView[]).map((item) => (
+                                {viewItems.map((item) => (
                                     <button
                                         key={item}
-                                        className={view === item ? "segmented-active min-h-11 shrink-0 px-4 py-2 text-base" : "segmented min-h-11 shrink-0 border-0 bg-transparent px-4 py-2 text-base"}
+                                        className={desktopSegmentButtonClass(item)}
                                         onClick={() => onView(item)}
                                     >
                                         {item}
                                     </button>
                                 ))}
                             </div>
-                            <button className="icon-button min-h-11 min-w-11" onClick={onRefresh} title="Refresh bookings">
-                                <RefreshCw size={24} className={loading ? "animate-spin" : ""} />
+                            <button className={desktopRefreshButtonClass} onClick={onRefresh} title="Refresh bookings">
+                                <RefreshCw className={loading ? "size-5 animate-spin" : "size-5"} />
                             </button>
-                            <button className="icon-text-button min-h-11 px-4 py-2 text-base" onClick={onNewBooking}>
-                                <CalendarPlus size={22} />
+                            <button className={desktopAddButtonClass} onClick={onNewBooking}>
+                                <CalendarPlus className="size-5" />
                                 Add appointment
                             </button>
                         </>
@@ -1150,17 +1291,28 @@ function DayCalendarBoard({
     const boardRows = buildCalendarBoardRows(window.start, window.end, 15);
     const slots = boardRows.bookableSlots;
     const barbers = barberItems.map((item) => item.barber);
-    const barberColumnMin = barbers.length >= 3 ? 180 : barbers.length === 2 ? 250 : 320;
-    const boardMinWidth = 88 + Math.max(barbers.length, 1) * barberColumnMin;
+    const boardScrollRef = useRef<HTMLDivElement>(null);
+    const barberColumnMin = barbers.length >= 3 ? 160 : barbers.length === 2 ? 210 : 240;
+    const boardMinWidth = 66 + Math.max(barbers.length, 1) * barberColumnMin;
     const gridTemplateColumns = `${TIME_GUTTER_WIDTH} repeat(${Math.max(barbers.length, 1)}, minmax(${barberColumnMin}px, 1fr))`;
-    const headerAvatarSize = barbers.length >= 3 ? "md" : "lg";
+    const headerAvatarSize = barbers.length === 1 ? "lg" : barbers.length >= 3 ? "sm" : "md";
     const boardHeight = slots.length * SLOT_HEIGHT;
     const offScheduleBookings = barberItems.flatMap((item) => item.offScheduleBookings);
     const currentLineStyle = selectedDate === todayLocalDate() ? currentTimeLineStyle(window) : null;
+    const boardContextKey = `${selectedDate}:${locationId}:${window.start}-${window.end}:${barbers.map((barber) => barber.id).join(",")}`;
+
+    useEffect(() => {
+        const scroll = boardScrollRef.current;
+
+        if (!scroll) return;
+
+        scroll.scrollTop = 0;
+        scroll.scrollLeft = 0;
+    }, [boardContextKey]);
 
     if (!schedule || loading) {
         return (
-            <section className="flex min-h-[640px] items-center justify-center rounded-md border border-[#d6ded6] bg-white text-xl font-bold text-charcoal/60">
+            <section className="flex min-h-[360px] items-center justify-center rounded-md border border-[#d6ded6] bg-white text-base font-bold text-charcoal/60 sm:min-h-[520px] sm:text-xl">
                 <RefreshCw size={24} className="mr-3 animate-spin" />
                 Loading calendar
             </section>
@@ -1169,9 +1321,9 @@ function DayCalendarBoard({
 
     if (barbers.length === 0) {
         return (
-            <section className="flex min-h-[520px] flex-col items-center justify-center rounded-md border border-[#d6ded6] bg-white p-8 text-center shadow-sm">
+            <section className="flex min-h-[320px] flex-col items-center justify-center rounded-md border border-[#d6ded6] bg-white p-5 text-center shadow-sm sm:min-h-[520px] sm:p-8">
                 <CalendarDays size={34} className="text-green" />
-                <p className="mt-4 text-2xl font-black text-forest">No team members scheduled at this location today.</p>
+                <p className="mt-4 text-xl font-black text-forest sm:text-2xl">No team members scheduled at this location today.</p>
                 <p className="mt-2 max-w-lg text-base font-bold text-charcoal/55">
                     Use the date or location controls above to check another day board.
                 </p>
@@ -1180,12 +1332,14 @@ function DayCalendarBoard({
     }
 
     return (
-        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border border-[#d4ddd4] bg-white shadow-sm">
-            <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-[#cfdacf] px-4 py-4 sm:px-6">
-                <div className="flex items-center gap-3 text-2xl font-black text-forest">
-                    <CalendarDays size={28} />
+        <section data-admin-calendar-board className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border border-[#d4ddd4] bg-white shadow-sm">
+            <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-b border-[#cfdacf] px-3 py-2 sm:gap-3 sm:px-6 sm:py-4">
+                <div className="flex items-center gap-2 text-lg font-black text-forest sm:gap-3 sm:text-2xl">
+                    <CalendarDays className="size-5 sm:size-7" />
                     Day board
-                    <span className="rounded-full bg-[#eef5f1] px-3 py-1.5 text-sm text-charcoal/65">{barbers.length} columns</span>
+                    <span className="rounded-full bg-[#eef5f1] px-2 py-1 text-xs text-charcoal/65 sm:px-3 sm:py-1.5 sm:text-sm">
+                        {barbers.length} {barbers.length === 1 ? "staff" : "columns"}
+                    </span>
                 </div>
                 <CalendarLegend />
             </div>
@@ -1194,16 +1348,20 @@ function DayCalendarBoard({
                     {offScheduleBookings.length} booking{offScheduleBookings.length === 1 ? "" : "s"} sit outside scheduled working hours and are flagged on the board.
                 </div>
             )}
-            <div className="min-h-0 flex-1 overflow-auto overscroll-contain bg-[#fbfdfb] pb-6">
+            <div
+                ref={boardScrollRef}
+                data-admin-calendar-board-scroll
+                className="min-h-0 flex-1 overflow-auto overscroll-contain bg-[#fbfdfb] pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-6"
+            >
                 <div style={{ minWidth: `max(100%, ${boardMinWidth}px)` }}>
                     <div className="sticky top-0 z-10 grid border-b border-[#c5d0c5] bg-white" style={{ gridTemplateColumns }}>
-                        <div className="sticky left-0 z-20 border-r border-[#d2dcd2] bg-white px-3 py-4 text-sm font-black uppercase tracking-[0.12em] text-charcoal/55 sm:px-4 2xl:px-5">Time</div>
+                        <div className="sticky left-0 z-20 border-r border-[#d2dcd2] bg-white px-2 py-2 text-[0.68rem] font-black uppercase tracking-[0.12em] text-charcoal/55 sm:px-4 sm:py-4 sm:text-sm 2xl:px-5">Time</div>
                         {barberItems.map((item) => (
-                            <div key={item.barber.id} className="flex min-w-0 items-center gap-3 border-r border-[#d2dcd2] px-3 py-3 last:border-r-0 sm:px-4 2xl:gap-4 2xl:px-5">
+                            <div key={item.barber.id} className="flex min-w-0 items-center gap-2 border-r border-[#d2dcd2] px-2 py-2 last:border-r-0 sm:gap-3 sm:px-4 sm:py-3 2xl:gap-4 2xl:px-5">
                                 <BarberAvatar barber={item.barber} size={headerAvatarSize} />
                                 <span className="min-w-0">
-                                    <span className="block truncate text-lg font-black text-forest 2xl:text-xl">{item.barber.displayName}</span>
-                                    <span className="block truncate text-xs font-black uppercase tracking-[0.08em] text-charcoal/45">
+                                    <span className="block truncate text-sm font-black text-forest sm:text-lg 2xl:text-xl">{item.barber.displayName}</span>
+                                    <span className="block truncate text-[0.64rem] font-black uppercase tracking-[0.06em] text-charcoal/45 sm:text-xs sm:tracking-[0.08em]">
                                         {item.workingWindows.map((range) => `${formatClockLabel(range.startTime)}-${formatClockLabel(range.endTime)}`).join(", ") || "Off schedule"}
                                     </span>
                                 </span>
@@ -1215,7 +1373,7 @@ function DayCalendarBoard({
                             {slots.map((slot) => (
                                 <div
                                     key={`time-${slot}`}
-                                    className={`absolute left-0 right-0 px-2 pr-3 text-right text-sm font-black ${
+                                    className={`absolute left-0 right-0 px-1.5 pr-2 text-right text-xs font-black sm:px-2 sm:pr-3 sm:text-sm ${
                                         slot.endsWith(":00") ? "text-charcoal/70" : "text-charcoal/35"
                                     }`}
                                     style={{ top: timeTopFromClock(slot, window.start), height: SLOT_HEIGHT }}
@@ -1347,14 +1505,14 @@ function DayCalendarBoard({
                             );
                         })}
                     </div>
-                    <div className="grid border-t-2 border-[#9fb29f] bg-[#f7faf7]" style={{ gridTemplateColumns, minHeight: 56 }}>
-                        <div className="sticky left-0 z-[5] border-r border-[#c5d0c5] bg-[#f7faf7] px-3 py-4 text-right text-base font-black text-forest 2xl:px-5 2xl:text-lg">
+                    <div className="grid border-t-2 border-[#9fb29f] bg-[#f7faf7]" style={{ gridTemplateColumns, minHeight: 52 }}>
+                        <div className="sticky left-0 z-[5] border-r border-[#c5d0c5] bg-[#f7faf7] px-2 py-3 text-right text-sm font-black text-forest 2xl:px-5 2xl:text-lg">
                             {formatClockLabel(boardRows.closeBoundary)}
                         </div>
                         {barberItems.map((item) => (
                             <div
                                 key={`${item.barber.id}-${boardRows.closeBoundary}-close`}
-                                className="border-r border-[#d8e1d8] px-3 py-4 text-sm font-black uppercase tracking-[0.12em] text-charcoal/45 last:border-r-0"
+                                className="border-r border-[#d8e1d8] px-2 py-3 text-xs font-black uppercase tracking-[0.12em] text-charcoal/45 last:border-r-0 sm:px-3 sm:py-4 sm:text-sm"
                                 aria-label={`Closed after ${formatClockLabel(boardRows.closeBoundary)} for ${item.barber.displayName}`}
                             />
                         ))}
@@ -1800,21 +1958,21 @@ function AddAppointmentDrawer({
     }
 
     return (
-        <aside className="fixed inset-0 z-50 flex w-full min-w-0 flex-col bg-white shadow-2xl xl:static xl:inset-auto xl:z-auto xl:h-[100dvh] xl:max-w-none xl:border-l xl:border-[#cfdacf] xl:shadow-none">
-            <div className="flex items-start justify-between gap-4 border-b border-[#cfdacf] px-5 py-5 sm:px-7 sm:py-6">
+        <aside data-admin-add-drawer className="fixed inset-0 z-50 flex h-dvh max-h-dvh w-full min-w-0 flex-col overflow-hidden bg-white shadow-2xl xl:static xl:inset-auto xl:z-auto xl:h-[100dvh] xl:max-w-none xl:border-l xl:border-[#cfdacf] xl:shadow-none">
+            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[#cfdacf] px-4 py-3 sm:px-7 sm:py-6 xl:px-5 xl:py-4 2xl:px-6 2xl:py-5">
                 <div>
-                    <p className="text-sm font-bold uppercase tracking-[0.14em] text-charcoal/50">Staff create</p>
-                    <h2 className="text-3xl font-black text-forest sm:text-4xl">Add appointment</h2>
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-charcoal/50 sm:text-sm">Staff create</p>
+                    <h2 className="text-2xl font-black text-forest sm:text-4xl xl:text-3xl 2xl:text-4xl">Add appointment</h2>
                 </div>
-                <button className="icon-button" onClick={onClose} title="Close appointment drawer">
+                <button className="icon-button !min-h-10 !w-10 sm:!min-h-14 sm:!w-14" onClick={onClose} title="Close appointment drawer">
                     <X size={24} />
                 </button>
             </div>
             <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-                <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 pb-8 sm:px-7 sm:py-6">
+                <div data-admin-add-drawer-body className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:space-y-5 sm:px-7 sm:py-6 sm:pb-8 xl:px-5 xl:py-5 2xl:px-6">
                     {error && <Notice tone="error" message={error} onClear={() => setError("")} />}
                     <div className="rounded-md border border-[#cddbcc] bg-[#f8fbf8] p-3 sm:p-4">
-                        <div className="grid gap-3 md:grid-cols-3">
+                        <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(12rem,1fr))]">
                             <SummaryMetric label="Duration" value={`${totalDurationMinutes || 0} min`} />
                             <SummaryMetric label="Price" value={priceSummary} />
                             <SummaryMetric label="Time" value={`${formatLocalTime(previewStartTime)} - ${formatLocalTime(previewEndTime)}`} />
@@ -1841,7 +1999,7 @@ function AddAppointmentDrawer({
                             </button>
                         </div>
                     </Field>
-                    <div className="grid gap-3 md:grid-cols-2">
+                    <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(13rem,1fr))]">
                         <Field label="Location">
                             <LocationSelect value={locationId} options={options.locations} onChange={setLocationId} />
                         </Field>
@@ -1849,7 +2007,7 @@ function AddAppointmentDrawer({
                             <BarberSelect value={barberId} options={selectableBarbers} user={user} onChange={setBarberId} />
                         </Field>
                         {selectedBarber && (
-                            <div className="md:col-span-2">
+                            <div className="[grid-column:1/-1]">
                                 <BarberPreview barber={selectedBarber} />
                             </div>
                         )}
@@ -1884,20 +2042,20 @@ function AddAppointmentDrawer({
                     </div>
                     <div className="rounded-md border border-[#d8e1d8] bg-[#f8fbf8] p-4">
                         <p className="mb-3 text-sm font-bold text-charcoal/55">Add a phone or email to send confirmation and reminders.</p>
-                        <div className="grid gap-3 md:grid-cols-2">
-                        <Field label="Phone optional">
-                            <input className="input" value={phone} onChange={(event) => setPhone(event.target.value)} />
-                        </Field>
-                        <Field label="Email optional">
-                            <input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
-                        </Field>
+                        <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(13rem,1fr))]">
+                            <Field label="Phone optional">
+                                <input className="input" value={phone} onChange={(event) => setPhone(event.target.value)} />
+                            </Field>
+                            <Field label="Email optional">
+                                <input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+                            </Field>
                         </div>
                     </div>
                     <Field label="Internal notes">
                         <textarea className="input min-h-20" value={internalNotes} onChange={(event) => setInternalNotes(event.target.value)} />
                     </Field>
                 </div>
-                <div className="shrink-0 border-t border-[#d4ddd4] bg-white px-5 py-4 shadow-[0_-12px_24px_rgba(16,56,38,0.08)] sm:px-7 sm:py-5">
+                <div data-admin-add-drawer-footer className="shrink-0 border-t border-[#d4ddd4] bg-white px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-12px_24px_rgba(16,56,38,0.08)] sm:px-7 sm:py-5">
                     <button className="primary-button w-full" type="submit" disabled={submitting || !selectedSlot || !exactSlotAvailable}>
                         {submitting ? "Creating" : bookingSource === "walk_in" ? "Create walk-in" : "Create appointment"}
                     </button>
@@ -1909,7 +2067,7 @@ function AddAppointmentDrawer({
 
 function SummaryMetric({ label, value }: { label: string; value: string }) {
     return (
-        <div className="rounded-md bg-white px-4 py-3">
+        <div className="rounded-md bg-white px-3 py-3 sm:px-4">
             <p className="text-xs font-black uppercase tracking-[0.12em] text-charcoal/45">{label}</p>
             <p className="break-words text-lg font-black leading-tight text-forest sm:text-xl">{value}</p>
         </div>
@@ -2354,7 +2512,7 @@ function SlotPicker({
     }
 
     return (
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr))]">
             {slots.map((slot) => {
                 const barber = barbers.find((candidate) => candidate.id === slot.barberId);
                 const selected = selectedSlot?.startTime === slot.startTime && selectedSlot?.barberId === slot.barberId;
@@ -2439,10 +2597,10 @@ function CalendarLegend() {
     ];
 
     return (
-        <div className="flex flex-wrap items-center gap-3 text-sm font-black text-charcoal/60">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.72rem] font-black text-charcoal/60 sm:gap-3 sm:text-sm">
             {items.map(([label, color]) => (
                 <span key={label} className="inline-flex items-center gap-1.5">
-                    <span className={`size-3 rounded-full ${color}`} />
+                    <span className={`size-2.5 rounded-full sm:size-3 ${color}`} />
                     {label}
                 </span>
             ))}

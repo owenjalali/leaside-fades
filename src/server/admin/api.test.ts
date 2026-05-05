@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { hashPassword } from "../auth/password.ts";
 import type {
@@ -41,6 +41,15 @@ const eglintonId = "33333333-3333-3333-3333-333333333333";
 const millwoodId = "44444444-4444-4444-4444-444444444444";
 const now = new Date("2026-04-27T15:00:00.000Z");
 const serviceId = "55555555-5555-5555-5555-555555555555";
+
+beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(now);
+});
+
+afterEach(() => {
+    vi.useRealTimers();
+});
 
 class InMemoryAuthRepository implements AuthRepository, PasswordResetRepository, TeamOnboardingRepository {
     users: AuthUserRecord[] = [];
