@@ -23,6 +23,7 @@ import {
     getActiveNotificationFailures,
     getScheduledCalendarBarbers,
     formatScheduleWindow,
+    getWeeklyCopyTargetDayOptions,
     groupBookingsByLocalDate,
     groupShiftsByBarberAndWeekday,
     mobileAdminCalendarLayoutBudget,
@@ -197,6 +198,26 @@ describe("Phase 7 schedule UI utilities", () => {
     test("formats local schedule windows for compact shift chips", () => {
         expect(formatScheduleWindow("10:00", "19:00")).toBe("10:00 AM - 7:00 PM");
         expect(formatScheduleWindow("11:15", "15:45")).toBe("11:15 AM - 3:45 PM");
+    });
+
+    test("builds weekly copy target days without copying a day onto itself", () => {
+        expect(getWeeklyCopyTargetDayOptions(1)).toEqual([
+            { dayOfWeek: 2, label: "Tue" },
+            { dayOfWeek: 3, label: "Wed" },
+            { dayOfWeek: 4, label: "Thu" },
+            { dayOfWeek: 5, label: "Fri" },
+            { dayOfWeek: 6, label: "Sat" },
+            { dayOfWeek: 0, label: "Sun" },
+        ]);
+
+        expect(getWeeklyCopyTargetDayOptions(0).map((option) => option.label)).toEqual([
+            "Mon",
+            "Tue",
+            "Wed",
+            "Thu",
+            "Fri",
+            "Sat",
+        ]);
     });
 
     test("builds a selected barber weekly draft with inactive days and split windows", () => {

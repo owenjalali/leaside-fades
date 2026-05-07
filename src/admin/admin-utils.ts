@@ -20,6 +20,8 @@ const statusLabels: Record<AdminBookingStatus, string> = {
     completed: "Completed",
     no_show: "No show",
 };
+const weeklyScheduleDayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+const weeklyScheduleDisplayOrder = [1, 2, 3, 4, 5, 6, 0] as const;
 
 export interface CalendarWorkingWindow {
     barberId: string;
@@ -80,6 +82,15 @@ export type WeeklyScheduleSaveOperation =
     | { type: "deactivate"; shiftId: string }
     | { type: "update"; shiftId: string; payload: WeeklyScheduleShiftPayload }
     | { type: "create"; payload: WeeklyScheduleShiftPayload };
+
+export function getWeeklyCopyTargetDayOptions(sourceDayOfWeek: number) {
+    return weeklyScheduleDisplayOrder
+        .filter((dayOfWeek) => dayOfWeek !== sourceDayOfWeek)
+        .map((dayOfWeek) => ({
+            dayOfWeek,
+            label: weeklyScheduleDayLabels[dayOfWeek],
+        }));
+}
 
 export const mobileAdminCalendarLayoutBudget = {
     viewportHeightPx: 568,

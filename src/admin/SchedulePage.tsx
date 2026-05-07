@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
     Ban,
-    CalendarDays,
     ChevronDown,
     Copy,
     Edit3,
@@ -16,14 +15,11 @@ import {
 import {
     createAdminBlockedTime,
     createAdminShift,
-    createAdminShiftOverride,
     deactivateAdminShift,
     deleteAdminBlockedTime,
-    deleteAdminShiftOverride,
     fetchAdminSchedule,
     updateAdminBlockedTime,
     updateAdminShift,
-    updateAdminShiftOverride,
 } from "./api";
 import { getAdminBarberPhotoUrl } from "./barber-photos";
 import {
@@ -34,6 +30,7 @@ import {
     calculateWeeklyScheduleHours,
     formatLocalDateTime,
     formatScheduleWindow,
+    getWeeklyCopyTargetDayOptions,
     todayLocalDate,
 } from "./admin-utils";
 import type { DayScheduleDraft, ShiftWindowDraft, WeeklyScheduleDraft } from "./admin-utils";
@@ -42,8 +39,6 @@ import type {
     AdminBlockedTime,
     AdminBlockedTimeScope,
     AdminSchedule,
-    AdminShiftOverride,
-    AdminShiftOverrideType,
     BlockedTimeFormInput,
     SafeAdminUser,
 } from "./types";
@@ -116,9 +111,7 @@ export default function SchedulePage({
                 <ShiftWorkspace
                     schedule={schedule}
                     user={user}
-                    filters={filters}
                     loading={loading}
-                    onFiltersChange={setFilters}
                     onRefresh={refresh}
                     onChanged={afterMutation}
                 />
@@ -132,17 +125,13 @@ export default function SchedulePage({
 function ShiftWorkspace({
     schedule,
     user,
-    filters,
     loading,
-    onFiltersChange,
     onRefresh,
     onChanged,
 }: {
     schedule: AdminSchedule;
     user: SafeAdminUser;
-    filters: { from: string; to: string };
     loading: boolean;
-    onFiltersChange: React.Dispatch<React.SetStateAction<{ from: string; to: string }>>;
     onRefresh: () => Promise<void>;
     onChanged: (message: string) => Promise<void>;
 }) {
@@ -159,7 +148,6 @@ function ShiftWorkspace({
         buildWeeklyScheduleDraft(schedule, initialBarberId),
     );
     const [expandedDay, setExpandedDay] = useState(1);
-    const [overrideDraft, setOverrideDraft] = useState<AdminShiftOverride | null>(null);
     const [notice, setNotice] = useState("");
     const [saving, setSaving] = useState(false);
     const canManageShifts = user.role === "owner" || user.role === "admin";
@@ -172,7 +160,6 @@ function ShiftWorkspace({
     const filteredBarbers = visibleBarbers.filter((barber) =>
         barber.displayName.toLowerCase().includes(staffSearch.trim().toLowerCase()),
     );
-    const overrides = schedule.shiftOverrides.filter((override) => override.barberId === selectedBarberId);
 
     useEffect(() => {
         if (!selectedBarber || selectedBarber.id === selectedBarberId) {
@@ -193,7 +180,6 @@ function ShiftWorkspace({
             return;
         }
         setSelectedBarberId(barberId);
-        setOverrideDraft(null);
         setNotice("");
     }
 
@@ -219,32 +205,6 @@ function ShiftWorkspace({
             setNotice(error instanceof Error ? error.message : "Weekly schedule could not be saved.");
         } finally {
             setSaving(false);
-        }
-    }
-
-    async function submitOverride(input: Record<string, unknown>, editingId?: string) {
-        try {
-            if (editingId) {
-                await updateAdminShiftOverride(editingId, input);
-                await onChanged("Override updated.");
-            } else {
-                await createAdminShiftOverride(input);
-                await onChanged("Override created.");
-            }
-            setOverrideDraft(null);
-            setNotice("");
-        } catch (error) {
-            setNotice(error instanceof Error ? error.message : "Override could not be saved.");
-        }
-    }
-
-    async function removeOverride(override: AdminShiftOverride) {
-        if (!window.confirm("Delete this override?")) return;
-        try {
-            await deleteAdminShiftOverride(override.id);
-            await onChanged("Override deleted.");
-        } catch (error) {
-            setNotice(error instanceof Error ? error.message : "Override could not be deleted.");
         }
     }
 
@@ -337,21 +297,8 @@ function ShiftWorkspace({
                         <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                             <div className="flex flex-wrap gap-2">
                                 <ShiftTabButton active={activeTab === "weekly"} onClick={() => setActiveTab("weekly")}>Weekly schedule</ShiftTabButton>
-                                <ShiftTabButton active={activeTab === "overrides"} onClick={() => setActiveTab("overrides")}>One-off overrides</ShiftTabButton>
                                 <ShiftTabButton active={activeTab === "overview"} onClick={() => setActiveTab("overview")}>Overview</ShiftTabButton>
                             </div>
-                            {canManageShifts && (
-                                <button
-                                    className="icon-text-button !min-h-11 !px-3 !py-2"
-                                    onClick={() => {
-                                        setActiveTab("overrides");
-                                        setOverrideDraft(null);
-                                    }}
-                                >
-                                    <Plus size={16} />
-                                    Add override
-                                </button>
-                            )}
                         </div>
                     </div>
 
@@ -372,22 +319,6 @@ function ShiftWorkspace({
                         />
                     )}
 
-                    {activeTab === "overrides" && (
-                        <OneOffOverridesTab
-                            schedule={schedule}
-                            selectedBarberId={selectedBarberId}
-                            overrides={overrides}
-                            filters={filters}
-                            canManage={canManageShifts}
-                            draft={overrideDraft}
-                            onFiltersChange={onFiltersChange}
-                            onEdit={setOverrideDraft}
-                            onDelete={removeOverride}
-                            onSubmit={submitOverride}
-                            onClear={() => setOverrideDraft(null)}
-                        />
-                    )}
-
                     {activeTab === "overview" && (
                         <StaffScheduleOverview schedule={schedule} barbers={visibleBarbers} />
                     )}
@@ -397,7 +328,7 @@ function ShiftWorkspace({
     );
 }
 
-type ShiftWorkspaceTab = "weekly" | "overrides" | "overview";
+type ShiftWorkspaceTab = "weekly" | "overview";
 
 function WeeklyScheduleBuilder({
     draft,
@@ -563,7 +494,8 @@ function WeeklyDayRow({
     onClearDay: () => void;
     onCopyDay: (targetDay: number) => void;
 }) {
-    const [copyTarget, setCopyTarget] = useState(String((day.dayOfWeek + 1) % 7));
+    const copyTargetOptions = useMemo(() => getWeeklyCopyTargetDayOptions(day.dayOfWeek), [day.dayOfWeek]);
+    const [copyTarget, setCopyTarget] = useState(String(copyTargetOptions[0]?.dayOfWeek ?? ""));
 
     return (
         <div className={`border-b border-forest/10 last:border-b-0 ${expanded ? "bg-mint/25" : "bg-white"}`}>
@@ -614,7 +546,7 @@ function WeeklyDayRow({
                                 </div>
                             ))}
                             {canManage && (
-                                <button className="text-button !min-h-8 justify-self-start !px-2 !py-1 text-sm" type="button" onClick={onAddWindow}>
+                                <button className="text-button inline-flex !min-h-8 items-center gap-1.5 justify-self-start !px-2 !py-1 text-sm" type="button" onClick={onAddWindow}>
                                     <Plus size={14} />
                                     Add split
                                 </button>
@@ -624,95 +556,38 @@ function WeeklyDayRow({
                         <div className="flex min-h-10 items-center text-sm font-bold text-charcoal/45">Not working</div>
                     )}
                     {expanded && canManage && (
-                        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-forest/10 bg-white p-3 text-sm">
-                            <span className="mr-1 font-black text-forest">Day actions</span>
-                            <select className="input !min-h-9 !w-auto !py-1 text-sm" value={copyTarget} onChange={(event) => setCopyTarget(event.target.value)}>
-                                {weeklyDisplayOrder.map((index) => (
-                                    <option key={weekdays[index]} value={index}>{weekdays[index]}</option>
-                                ))}
-                            </select>
-                            <button className="icon-text-button !min-h-9 !px-2 !py-1 text-sm" type="button" onClick={() => onCopyDay(Number(copyTarget))}>
-                                <Copy size={14} />
-                                Copy to...
-                            </button>
-                            <button className="danger-button !min-h-9 !px-2 !py-1 text-sm" type="button" onClick={onClearDay}>
+                        <div className="mt-3 flex flex-col gap-2 rounded-md border border-forest/10 bg-white/90 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-xs font-black uppercase tracking-[0.12em] text-charcoal/45">Copy hours to</span>
+                                <select className="input !min-h-9 !w-auto !py-1 text-sm" value={copyTarget} onChange={(event) => setCopyTarget(event.target.value)}>
+                                    {copyTargetOptions.map((option) => (
+                                        <option key={option.dayOfWeek} value={option.dayOfWeek}>{option.label}</option>
+                                    ))}
+                                </select>
+                                <button
+                                    className="icon-text-button !min-h-9 !px-2 !py-1 text-sm"
+                                    type="button"
+                                    onClick={() => onCopyDay(Number(copyTarget))}
+                                    disabled={!copyTarget}
+                                >
+                                    <Copy size={14} />
+                                    Apply
+                                </button>
+                            </div>
+                            <button className="text-button inline-flex !min-h-9 items-center justify-center gap-1.5 !px-2 !py-1 text-sm text-red-700 hover:bg-red-50" type="button" onClick={onClearDay}>
                                 <X size={14} />
-                                Clear day
+                                Clear {weekdays[day.dayOfWeek]}
                             </button>
                         </div>
                     )}
                 </div>
                 <div className="flex items-start justify-end gap-1 pt-1">
-                    <IconMini title={expanded ? "Collapse day actions" : "Show day actions"} onClick={onExpand}>
+                    <IconMini title={expanded ? "Collapse options" : "Show options"} onClick={onExpand}>
                         <ChevronDown size={14} className={expanded ? "rotate-180 transition" : "transition"} />
                     </IconMini>
                 </div>
             </div>
         </div>
-    );
-}
-
-function OneOffOverridesTab({
-    schedule,
-    selectedBarberId,
-    overrides,
-    filters,
-    canManage,
-    draft,
-    onFiltersChange,
-    onEdit,
-    onDelete,
-    onSubmit,
-    onClear,
-}: {
-    schedule: AdminSchedule;
-    selectedBarberId: string;
-    overrides: AdminShiftOverride[];
-    filters: { from: string; to: string };
-    canManage: boolean;
-    draft: AdminShiftOverride | null;
-    onFiltersChange: React.Dispatch<React.SetStateAction<{ from: string; to: string }>>;
-    onEdit: (override: AdminShiftOverride) => void;
-    onDelete: (override: AdminShiftOverride) => void;
-    onSubmit: (input: Record<string, unknown>, editingId?: string) => Promise<void>;
-    onClear: () => void;
-}) {
-    return (
-        <section className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_360px] sm:p-5">
-            <div className="space-y-4">
-                <Panel>
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                            <h2 className="text-lg font-black text-forest">One-off overrides</h2>
-                            <p className="text-sm font-bold text-charcoal/55">Exceptions for {barberName(schedule, selectedBarberId)}.</p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                            <DateField label="From" value={filters.from} onChange={(from) => onFiltersChange((value) => ({ ...value, from }))} />
-                            <DateField label="To" value={filters.to} onChange={(to) => onFiltersChange((value) => ({ ...value, to }))} />
-                        </div>
-                    </div>
-                </Panel>
-                <OverrideList
-                    overrides={overrides}
-                    schedule={schedule}
-                    canManage={canManage}
-                    onEdit={onEdit}
-                    onDelete={onDelete}
-                />
-            </div>
-            {canManage && (
-                <Panel>
-                    <ShiftOverrideForm
-                        key={`${draft?.id ?? "create-override"}-${selectedBarberId}`}
-                        schedule={schedule}
-                        defaultBarberId={selectedBarberId}
-                        draft={draft}
-                        onSubmit={onSubmit}
-                        onClear={onClear}
-                    />
-                </Panel>
-            )}
-        </section>
     );
 }
 
@@ -849,123 +724,6 @@ function ToggleSwitch({ checked, disabled, onChange }: { checked: boolean; disab
         </button>
     );
 }
-function OverrideList({
-    overrides,
-    schedule,
-    canManage,
-    onEdit,
-    onDelete,
-}: {
-    overrides: AdminShiftOverride[];
-    schedule: AdminSchedule;
-    canManage: boolean;
-    onEdit: (override: AdminShiftOverride) => void;
-    onDelete: (override: AdminShiftOverride) => void;
-}) {
-    return (
-        <Panel>
-            <div className="mb-3 flex items-center justify-between gap-3">
-                <h2 className="text-lg font-black text-forest">One-off overrides</h2>
-            </div>
-            {overrides.length === 0 ? (
-                <EmptyState label="No one-off overrides match these filters." />
-            ) : (
-                <div className="grid gap-2">
-                    {overrides.map((override) => (
-                        <div key={override.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-forest/10 bg-cream p-3 text-sm">
-                            <div>
-                                <p className="font-black text-forest">{override.overrideDate} - {formatOverrideType(override.overrideType)}</p>
-                                <p className="text-charcoal/60">
-                                    {barberName(schedule, override.barberId)}
-                                    {override.locationId ? ` at ${locationName(schedule, override.locationId)}` : ""}
-                                    {override.startTime && override.endTime ? ` - ${formatScheduleWindow(override.startTime, override.endTime)}` : ""}
-                                </p>
-                            </div>
-                            {canManage && (
-                                <div className="flex gap-1">
-                                    <IconMini title="Edit override" onClick={() => onEdit(override)}><Edit3 size={14} /></IconMini>
-                                    <IconMini title="Delete override" onClick={() => onDelete(override)}><Trash2 size={14} /></IconMini>
-                                </div>
-                            )}
-                        </div>
-                    ))}
-                </div>
-            )}
-        </Panel>
-    );
-}
-
-function ShiftOverrideForm({
-    schedule,
-    defaultBarberId,
-    draft,
-    onSubmit,
-    onClear,
-}: {
-    schedule: AdminSchedule;
-    defaultBarberId?: string;
-    draft: AdminShiftOverride | null;
-    onSubmit: (input: Record<string, unknown>, editingId?: string) => Promise<void>;
-    onClear: () => void;
-}) {
-    const editingOverrideId = draft?.id || undefined;
-    const [barberId, setBarberId] = useState(draft?.barberId ?? defaultBarberId ?? schedule.barbers[0]?.id ?? "");
-    const [locationId, setLocationId] = useState(draft?.locationId ?? defaultLocationIdForBarber(schedule, draft?.barberId ?? defaultBarberId) ?? schedule.locations[0]?.id ?? "");
-    const [overrideDate, setOverrideDate] = useState(draft?.overrideDate ?? todayLocalDate());
-    const [overrideType, setOverrideType] = useState<AdminShiftOverrideType>(draft?.overrideType ?? "add");
-    const [startTime, setStartTime] = useState(draft?.startTime ?? "10:00");
-    const [endTime, setEndTime] = useState(draft?.endTime ?? "12:00");
-    const [reason, setReason] = useState(draft?.reason ?? "");
-
-    async function submit(event: React.FormEvent) {
-        event.preventDefault();
-        await onSubmit({
-            barberId,
-            locationId: overrideType === "not_working" ? locationId || undefined : locationId,
-            overrideDate,
-            overrideType,
-            startTime: overrideType === "not_working" ? undefined : startTime,
-            endTime: overrideType === "not_working" ? undefined : endTime,
-            reason,
-        }, editingOverrideId);
-    }
-
-    return (
-        <form onSubmit={submit} className="space-y-3">
-            <FormHeading icon={<CalendarDays size={18} />} title={editingOverrideId ? "Edit override" : "One-off override"} />
-            <Field label="Barber">
-                <select className="input" value={barberId} onChange={(event) => setBarberId(event.target.value)}>
-                    {schedule.barbers.map((barber) => <option key={barber.id} value={barber.id}>{barber.displayName}</option>)}
-                </select>
-            </Field>
-            <Field label="Date">
-                <input className="input" type="date" value={overrideDate} onChange={(event) => setOverrideDate(event.target.value)} />
-            </Field>
-            <Segmented value={overrideType} values={["add", "remove", "not_working"]} onChange={(value) => setOverrideType(value as AdminShiftOverrideType)} />
-            {overrideType !== "not_working" && (
-                <>
-                    <Field label="Location">
-                        <select className="input" value={locationId} onChange={(event) => setLocationId(event.target.value)}>
-                            {schedule.locations.map((location) => <option key={location.id} value={location.id}>{locationName(schedule, location.id)}</option>)}
-                        </select>
-                    </Field>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                        <Field label="Start"><input className="input" type="time" step="900" value={startTime} onChange={(event) => setStartTime(event.target.value)} /></Field>
-                        <Field label="End"><input className="input" type="time" step="900" value={endTime} onChange={(event) => setEndTime(event.target.value)} /></Field>
-                    </div>
-                </>
-            )}
-            <Field label="Reason">
-                <input className="input" value={reason} onChange={(event) => setReason(event.target.value)} />
-            </Field>
-            <div className="flex flex-wrap gap-2">
-                <button className="primary-button" type="submit">{editingOverrideId ? "Save override" : "Create override"}</button>
-                {editingOverrideId && <button className="text-button" type="button" onClick={onClear}>Clear</button>}
-            </div>
-        </form>
-    );
-}
-
 function BlockedTimeWorkspace({
     schedule,
     user,
@@ -1179,17 +937,6 @@ function DateField({ label, value, onChange }: { label: string; value: string; o
     );
 }
 
-function SelectMini({ label, value, onChange, children }: { label: string; value: string; onChange: (value: string) => void; children: React.ReactNode }) {
-    return (
-        <label className="flex items-center gap-2 text-sm font-bold text-charcoal/70">
-            {label}
-            <select className="input h-10 w-auto min-w-44" value={value} onChange={(event) => onChange(event.target.value)}>
-                {children}
-            </select>
-        </label>
-    );
-}
-
 function Segmented({ value, values, onChange }: { value: string; values: string[]; onChange: (value: string) => void }) {
     return (
         <div className="flex flex-wrap gap-2">
@@ -1288,10 +1035,6 @@ function barberName(schedule: AdminSchedule, barberId: string) {
 function locationName(schedule: AdminSchedule, locationId: string) {
     const name = schedule.locations.find((location) => location.id === locationId)?.name ?? "Location";
     return name.replace(/^Leaside Fades\s+/i, "");
-}
-
-function formatOverrideType(type: AdminShiftOverrideType) {
-    return type === "not_working" ? "Not working" : type === "add" ? "Added shift" : "Removed time";
 }
 
 function formatBlockedScope(scope: AdminBlockedTimeScope) {

@@ -261,6 +261,14 @@ Keep Phase 6 scope intact while hardening three safety edges: transaction-bound 
 Reason:
 The Phase 6 audit found a real pg overlapping client-query warning during transaction-bound manual booking creation, an ambiguity where reschedule ignored service-change fields, and a CSRF risk surface on cookie-authenticated admin mutations. These fixes preserve existing public booking and availability behavior while reducing pre-Phase-7 scheduling and admin mutation risk.
 
+### 2026-05-07 - Keep Staff Shifts Focused on Weekly Schedules
+
+Decision:
+Remove the visible one-off override workspace from `/admin/shifts` and keep Staff Shifts focused on the weekly repeating schedule plus team overview.
+
+Reason:
+The approved direction is a guided staff schedule editor, not a dense CRUD workspace. One-off override APIs and calendar availability behavior remain intact, but the exception editing surface needs a clearer calendar-native design before it returns to the UI.
+
 ### 2026-04-27 - Use Validated Forms And Grids For Phase 7 Schedule Management
 
 Decision:

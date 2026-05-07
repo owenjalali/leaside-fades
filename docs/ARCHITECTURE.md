@@ -69,6 +69,8 @@ Barbers can work at different locations on the same day. By default, overlapping
 
 Phase 7 implements this as `src/server/admin/schedule-service.ts` with a Drizzle repository in `src/server/admin/schedule-repository.ts`. Owner/admin users can create, edit, list, and deactivate recurring shifts, including split shifts as adjacent same-day windows. The service rejects overlapping active shifts for the same barber, weekday, local time range, and overlapping effective date ranges.
 
+The `/admin/shifts` UI is a staff-first weekly schedule builder for recurring patterns and a team overview. One-off shift overrides remain part of the server schedule model and calendar availability engine, but the visible Staff Shifts override editor is hidden until the exception workflow can be redesigned with a clearer calendar-native interaction.
+
 ### Blocked Time Service
 
 Responsible for:

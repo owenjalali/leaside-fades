@@ -151,6 +151,8 @@
 - [x] Owner can create recurring shift
 - [x] Owner can create split shift
 - [x] Owner can create one-off override
+- [x] Staff Shifts weekly builder shows Weekly schedule and Overview only, with one-off override editing hidden from the visible UI
+- [x] Weekly builder copy controls exclude the current day and avoid the old Day actions panel language
 - [x] Overlapping same-barber shifts are rejected by default
 - [x] Barber can manage own blocked time if allowed
 - [x] Location closure blocks location
