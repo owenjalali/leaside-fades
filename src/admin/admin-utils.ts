@@ -5,6 +5,7 @@ import type {
     AdminBookingSummary,
     AdminCalendarOptions,
     AdminDashboardActivity,
+    AdminDashboardNotificationHealth,
     AdminDay,
     AdminSchedule,
     AdminScheduleFilters,
@@ -168,6 +169,51 @@ export function compactNotificationFailureMessage(errorMessage: string | null, f
     }
 
     return compacted.length > 117 ? `${compacted.slice(0, 114)}...` : compacted;
+}
+
+export function formatDashboardCurrency(cents: number) {
+    return `CA$ ${Math.round(cents / 100).toLocaleString("en-CA")}`;
+}
+
+export function formatCompactDashboardCurrency(cents: number) {
+    const dollars = Math.round(cents / 100);
+
+    if (dollars >= 1000) {
+        const compact = dollars / 1000;
+        return `CA$ ${compact % 1 === 0 ? compact.toFixed(0) : compact.toFixed(1)}k`;
+    }
+
+    return `CA$ ${dollars.toLocaleString("en-CA")}`;
+}
+
+export function buildDashboardChartScale(values: number[]) {
+    const maxValue = Math.max(0, ...values);
+
+    if (maxValue === 0) {
+        return { max: 1, ticks: [1, 0.75, 0.5, 0.25, 0] };
+    }
+
+    const magnitude = 10 ** Math.floor(Math.log10(maxValue));
+    const normalized = maxValue / magnitude;
+    const rounded = normalized <= 1.5 ? 1.5 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+    const max = rounded * magnitude;
+
+    return {
+        max,
+        ticks: [max, max * 0.75, max * 0.5, max * 0.25, 0],
+    };
+}
+
+export function seriesHasDashboardData<T extends object, K extends keyof T>(series: T[], key: K) {
+    return series.some((item) => Number(item[key]) > 0);
+}
+
+export function summarizeNotificationHealth(health: AdminDashboardNotificationHealth) {
+    return [
+        `${health.deliverySuccessRate}% delivery success`,
+        `${health.failedActiveCount} active ${health.failedActiveCount === 1 ? "issue" : "issues"}`,
+        `${health.reminderQueueCount} reminders queued`,
+    ];
 }
 
 export function buildWeekDays(selectedDate: string) {

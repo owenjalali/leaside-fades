@@ -37,6 +37,7 @@ export interface AdminBookingRecord {
     endTime: Date;
     totalDurationMinutes: number;
     services: string[];
+    serviceDetails?: BookingServiceSnapshot[];
 }
 
 export interface AdminBookingDetailRecord extends AdminBookingRecord {
@@ -153,12 +154,56 @@ export interface AdminUpcomingReminderPreview {
     recipientLabel: string;
 }
 
+export interface AdminDashboardValueSeriesPoint {
+    date: string;
+    totalCents: number;
+    appointmentCount: number;
+    pricedAppointmentCount: number;
+    unpricedAppointmentCount: number;
+}
+
+export interface AdminDashboardAppointmentValue {
+    totalCents: number;
+    appointmentCount: number;
+    pricedAppointmentCount: number;
+    unpricedAppointmentCount: number;
+    fromPriceAppointmentCount: number;
+    averageValueCents: number;
+    dailySeries: AdminDashboardValueSeriesPoint[];
+}
+
+export interface AdminDashboardUpcomingSeriesPoint {
+    date: string;
+    confirmedCount: number;
+    cancelledCount: number;
+}
+
+export interface AdminDashboardUpcomingAppointments {
+    confirmedCount: number;
+    cancelledCount: number;
+    dailySeries: AdminDashboardUpcomingSeriesPoint[];
+}
+
+export interface AdminDashboardNotificationHealth {
+    sentCount: number;
+    scheduledCount: number;
+    skippedCount: number;
+    failedActiveCount: number;
+    failedHistoricalCount: number;
+    deliverySuccessRate: number;
+    reminderQueueCount: number;
+}
+
 export interface AdminDashboardSnapshot {
+    generatedAt: Date;
     todayBookings: AdminBookingRecord[];
     upcomingBookings: AdminBookingRecord[];
     activity: AdminDashboardActivityRecord[];
     notificationDeliveryMode: NotificationDeliveryMode;
     upcomingReminders: AdminUpcomingReminderPreview[];
+    appointmentValue: AdminDashboardAppointmentValue;
+    upcomingAppointments: AdminDashboardUpcomingAppointments;
+    notificationHealth: AdminDashboardNotificationHealth;
 }
 
 export interface AdminAvailabilityLookupRequest {
@@ -373,9 +418,12 @@ export async function getAdminDashboard(
     const today = getLocalDate(now, DEFAULT_TIME_ZONE);
     const todayStart = localDateTimeToUtc(today, "00:00", DEFAULT_TIME_ZONE);
     const tomorrowStart = localDateTimeToUtc(nextLocalDate(today), "00:00", DEFAULT_TIME_ZONE);
+    const valueStartDate = addLocalDays(today, -6);
+    const valueStart = localDateTimeToUtc(valueStartDate, "00:00", DEFAULT_TIME_ZONE);
     const upcomingEnd = localDateTimeToUtc(addLocalDays(today, 8), "00:00", DEFAULT_TIME_ZONE);
+    const upcomingChartEnd = localDateTimeToUtc(addLocalDays(today, 7), "00:00", DEFAULT_TIME_ZONE);
 
-    const [todayBookings, upcomingBookings, activity] = await Promise.all([
+    const [todayBookings, upcomingBookings, valueBookings, upcomingStatusBookings, activity] = await Promise.all([
         repository.listDashboardBookingsForAdminScope({
             ...actorScope,
             status: "confirmed",
@@ -390,18 +438,42 @@ export async function getAdminDashboard(
             to: upcomingEnd,
             limit: 12,
         }),
+        repository.listDashboardBookingsForAdminScope({
+            ...actorScope,
+            from: valueStart,
+            to: tomorrowStart,
+            limit: 500,
+        }),
+        repository.listDashboardBookingsForAdminScope({
+            ...actorScope,
+            from: todayStart,
+            to: upcomingChartEnd,
+            limit: 500,
+        }),
         repository.listDashboardActivityForAdminScope({
             ...actorScope,
             limit: 50,
         }),
     ]);
+    const classifiedActivity = classifyDashboardActivityFailures(activity, now);
+    const upcomingReminders = buildUpcomingReminderPreviews(upcomingBookings, now);
 
     return {
+        generatedAt: now,
         todayBookings,
         upcomingBookings,
-        activity: classifyDashboardActivityFailures(activity, now),
+        activity: classifiedActivity,
         notificationDeliveryMode: options.notificationDeliveryMode ?? "mock",
-        upcomingReminders: buildUpcomingReminderPreviews(upcomingBookings, now),
+        upcomingReminders,
+        appointmentValue: buildAppointmentValueAnalytics(
+            valueBookings,
+            buildLocalDateSeries(valueStartDate, 7),
+        ),
+        upcomingAppointments: buildUpcomingAppointmentAnalytics(
+            upcomingStatusBookings,
+            buildLocalDateSeries(today, 7),
+        ),
+        notificationHealth: buildNotificationHealth(classifiedActivity, upcomingReminders),
     };
 }
 
@@ -824,6 +896,134 @@ function resolveWritableBarberId(
     }
 
     return user.barberId;
+}
+
+function buildLocalDateSeries(startLocalDate: string, length: number) {
+    return Array.from({ length }, (_, index) => addLocalDays(startLocalDate, index));
+}
+
+function buildAppointmentValueAnalytics(
+    bookings: AdminBookingRecord[],
+    dates: string[],
+): AdminDashboardAppointmentValue {
+    const dateBuckets = dates.reduce<Record<string, AdminDashboardValueSeriesPoint>>((buckets, date) => {
+        buckets[date] = {
+            date,
+            totalCents: 0,
+            appointmentCount: 0,
+            pricedAppointmentCount: 0,
+            unpricedAppointmentCount: 0,
+        };
+        return buckets;
+    }, {});
+    let totalCents = 0;
+    let appointmentCount = 0;
+    let pricedAppointmentCount = 0;
+    let unpricedAppointmentCount = 0;
+    let fromPriceAppointmentCount = 0;
+
+    for (const booking of bookings) {
+        if (booking.status !== "confirmed" && booking.status !== "completed") {
+            continue;
+        }
+
+        const localDate = getLocalDate(booking.startTime, DEFAULT_TIME_ZONE);
+        const bucket = dateBuckets[localDate];
+        if (!bucket) {
+            continue;
+        }
+
+        const details = booking.serviceDetails ?? [];
+        const valueCents = details.reduce((sum, service) => sum + service.priceCents, 0);
+        const hasPriceSnapshot = details.length > 0;
+        const hasFromPrice = details.some((service) => service.priceType === "from");
+
+        appointmentCount += 1;
+        bucket.appointmentCount += 1;
+
+        if (hasPriceSnapshot) {
+            totalCents += valueCents;
+            pricedAppointmentCount += 1;
+            bucket.totalCents += valueCents;
+            bucket.pricedAppointmentCount += 1;
+            if (hasFromPrice) {
+                fromPriceAppointmentCount += 1;
+            }
+        } else {
+            unpricedAppointmentCount += 1;
+            bucket.unpricedAppointmentCount += 1;
+        }
+    }
+
+    return {
+        totalCents,
+        appointmentCount,
+        pricedAppointmentCount,
+        unpricedAppointmentCount,
+        fromPriceAppointmentCount,
+        averageValueCents: pricedAppointmentCount > 0 ? Math.round(totalCents / pricedAppointmentCount) : 0,
+        dailySeries: dates.map((date) => dateBuckets[date]),
+    };
+}
+
+function buildUpcomingAppointmentAnalytics(
+    bookings: AdminBookingRecord[],
+    dates: string[],
+): AdminDashboardUpcomingAppointments {
+    const dateBuckets = dates.reduce<Record<string, AdminDashboardUpcomingSeriesPoint>>((buckets, date) => {
+        buckets[date] = { date, confirmedCount: 0, cancelledCount: 0 };
+        return buckets;
+    }, {});
+    let confirmedCount = 0;
+    let cancelledCount = 0;
+
+    for (const booking of bookings) {
+        if (booking.status !== "confirmed" && booking.status !== "cancelled") {
+            continue;
+        }
+
+        const localDate = getLocalDate(booking.startTime, DEFAULT_TIME_ZONE);
+        const bucket = dateBuckets[localDate];
+        if (!bucket) {
+            continue;
+        }
+
+        if (booking.status === "confirmed") {
+            confirmedCount += 1;
+            bucket.confirmedCount += 1;
+        } else {
+            cancelledCount += 1;
+            bucket.cancelledCount += 1;
+        }
+    }
+
+    return {
+        confirmedCount,
+        cancelledCount,
+        dailySeries: dates.map((date) => dateBuckets[date]),
+    };
+}
+
+function buildNotificationHealth(
+    activity: AdminDashboardActivityRecord[],
+    upcomingReminders: AdminUpcomingReminderPreview[],
+): AdminDashboardNotificationHealth {
+    const sentCount = activity.filter((item) => item.status === "sent").length;
+    const scheduledCount = activity.filter((item) => item.status === "pending" || Boolean(item.scheduledFor)).length;
+    const skippedCount = activity.filter((item) => item.status === "skipped").length;
+    const failedActiveCount = activity.filter((item) => item.status === "failed" && item.isActiveFailure).length;
+    const failedHistoricalCount = activity.filter((item) => item.status === "failed" && !item.isActiveFailure).length;
+    const deliveryDenominator = sentCount + failedActiveCount;
+
+    return {
+        sentCount,
+        scheduledCount,
+        skippedCount,
+        failedActiveCount,
+        failedHistoricalCount,
+        deliverySuccessRate: deliveryDenominator > 0 ? Math.round((sentCount / deliveryDenominator) * 100) : 100,
+        reminderQueueCount: upcomingReminders.length,
+    };
 }
 
 function classifyDashboardActivityFailures(

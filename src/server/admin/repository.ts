@@ -633,6 +633,7 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
             endTime: booking.endTime,
             totalDurationMinutes: booking.totalDurationMinutes,
             services: serviceDetails[booking.id]?.map((service) => service.serviceName) ?? [],
+            serviceDetails: serviceDetails[booking.id] ?? [],
         }));
     }
 

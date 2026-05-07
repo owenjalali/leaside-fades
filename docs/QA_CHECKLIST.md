@@ -284,11 +284,24 @@
 - [x] Security/privacy launch checklist documented
 - [x] Owner-approved staff notification contact checklist documented
 - [x] Staff notification missing-contact behavior documented
-- [x] `/admin/dashboard` shows today's appointments, upcoming appointments, and notification-center activity
-- [x] Dashboard appointment lists count confirmed active appointments; cancelled booking history remains in Notification Center
+- [x] `/admin/dashboard` shows estimated appointment value and upcoming appointment chart cards
+- [x] Dashboard estimated value uses booking service price snapshots for confirmed/completed bookings and excludes cancelled/no-show bookings from active value
+- [x] Dashboard charts include empty states and compact labels for large values
+- [x] Dashboard refreshes every 30 seconds, immediately refreshes after booking actions, and keeps the last good snapshot on network refresh failure
+- [x] Dashboard compact notification health shows delivery success, scheduled/skipped/failed counts, reminder queue, and recent delivery rows
+- [x] Local `npm run qa:phase12-dashboard-fixture` seeds guarded priced dashboard data for chart/browser QA without touching production databases
+- [x] Local dashboard fixture browser QA verified non-zero value charts at 1440x900, 768x1024, 390x844, and 320x568 with no horizontal overflow
+- [x] Premium dashboard redesign is the intended production dashboard surface and has passing local build/test coverage
+- [x] Production `/api/admin/dashboard` read-only snapshot verified real service-snapshot value data and upcoming confirmed/cancelled chart data
+- [x] Production `/admin/dashboard` headless browser QA verified non-zero value charts at 1440x900 and 390x844 with no horizontal overflow
 - [x] Dashboard activity is owner/admin-wide and barber-scoped for barber users
 - [x] Admin rail uses the Leaside Fades logo instead of the `LF` placeholder
 - [x] Admin calendar uses a bounded viewport layout with internal board scrolling
+- [x] `/admin/shifts` uses a staff-first weekly schedule builder instead of the previous all-staff CRUD grid
+- [x] Staff shift edits use inline weekly draft rows and explicit Save changes through the existing schedule mutation endpoints
+- [x] Staff shift utility tests cover weekly draft creation, split-window hour totals, and save-plan diff operations
+- [x] Staff shift browser QA stress-tested weekly builder, overview, staff search, edit/discard state, and 1440/768/390/320-width layouts with no document overflow
+- [x] Staff shift weekly builder shows the latest dated recurring pattern instead of duplicating separate active effective date ranges in one week
 - [x] Admin day board renders the weekday 7:00 PM close boundary without creating a 7:00 PM bookable slot
 - [x] Add appointment drawer uses a desktop split-pane layout so staff columns remain reachable
 - [x] Public Fresha booking fallback links replaced with `/book` / `https://leasidefades.com/book`

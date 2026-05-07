@@ -228,6 +228,7 @@ class InMemoryPhase6Repository
         AdminBookingRecord & {
             customerId?: string;
             serviceIds?: string[];
+            serviceDetails?: BookingServiceSnapshot[];
             customerNotes?: string | null;
             internalNotes?: string | null;
         }
@@ -512,6 +513,46 @@ function dashboardActivityFixture(
     };
 }
 
+function snapshotWithPrice(priceCents: number): BookingServiceSnapshot {
+    return {
+        ...serviceSnapshot,
+        priceCents,
+        displayPrice: `$${Math.round(priceCents / 100)}`,
+    };
+}
+
+function dashboardBookingFixture(
+    overrides: Partial<
+        AdminBookingRecord & {
+            serviceIds: string[];
+            serviceDetails: BookingServiceSnapshot[];
+        }
+    > = {},
+): AdminBookingRecord & { serviceIds: string[]; serviceDetails: BookingServiceSnapshot[] } {
+    const startTime = overrides.startTime ?? new Date("2026-05-03T16:00:00.000Z");
+    const endTime = overrides.endTime ?? new Date(startTime.getTime() + 30 * 60_000);
+
+    return {
+        id: "dashboard-booking",
+        barberId: barberAId,
+        barberName: "Sam To",
+        locationId: locationAId,
+        locationName: "Leaside Fades Eglinton",
+        customerName: "Dashboard Client",
+        customerEmail: "dashboard@example.com",
+        customerPhone: "+16475550199",
+        status: "confirmed",
+        source: "public",
+        startTime,
+        endTime,
+        totalDurationMinutes: 30,
+        services: ["Men's Cut"],
+        serviceIds: [serviceId],
+        serviceDetails: [serviceSnapshot],
+        ...overrides,
+    };
+}
+
 describe("Phase 6 admin calendar and booking management service", () => {
     test("owner filters bookings by date, location, barber, and status inside admin scope", async () => {
         const repository = new InMemoryPhase6Repository();
@@ -730,6 +771,190 @@ describe("Phase 6 admin calendar and booking management service", () => {
         expect(ownerDashboard.activity.map((item) => item.bookingId).sort()).toEqual(["booking-a", "booking-b"]);
         expect(barberDashboard.todayBookings.map((booking) => booking.id)).toEqual(["booking-a"]);
         expect(barberDashboard.activity.map((item) => item.bookingId)).toEqual(["booking-a"]);
+    });
+
+    test("dashboard aggregates active estimated appointment value from service snapshots", async () => {
+        const repository = new InMemoryPhase6Repository();
+        repository.bookings = [
+            dashboardBookingFixture({
+                id: "public-confirmed",
+                source: "public",
+                status: "confirmed",
+                startTime: new Date("2026-04-27T16:00:00.000Z"),
+                serviceDetails: [snapshotWithPrice(3000)],
+            }),
+            dashboardBookingFixture({
+                id: "manual-completed",
+                source: "manual",
+                status: "completed",
+                startTime: new Date("2026-04-28T16:00:00.000Z"),
+                serviceDetails: [snapshotWithPrice(4500)],
+            }),
+            dashboardBookingFixture({
+                id: "walk-in-confirmed",
+                source: "walk_in",
+                status: "confirmed",
+                startTime: new Date("2026-04-29T16:00:00.000Z"),
+                serviceDetails: [snapshotWithPrice(1500)],
+            }),
+            dashboardBookingFixture({
+                id: "imported-confirmed",
+                source: "imported",
+                status: "confirmed",
+                startTime: new Date("2026-04-30T16:00:00.000Z"),
+                serviceDetails: [snapshotWithPrice(3500)],
+            }),
+            dashboardBookingFixture({
+                id: "cancelled-excluded",
+                status: "cancelled",
+                startTime: new Date("2026-05-01T16:00:00.000Z"),
+                serviceDetails: [snapshotWithPrice(9900)],
+            }),
+            dashboardBookingFixture({
+                id: "no-show-excluded",
+                status: "no_show",
+                startTime: new Date("2026-05-02T16:00:00.000Z"),
+                serviceDetails: [snapshotWithPrice(9900)],
+            }),
+            dashboardBookingFixture({
+                id: "missing-price-snapshot",
+                status: "confirmed",
+                startTime: new Date("2026-05-02T17:00:00.000Z"),
+                serviceDetails: [],
+            }),
+            dashboardBookingFixture({
+                id: "outside-window",
+                status: "confirmed",
+                startTime: new Date("2026-04-26T16:00:00.000Z"),
+                serviceDetails: [snapshotWithPrice(8800)],
+            }),
+        ];
+
+        const dashboard = await getAdminDashboard(
+            { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+            repository,
+            { now: new Date("2026-05-03T14:00:00.000Z") },
+        );
+
+        expect(dashboard.appointmentValue).toMatchObject({
+            totalCents: 12500,
+            appointmentCount: 5,
+            pricedAppointmentCount: 4,
+            unpricedAppointmentCount: 1,
+            averageValueCents: 3125,
+        });
+        expect(dashboard.appointmentValue.dailySeries).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ date: "2026-04-27", totalCents: 3000, appointmentCount: 1 }),
+                expect.objectContaining({ date: "2026-04-28", totalCents: 4500, appointmentCount: 1 }),
+                expect.objectContaining({ date: "2026-04-29", totalCents: 1500, appointmentCount: 1 }),
+                expect.objectContaining({ date: "2026-04-30", totalCents: 3500, appointmentCount: 1 }),
+                expect.objectContaining({ date: "2026-05-02", totalCents: 0, appointmentCount: 1, unpricedAppointmentCount: 1 }),
+            ]),
+        );
+    });
+
+    test("dashboard aggregates upcoming appointment status counts by current appointment date", async () => {
+        const repository = new InMemoryPhase6Repository();
+        repository.bookings = [
+            dashboardBookingFixture({
+                id: "today-confirmed",
+                status: "confirmed",
+                startTime: new Date("2026-05-03T16:00:00.000Z"),
+            }),
+            dashboardBookingFixture({
+                id: "rescheduled-confirmed",
+                status: "confirmed",
+                startTime: new Date("2026-05-04T16:00:00.000Z"),
+            }),
+            dashboardBookingFixture({
+                id: "same-day-cancelled",
+                status: "cancelled",
+                startTime: new Date("2026-05-04T17:00:00.000Z"),
+            }),
+            dashboardBookingFixture({
+                id: "next-week-confirmed",
+                status: "confirmed",
+                startTime: new Date("2026-05-09T16:00:00.000Z"),
+            }),
+            dashboardBookingFixture({
+                id: "outside-window",
+                status: "confirmed",
+                startTime: new Date("2026-05-10T16:00:00.000Z"),
+            }),
+        ];
+
+        const dashboard = await getAdminDashboard(
+            { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+            repository,
+            { now: new Date("2026-05-03T14:00:00.000Z") },
+        );
+
+        expect(dashboard.upcomingAppointments).toMatchObject({
+            confirmedCount: 3,
+            cancelledCount: 1,
+        });
+        expect(dashboard.upcomingAppointments.dailySeries).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ date: "2026-05-03", confirmedCount: 1, cancelledCount: 0 }),
+                expect.objectContaining({ date: "2026-05-04", confirmedCount: 1, cancelledCount: 1 }),
+                expect.objectContaining({ date: "2026-05-09", confirmedCount: 1, cancelledCount: 0 }),
+            ]),
+        );
+    });
+
+    test("dashboard summarizes notification health without letting failed rows dominate activity", async () => {
+        const repository = new InMemoryPhase6Repository();
+        repository.bookings = [
+            dashboardBookingFixture({
+                id: "future-contacted",
+                status: "confirmed",
+                startTime: new Date("2026-05-05T19:00:00.000Z"),
+                customerPhone: "+16475550199",
+                customerEmail: "future@example.com",
+            }),
+        ];
+        repository.activityRecords = [
+            dashboardActivityFixture({ id: "sent", status: "sent" }),
+            dashboardActivityFixture({ id: "skipped", status: "skipped" }),
+            dashboardActivityFixture({
+                id: "pending-reminder",
+                status: "pending",
+                scheduledFor: new Date("2026-05-04T19:00:00.000Z"),
+            }),
+            dashboardActivityFixture({
+                id: "active-failure",
+                status: "failed",
+                eventType: "reminder_24h",
+                channel: "sms",
+                appointmentStatus: "confirmed",
+                appointmentStartTime: new Date("2026-05-05T19:00:00.000Z"),
+                errorMessage: "The destination phone number is unreachable.",
+            }),
+            dashboardActivityFixture({
+                id: "historical-failure",
+                status: "failed",
+                eventType: "reminder_2h",
+                appointmentStatus: "confirmed",
+                appointmentStartTime: new Date("2026-05-02T19:00:00.000Z"),
+            }),
+        ];
+
+        const dashboard = await getAdminDashboard(
+            { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+            repository,
+            { now: new Date("2026-05-03T14:00:00.000Z") },
+        );
+
+        expect(dashboard.notificationHealth).toMatchObject({
+            sentCount: 1,
+            scheduledCount: 1,
+            skippedCount: 1,
+            failedActiveCount: 1,
+            failedHistoricalCount: 1,
+            deliverySuccessRate: 50,
+        });
+        expect(dashboard.notificationHealth.reminderQueueCount).toBeGreaterThan(0);
     });
 
     test("dashboard classifies failed notification activity as active only while still actionable", async () => {

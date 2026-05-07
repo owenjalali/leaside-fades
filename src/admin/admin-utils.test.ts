@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
     buildAdminBookingQuery,
     buildAdminScheduleQuery,
+    buildDashboardChartScale,
     buildCalendarUnavailableRanges,
     buildBookingDragPayload,
     buildBlockedTimePayload,
@@ -17,7 +18,9 @@ import {
     calendarRangeFitsWorkingWindows,
     calculateWeeklyScheduleHours,
     estimateMobileCalendarGridHeight,
+    formatCompactDashboardCurrency,
     formatAdminStatus,
+    formatDashboardCurrency,
     compactNotificationFailureMessage,
     getBookingCardTone,
     getActiveNotificationFailures,
@@ -28,6 +31,8 @@ import {
     groupShiftsByBarberAndWeekday,
     mobileAdminCalendarLayoutBudget,
     notificationFilterMatches,
+    seriesHasDashboardData,
+    summarizeNotificationHealth,
 } from "./admin-utils";
 import type {
     AdminBookingSummary,
@@ -158,6 +163,33 @@ describe("Phase 6 admin UI utilities", () => {
             "Email provider configuration issue",
         );
         expect(compactNotificationFailureMessage("x".repeat(180), null)).toHaveLength(117);
+    });
+
+    test("formats dashboard currency for full and compact chart labels", () => {
+        expect(formatDashboardCurrency(269400)).toBe("CA$ 2,694");
+        expect(formatCompactDashboardCurrency(120000)).toBe("CA$ 1.2k");
+        expect(formatCompactDashboardCurrency(0)).toBe("CA$ 0");
+    });
+
+    test("builds stable dashboard chart scales for empty and large data", () => {
+        expect(buildDashboardChartScale([])).toEqual({ max: 1, ticks: [1, 0.75, 0.5, 0.25, 0] });
+        expect(buildDashboardChartScale([0, 3000, 12500]).max).toBe(15000);
+        expect(seriesHasDashboardData([{ totalCents: 0 }, { totalCents: 0 }], "totalCents")).toBe(false);
+        expect(seriesHasDashboardData([{ totalCents: 0 }, { totalCents: 1 }], "totalCents")).toBe(true);
+    });
+
+    test("summarizes notification health for compact dashboard panels", () => {
+        expect(
+            summarizeNotificationHealth({
+                sentCount: 18,
+                scheduledCount: 11,
+                skippedCount: 3,
+                failedActiveCount: 2,
+                failedHistoricalCount: 4,
+                deliverySuccessRate: 90,
+                reminderQueueCount: 11,
+            }),
+        ).toEqual(["90% delivery success", "2 active issues", "11 reminders queued"]);
     });
 });
 

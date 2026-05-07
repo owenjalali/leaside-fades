@@ -575,6 +575,14 @@ When the Add appointment drawer is open, `/admin/calendar` protects a usable cal
 Reason:
 The desktop split-pane state could visually squeeze the calendar and drawer controls because the form internals responded to the full browser width rather than the narrower drawer column. The fix preserves the existing booking APIs and scheduling rules while making the operational surface fit the frame on phones, tablets, and desktop drawer layouts.
 
+### 2026-05-05 - Show Estimated Appointment Value On The Admin Dashboard
+
+Decision:
+`/admin/dashboard` shows estimated appointment value from booking service price snapshots, not actual paid revenue. Confirmed and completed bookings count toward value, cancelled and no-show bookings do not, and public/manual/walk-in/imported sources are included when service snapshots exist. The dashboard uses 30-second polling instead of WebSockets.
+
+Reason:
+The owner wants a Fresha-inspired operating dashboard with value and appointment trends, but online payments remain outside the MVP. Service price snapshots provide useful estimated value without introducing a payment, payroll, or advanced analytics subsystem.
+
 ### 2026-05-07 - Make Staff Shifts A Weekly Schedule Builder
 
 Decision:

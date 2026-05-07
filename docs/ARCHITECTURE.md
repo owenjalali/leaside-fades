@@ -316,6 +316,12 @@ Rules:
 - walk-ins and no-shows create no notification attempts in Phase 9
 - customer token UI, shift management, blocked-time management, payments, and Fresha automation are outside Phase 6
 
+Dashboard snapshot:
+- `GET /api/admin/dashboard` returns today's active appointments, upcoming active appointments, notification/reminder activity, estimated appointment value, upcoming confirmed/cancelled appointment series, and notification health
+- estimated appointment value is not payment revenue; it is calculated from stored booking service price snapshots for confirmed/completed bookings, while cancelled/no-show bookings are excluded from active value
+- public, manual, walk-in, and imported booking sources are included when service snapshots exist; bookings without snapshots remain counted as appointments but excluded from value
+- `/admin/dashboard` polls the snapshot every 30 seconds, refreshes immediately after booking mutations, and keeps the last good snapshot visible when a refresh fails
+
 ## Admin Schedule Management API
 
 Phase 7 exposes authenticated schedule routes under `/api/admin/schedule/*`.
@@ -475,8 +481,9 @@ Deferred:
 Phase 7.5 implements the admin/barber scheduling console as the primary operational surface.
 
 Implemented:
-- `/admin/dashboard` owner/staff landing surface with today's appointments, upcoming appointments, and a Notification Center/Activity Center
-- dashboard appointment lists show active confirmed appointments; cancellations and delivery history live in the Notification Center feed
+- `/admin/dashboard` owner/staff landing surface with estimated appointment value, upcoming confirmed/cancelled appointment trends, appointment activity, and compact notification health
+- dashboard estimated value uses booking service price snapshots and is labeled estimated appointment value, not actual paid revenue
+- dashboard appointment charts show active confirmed/completed value separately from cancellation and delivery history
 - `/admin/calendar` day-board with compact dark rail, topbar filters, owner/admin multi-barber columns, barber single-calendar scoping, 15-minute grid rows, current-time marker, blocked-time overlays, status/source-styled booking cards, purple appointment preview, and right-side drawers
 - unified staff Add appointment drawer using the authenticated transactional booking path, optional customer contact, service-derived duration/price summary, and availability-backed time selection
 - booking detail drawer with cancel, reschedule, and no-show actions

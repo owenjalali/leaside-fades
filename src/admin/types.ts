@@ -224,12 +224,56 @@ export interface AdminUpcomingReminderPreview {
     recipientLabel: string;
 }
 
+export interface AdminDashboardValueSeriesPoint {
+    date: string;
+    totalCents: number;
+    appointmentCount: number;
+    pricedAppointmentCount: number;
+    unpricedAppointmentCount: number;
+}
+
+export interface AdminDashboardAppointmentValue {
+    totalCents: number;
+    appointmentCount: number;
+    pricedAppointmentCount: number;
+    unpricedAppointmentCount: number;
+    fromPriceAppointmentCount: number;
+    averageValueCents: number;
+    dailySeries: AdminDashboardValueSeriesPoint[];
+}
+
+export interface AdminDashboardUpcomingSeriesPoint {
+    date: string;
+    confirmedCount: number;
+    cancelledCount: number;
+}
+
+export interface AdminDashboardUpcomingAppointments {
+    confirmedCount: number;
+    cancelledCount: number;
+    dailySeries: AdminDashboardUpcomingSeriesPoint[];
+}
+
+export interface AdminDashboardNotificationHealth {
+    sentCount: number;
+    scheduledCount: number;
+    skippedCount: number;
+    failedActiveCount: number;
+    failedHistoricalCount: number;
+    deliverySuccessRate: number;
+    reminderQueueCount: number;
+}
+
 export interface AdminDashboardSnapshot {
+    generatedAt: string;
     todayBookings: AdminBookingSummary[];
     upcomingBookings: AdminBookingSummary[];
     activity: AdminDashboardActivity[];
     notificationDeliveryMode: AdminNotificationDeliveryMode;
     upcomingReminders: AdminUpcomingReminderPreview[];
+    appointmentValue: AdminDashboardAppointmentValue;
+    upcomingAppointments: AdminDashboardUpcomingAppointments;
+    notificationHealth: AdminDashboardNotificationHealth;
 }
 
 export interface BlockedTimeFormInput {

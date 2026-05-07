@@ -48,6 +48,7 @@ import {
 import SchedulePage from "./SchedulePage";
 import {
     addDaysToLocalDate,
+    buildDashboardChartScale,
     buildBookingDragPayload,
     buildCalendarBoardRows,
     buildCalendarUnavailableRanges,
@@ -57,6 +58,8 @@ import {
     calendarRangeFitsWorkingWindows,
     compactNotificationFailureMessage,
     formatAdminStatus,
+    formatCompactDashboardCurrency,
+    formatDashboardCurrency,
     formatLocalDateTime,
     formatLocalTime,
     getBookingCardTone,
@@ -65,6 +68,8 @@ import {
     groupBookingsByLocalDate,
     notificationFilterMatches,
     notificationFilters,
+    seriesHasDashboardData,
+    summarizeNotificationHealth,
     todayLocalDate,
     type NotificationCenterFilter,
     type ScheduledCalendarBarber,
@@ -245,6 +250,7 @@ function AdminWorkspace({
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(true);
     const [dashboardLoading, setDashboardLoading] = useState(false);
+    const [dashboardRefreshError, setDashboardRefreshError] = useState("");
     const [appointmentPreview, setAppointmentPreview] = useState<AppointmentPreview | null>(null);
     const [draggingBookingId, setDraggingBookingId] = useState<string | null>(null);
     const [pendingDragId, setPendingDragId] = useState<string | null>(null);
@@ -332,21 +338,34 @@ function AdminWorkspace({
     useEffect(() => {
         if (!isDashboardPath) return;
 
-        let cancelled = false;
-        setDashboardLoading(true);
-        fetchAdminDashboard()
-            .then((response) => {
-                if (!cancelled) setDashboard(response);
-            })
-            .catch((error) => {
-                if (!cancelled) setError(error instanceof Error ? error.message : "Failed to load dashboard.");
-            })
-            .finally(() => {
-                if (!cancelled) setDashboardLoading(false);
-            });
+        let active = true;
+
+        async function loadDashboard(quiet = false) {
+            if (!quiet) setDashboardLoading(true);
+
+            try {
+                const response = await fetchAdminDashboard();
+                if (!active) return;
+                setDashboard(response);
+                setDashboardRefreshError("");
+            } catch (error) {
+                if (!active) return;
+                const message = error instanceof Error ? error.message : "Failed to load dashboard.";
+                setDashboardRefreshError(message);
+                if (!quiet) setError(message);
+            } finally {
+                if (active && !quiet) setDashboardLoading(false);
+            }
+        }
+
+        void loadDashboard(false);
+        const refreshTimer = window.setInterval(() => {
+            void loadDashboard(true);
+        }, 30_000);
 
         return () => {
-            cancelled = true;
+            active = false;
+            window.clearInterval(refreshTimer);
         };
     }, [isDashboardPath]);
 
@@ -364,12 +383,20 @@ function AdminWorkspace({
         }
     }
 
-    async function refreshDashboard() {
-        setDashboardLoading(true);
+    async function refreshDashboard(options: { quiet?: boolean } = {}) {
+        const quiet = options.quiet ?? false;
+        if (!quiet) setDashboardLoading(true);
+
         try {
-            setDashboard(await fetchAdminDashboard());
+            const response = await fetchAdminDashboard();
+            setDashboard(response);
+            setDashboardRefreshError("");
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "Failed to load dashboard.";
+            setDashboardRefreshError(message);
+            if (!quiet) setError(message);
         } finally {
-            setDashboardLoading(false);
+            if (!quiet) setDashboardLoading(false);
         }
     }
 
@@ -525,6 +552,7 @@ function AdminWorkspace({
                         <DashboardPage
                             dashboard={dashboard}
                             loading={dashboardLoading}
+                            refreshError={dashboardRefreshError}
                             onOpenBooking={(bookingId) => setDrawer({ mode: "detail", bookingId })}
                         />
                     ) : isSchedulePath ? (
@@ -730,15 +758,21 @@ function CalendarTopbar({
               : [];
     const desktopShellClass = compactWorkspace
         ? "hidden min-w-0 gap-3 lg:flex lg:flex-col"
+        : isDashboardPath
+        ? "hidden min-w-0 items-center justify-between gap-4 lg:flex"
         : "hidden min-w-0 gap-3 lg:grid 2xl:grid-cols-[minmax(0,auto)_minmax(0,1fr)] 2xl:items-center 2xl:gap-5";
     const desktopTitleBlockClass = compactWorkspace
         ? "min-w-[12rem] flex-1 px-1"
+        : isDashboardPath
+        ? "min-w-0 flex-1 px-1 2xl:px-4"
         : "min-w-[12rem] flex-1 px-1 sm:flex-none 2xl:px-4";
     const desktopTitleClass = compactWorkspace
         ? "truncate text-2xl font-black text-forest 2xl:text-3xl"
         : "truncate text-2xl font-black text-forest sm:text-3xl";
     const desktopControlsClass = compactWorkspace
         ? "flex min-w-0 flex-wrap items-center gap-2"
+        : isDashboardPath
+        ? "flex shrink-0 items-center justify-end gap-3"
         : "flex min-w-0 flex-wrap items-center gap-3 2xl:justify-end";
     const desktopLocationSelectClass = compactWorkspace
         ? "input h-11 min-w-[min(11rem,100%)] flex-[1_1_12rem] px-3 py-2 text-sm 2xl:max-w-60"
@@ -875,7 +909,7 @@ function CalendarTopbar({
             </div>
 
             <div className={desktopShellClass}>
-                <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+                <div className={isDashboardPath ? "flex min-w-0 flex-1 items-center gap-2 sm:gap-3" : "flex min-w-0 flex-wrap items-center gap-2 sm:gap-3"}>
                     <button className="text-button min-h-11 bg-white px-4 py-2 text-base" onClick={() => onDate(todayLocalDate())} disabled={isSchedulePath}>
                         Today
                     </button>
@@ -968,10 +1002,12 @@ function CalendarTopbar({
 function DashboardPage({
     dashboard,
     loading,
+    refreshError,
     onOpenBooking,
 }: {
     dashboard: AdminDashboardSnapshot | null;
     loading: boolean;
+    refreshError: string;
     onOpenBooking: (bookingId: string) => void;
 }) {
     const today = dashboard?.todayBookings ?? [];
@@ -979,6 +1015,7 @@ function DashboardPage({
     const activity = dashboard?.activity ?? [];
     const upcomingReminders = dashboard?.upcomingReminders ?? [];
     const deliveryMode = dashboard?.notificationDeliveryMode ?? "mock";
+    const lastUpdated = dashboard?.generatedAt ? formatDashboardUpdatedAt(dashboard.generatedAt) : "Waiting for first snapshot";
 
     if (loading && !dashboard) {
         return (
@@ -989,86 +1026,630 @@ function DashboardPage({
         );
     }
 
-    return (
-        <div className="space-y-5">
-            <section className="grid gap-4 xl:grid-cols-3">
-                <DashboardStat title="Today" value={`${today.length}`} label="appointments" />
-                <DashboardStat title="Upcoming" value={`${upcoming.length}`} label="next 7 days" />
-                <DashboardStat title="Reminders" value={`${upcomingReminders.length}`} label={`${deliveryMode} mode`} />
+    if (!dashboard) {
+        return (
+            <section className="flex min-h-[560px] flex-col items-center justify-center rounded-md border border-[#d6ded6] bg-white p-6 text-center shadow-sm">
+                <AlertTriangle size={28} className="text-amber-600" />
+                <p className="mt-3 text-2xl font-black text-forest">Dashboard unavailable</p>
+                <p className="mt-2 max-w-md text-base font-bold text-charcoal/55">
+                    The last refresh did not return a usable dashboard snapshot. Try refreshing again from the toolbar.
+                </p>
             </section>
-            <section className="grid gap-5 2xl:grid-cols-[1fr_1.15fr]">
-                <DashboardAppointments
-                    title="Today"
-                    empty="No appointments today."
-                    bookings={today}
+        );
+    }
+
+    return (
+        <div className="space-y-5 2xl:space-y-6">
+            <section className="flex flex-wrap items-end justify-between gap-3">
+                <div className="min-w-0">
+                    <p className="text-sm font-black uppercase tracking-[0.14em] text-green">Operating dashboard</p>
+                    <h1 className="mt-1 text-3xl font-black leading-tight text-forest sm:text-4xl">
+                        Appointment value, bookings, and notification health
+                    </h1>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-sm font-black text-charcoal/55">
+                    <span className="rounded-full border border-forest/10 bg-white px-3 py-2 shadow-sm">Last updated {lastUpdated}</span>
+                    {loading && (
+                        <span className="inline-flex items-center gap-2 rounded-full border border-green/20 bg-green/10 px-3 py-2 text-forest">
+                            <RefreshCw size={14} className="animate-spin" />
+                            Refreshing
+                        </span>
+                    )}
+                    {refreshError && (
+                        <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                            <AlertTriangle size={14} />
+                            <span className="max-w-[20rem] truncate">Refresh delayed: {refreshError}</span>
+                        </span>
+                    )}
+                </div>
+            </section>
+            <section className="grid gap-5 xl:grid-cols-2">
+                <EstimatedAppointmentValueCard value={dashboard.appointmentValue} />
+                <UpcomingAppointmentsChartCard upcoming={dashboard.upcomingAppointments} />
+            </section>
+            <section className="grid gap-5 2xl:grid-cols-[1.15fr_0.85fr]">
+                <DashboardActivityPanel
+                    todayBookings={today}
+                    upcomingBookings={upcoming}
+                    activity={activity}
                     onOpenBooking={onOpenBooking}
                 />
-                <NotificationCenter
+                <NotificationHealthPanel
+                    health={dashboard.notificationHealth}
                     activity={activity}
                     upcomingReminders={upcomingReminders}
                     deliveryMode={deliveryMode}
                     onOpenBooking={onOpenBooking}
                 />
             </section>
-            <DashboardAppointments
-                title="Upcoming appointments"
-                empty="No upcoming appointments in the next week."
-                bookings={upcoming}
-                onOpenBooking={onOpenBooking}
-                compact
-            />
         </div>
     );
 }
 
-function DashboardStat({ title, value, label }: { title: string; value: string; label: string }) {
-    return (
-        <div className="rounded-md border border-[#d7e0d7] bg-white p-5 shadow-sm">
-            <p className="text-sm font-black uppercase tracking-[0.14em] text-charcoal/45">{title}</p>
-            <p className="mt-2 text-5xl font-black text-forest">{value}</p>
-            <p className="text-base font-bold text-charcoal/55">{label}</p>
-        </div>
-    );
-}
-
-function DashboardAppointments({
-    title,
-    empty,
-    bookings,
-    onOpenBooking,
-    compact = false,
+function EstimatedAppointmentValueCard({
+    value,
 }: {
-    title: string;
-    empty: string;
-    bookings: AdminBookingSummary[];
-    onOpenBooking: (bookingId: string) => void;
-    compact?: boolean;
+    value: AdminDashboardSnapshot["appointmentValue"];
+}) {
+    const hasUnpriced = value.unpricedAppointmentCount > 0;
+    const hasFromPrices = value.fromPriceAppointmentCount > 0;
+
+    return (
+        <section className="overflow-hidden rounded-md border border-[#d7e0d7] bg-white shadow-sm">
+            <div className="space-y-5 p-5 sm:p-6">
+                <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                        <p className="text-sm font-black uppercase tracking-[0.13em] text-charcoal/45">All locations, last 7 days</p>
+                        <h2 className="mt-1 text-2xl font-black text-forest sm:text-3xl">Estimated appointment value</h2>
+                    </div>
+                    <span className="rounded-full bg-[#eef5f1] px-3 py-1 text-xs font-black uppercase tracking-[0.08em] text-charcoal/65">
+                        Snapshot
+                    </span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                    <DashboardMetricTile
+                        label="Value"
+                        value={formatDashboardCurrency(value.totalCents)}
+                        detail={`${value.pricedAppointmentCount} priced`}
+                    />
+                    <DashboardMetricTile
+                        label="Appointments"
+                        value={`${value.appointmentCount}`}
+                        detail={`${value.unpricedAppointmentCount} unpriced`}
+                    />
+                    <DashboardMetricTile
+                        label="Average"
+                        value={formatDashboardCurrency(value.averageValueCents)}
+                        detail="priced bookings"
+                    />
+                </div>
+                {(hasUnpriced || hasFromPrices) && (
+                    <div className="flex flex-wrap gap-2 text-xs font-black uppercase tracking-[0.08em]">
+                        {hasUnpriced && (
+                            <span className="rounded-full bg-amber-50 px-3 py-1.5 text-amber-800">
+                                {value.unpricedAppointmentCount} unpriced appointment{value.unpricedAppointmentCount === 1 ? "" : "s"}
+                            </span>
+                        )}
+                        {hasFromPrices && (
+                            <span className="rounded-full bg-[#eef5f1] px-3 py-1.5 text-charcoal/65">
+                                {value.fromPriceAppointmentCount} estimated from-price booking{value.fromPriceAppointmentCount === 1 ? "" : "s"}
+                            </span>
+                        )}
+                    </div>
+                )}
+            </div>
+            <div className="border-t border-[#e1e8e1] px-3 pb-4 pt-3 sm:px-5">
+                <AppointmentValueChart series={value.dailySeries} />
+            </div>
+        </section>
+    );
+}
+
+function UpcomingAppointmentsChartCard({
+    upcoming,
+}: {
+    upcoming: AdminDashboardSnapshot["upcomingAppointments"];
 }) {
     return (
-        <section className="rounded-md border border-[#d7e0d7] bg-white shadow-sm">
-            <div className="flex items-center gap-2 border-b border-[#d7e0d7] px-5 py-4">
-                <CalendarDays size={21} className="text-green" />
-                <h2 className="text-2xl font-black text-forest">{title}</h2>
-            </div>
-            {bookings.length === 0 ? (
-                <p className="p-5 text-lg font-bold text-charcoal/55">{empty}</p>
-            ) : (
-                <div className={compact ? "grid gap-px bg-[#d7e0d7] md:grid-cols-2 xl:grid-cols-3" : "divide-y divide-[#e1e8e1]"}>
-                    {bookings.map((booking) => (
-                        <button
-                            key={`${title}-${booking.id}`}
-                            className="min-w-0 bg-white p-4 text-left transition hover:bg-[#f8fbf8]"
-                            onClick={() => onOpenBooking(booking.id)}
-                        >
-                            <span className="block text-sm font-black uppercase tracking-[0.12em] text-green">{formatLocalTime(booking.startTime)}</span>
-                            <span className="mt-1 block truncate text-xl font-black text-forest">{booking.customerName}</span>
-                            <span className="block truncate text-base font-bold text-charcoal/60">{booking.services.join(", ")}</span>
-                            <span className="mt-2 block truncate text-sm font-bold text-charcoal/55">{booking.barberName} - {booking.locationName}</span>
-                        </button>
-                    ))}
+        <section className="overflow-hidden rounded-md border border-[#d7e0d7] bg-white shadow-sm">
+            <div className="space-y-5 p-5 sm:p-6">
+                <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                        <p className="text-sm font-black uppercase tracking-[0.13em] text-charcoal/45">All locations, next 7 days</p>
+                        <h2 className="mt-1 text-2xl font-black text-forest sm:text-3xl">Upcoming appointments</h2>
+                    </div>
+                    <span className="rounded-full bg-green/15 px-3 py-1 text-xs font-black uppercase tracking-[0.08em] text-forest">
+                        Live schedule
+                    </span>
                 </div>
-            )}
+                <div className="grid gap-3 sm:grid-cols-3">
+                    <DashboardMetricTile
+                        label="Booked"
+                        value={`${upcoming.confirmedCount + upcoming.cancelledCount}`}
+                        detail="tracked"
+                    />
+                    <DashboardMetricTile
+                        label="Confirmed"
+                        value={`${upcoming.confirmedCount}`}
+                        detail="active"
+                    />
+                    <DashboardMetricTile
+                        label="Cancelled"
+                        value={`${upcoming.cancelledCount}`}
+                        detail="removed"
+                    />
+                </div>
+            </div>
+            <div className="border-t border-[#e1e8e1] px-3 pb-4 pt-3 sm:px-5">
+                <UpcomingAppointmentsChart series={upcoming.dailySeries} />
+            </div>
         </section>
+    );
+}
+
+function DashboardMetricTile({ label, value, detail }: { label: string; value: string; detail: string }) {
+    return (
+        <div className="min-w-0 rounded-md border border-[#e1e8e1] bg-[#fbfdfb] p-3">
+            <p className="truncate text-xs font-black uppercase tracking-[0.12em] text-charcoal/45">{label}</p>
+            <p className="mt-1 truncate text-2xl font-black text-forest sm:text-3xl">{value}</p>
+            <p className="truncate text-sm font-bold text-charcoal/52">{detail}</p>
+        </div>
+    );
+}
+
+function AppointmentValueChart({
+    series,
+}: {
+    series: AdminDashboardSnapshot["appointmentValue"]["dailySeries"];
+}) {
+    const chartSeries = series.length > 0 ? series : [{ date: "", totalCents: 0, appointmentCount: 0, pricedAppointmentCount: 0, unpricedAppointmentCount: 0 }];
+    const hasData = seriesHasDashboardData(chartSeries, "totalCents");
+    const scale = buildDashboardChartScale(chartSeries.map((point) => point.totalCents));
+    const width = 680;
+    const height = 300;
+    const frame = { top: 24, right: 24, bottom: 48, left: 80 };
+    const plotWidth = width - frame.left - frame.right;
+    const plotHeight = height - frame.top - frame.bottom;
+    const baseline = frame.top + plotHeight;
+    const points = chartSeries.map((point, index) => {
+        const x = chartPointX(index, chartSeries.length, frame.left, plotWidth);
+        const y = chartPointY(point.totalCents, scale.max, frame.top, plotHeight);
+        return { ...point, x, y };
+    });
+    const linePoints = points.map((point) => `${point.x},${point.y}`).join(" ");
+    const areaPath = points.length
+        ? `M ${points[0].x} ${baseline} L ${points.map((point) => `${point.x} ${point.y}`).join(" L ")} L ${points[points.length - 1].x} ${baseline} Z`
+        : "";
+
+    return (
+        <div className="relative aspect-[16/9] min-h-[260px] w-full overflow-hidden rounded-md bg-[#fbfdfb]">
+            <svg role="img" aria-label="Estimated appointment value over the last 7 days" viewBox={`0 0 ${width} ${height}`} className="h-full w-full">
+                <defs>
+                    <linearGradient id="appointmentValueArea" x1="0" x2="0" y1="0" y2="1">
+                        <stop offset="0%" stopColor="#51c28a" stopOpacity="0.28" />
+                        <stop offset="100%" stopColor="#51c28a" stopOpacity="0.03" />
+                    </linearGradient>
+                </defs>
+                {scale.ticks.map((tick) => {
+                    const y = chartPointY(tick, scale.max, frame.top, plotHeight);
+                    return (
+                        <g key={`value-tick-${tick}`}>
+                            <line x1={frame.left} x2={width - frame.right} y1={y} y2={y} stroke="#dfe8df" strokeWidth="1" />
+                            <text x={frame.left - 12} y={y + 4} textAnchor="end" className="fill-charcoal/50 text-[0.68rem] font-black">
+                                {hasData || tick === 0 ? formatCompactDashboardCurrency(tick) : ""}
+                            </text>
+                        </g>
+                    );
+                })}
+                <line x1={frame.left} x2={width - frame.right} y1={baseline} y2={baseline} stroke="#cfdacf" strokeWidth="1.5" />
+                {areaPath && <path d={areaPath} fill="url(#appointmentValueArea)" />}
+                {linePoints && <polyline points={linePoints} fill="none" stroke="#009e65" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" />}
+                {points.map((point) => (
+                    <g key={`value-point-${point.date}`}>
+                        <circle cx={point.x} cy={point.y} r="5.5" fill="#009e65" stroke="#ffffff" strokeWidth="3">
+                            <title>{`${formatDashboardSeriesDate(point.date)}: ${formatDashboardCurrency(point.totalCents)} from ${point.appointmentCount} appointment${point.appointmentCount === 1 ? "" : "s"}`}</title>
+                        </circle>
+                        <text x={point.x} y={height - 17} textAnchor="middle" className="fill-charcoal/50 text-[0.72rem] font-black">
+                            {formatDashboardSeriesDate(point.date)}
+                        </text>
+                    </g>
+                ))}
+            </svg>
+            {!hasData && <ChartEmptyState title="No priced appointment value yet" detail="Bookings will draw this line once service price snapshots exist." />}
+        </div>
+    );
+}
+
+function UpcomingAppointmentsChart({
+    series,
+}: {
+    series: AdminDashboardSnapshot["upcomingAppointments"]["dailySeries"];
+}) {
+    const chartSeries = series.length > 0 ? series : [{ date: "", confirmedCount: 0, cancelledCount: 0 }];
+    const maxDaily = Math.max(0, ...chartSeries.map((point) => point.confirmedCount + point.cancelledCount));
+    const hasData = chartSeries.some((point) => point.confirmedCount > 0 || point.cancelledCount > 0);
+    const scale = buildDashboardCountScale(maxDaily);
+    const width = 680;
+    const height = 300;
+    const frame = { top: 24, right: 24, bottom: 48, left: 52 };
+    const plotWidth = width - frame.left - frame.right;
+    const plotHeight = height - frame.top - frame.bottom;
+    const baseline = frame.top + plotHeight;
+    const groupWidth = plotWidth / Math.max(chartSeries.length, 1);
+    const barWidth = Math.min(30, Math.max(10, groupWidth * 0.25));
+
+    return (
+        <div className="relative aspect-[16/9] min-h-[260px] w-full overflow-hidden rounded-md bg-[#fbfdfb]">
+            <svg role="img" aria-label="Confirmed and cancelled upcoming appointments by day" viewBox={`0 0 ${width} ${height}`} className="h-full w-full">
+                {scale.ticks.map((tick) => {
+                    const y = chartPointY(tick, scale.max, frame.top, plotHeight);
+                    return (
+                        <g key={`upcoming-tick-${tick}`}>
+                            <line x1={frame.left} x2={width - frame.right} y1={y} y2={y} stroke="#dfe8df" strokeWidth="1" />
+                            <text x={frame.left - 12} y={y + 4} textAnchor="end" className="fill-charcoal/50 text-[0.7rem] font-black">
+                                {hasData || tick === 0 ? tick : ""}
+                            </text>
+                        </g>
+                    );
+                })}
+                <line x1={frame.left} x2={width - frame.right} y1={baseline} y2={baseline} stroke="#cfdacf" strokeWidth="1.5" />
+                {chartSeries.map((point, index) => {
+                    const x = chartPointX(index, chartSeries.length, frame.left, plotWidth);
+                    const confirmedY = chartPointY(point.confirmedCount, scale.max, frame.top, plotHeight);
+                    const cancelledY = chartPointY(point.cancelledCount, scale.max, frame.top, plotHeight);
+                    const confirmedHeight = Math.max(0, baseline - confirmedY);
+                    const cancelledHeight = Math.max(0, baseline - cancelledY);
+
+                    return (
+                        <g key={`upcoming-bar-${point.date}`}>
+                            <rect
+                                x={x - barWidth - 3}
+                                y={confirmedY}
+                                width={barWidth}
+                                height={confirmedHeight}
+                                rx="4"
+                                fill="#009e65"
+                                opacity={point.confirmedCount > 0 ? "1" : "0.18"}
+                            >
+                                <title>{`${formatDashboardSeriesDate(point.date)}: ${point.confirmedCount} confirmed`}</title>
+                            </rect>
+                            <rect
+                                x={x + 3}
+                                y={cancelledY}
+                                width={barWidth}
+                                height={cancelledHeight}
+                                rx="4"
+                                fill="#cf284e"
+                                opacity={point.cancelledCount > 0 ? "1" : "0.18"}
+                            >
+                                <title>{`${formatDashboardSeriesDate(point.date)}: ${point.cancelledCount} cancelled`}</title>
+                            </rect>
+                            <text x={x} y={height - 17} textAnchor="middle" className="fill-charcoal/50 text-[0.72rem] font-black">
+                                {formatDashboardSeriesDate(point.date)}
+                            </text>
+                        </g>
+                    );
+                })}
+            </svg>
+            {!hasData && <ChartEmptyState title="No upcoming appointment movement" detail="Confirmed and cancelled appointments will appear here as the week fills in." />}
+            <div className="absolute right-3 top-3 flex flex-wrap justify-end gap-2 text-xs font-black">
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-forest shadow-sm">
+                    <span className="size-2 rounded-full bg-[#009e65]" />
+                    Confirmed
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-[#a71739] shadow-sm">
+                    <span className="size-2 rounded-full bg-[#cf284e]" />
+                    Cancelled
+                </span>
+            </div>
+        </div>
+    );
+}
+
+function ChartEmptyState({ title, detail }: { title: string; detail: string }) {
+    return (
+        <div className="pointer-events-none absolute inset-x-4 top-1/2 mx-auto max-w-sm -translate-y-1/2 rounded-md border border-dashed border-[#cfdacf] bg-white/88 p-4 text-center shadow-sm">
+            <p className="text-base font-black text-forest">{title}</p>
+            <p className="mt-1 text-sm font-bold text-charcoal/55">{detail}</p>
+        </div>
+    );
+}
+
+function DashboardActivityPanel({
+    todayBookings,
+    upcomingBookings,
+    activity,
+    onOpenBooking,
+}: {
+    todayBookings: AdminBookingSummary[];
+    upcomingBookings: AdminBookingSummary[];
+    activity: AdminDashboardActivity[];
+    onOpenBooking: (bookingId: string) => void;
+}) {
+    const cancellationCount = activity.filter((item) => item.eventType === "cancellation_confirmation" || item.appointmentStatus === "cancelled").length;
+    const visibleActivity = activity.slice(0, 8);
+    const fallbackBookings = [...todayBookings, ...upcomingBookings].slice(0, 8);
+
+    return (
+        <section className="rounded-md border border-[#d7e0d7] bg-white shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#d7e0d7] px-5 py-4">
+                <div className="flex items-center gap-2">
+                    <CalendarDays size={21} className="text-green" />
+                    <h2 className="text-2xl font-black text-forest">Appointments activity</h2>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs font-black uppercase tracking-[0.08em] text-charcoal/60">
+                    <span className="rounded-full bg-[#eef5f1] px-3 py-1.5">{todayBookings.length} today</span>
+                    <span className="rounded-full bg-[#eef5f1] px-3 py-1.5">{upcomingBookings.length} next 7 days</span>
+                    <span className="rounded-full bg-amber-50 px-3 py-1.5 text-amber-800">{cancellationCount} cancelled</span>
+                </div>
+            </div>
+            <div className="max-h-[620px] divide-y divide-[#e1e8e1] overflow-y-auto">
+                {visibleActivity.length > 0 ? (
+                    visibleActivity.map((item) => (
+                        <DashboardActivityRow key={`dashboard-activity-${item.id}`} item={item} onOpenBooking={onOpenBooking} />
+                    ))
+                ) : fallbackBookings.length > 0 ? (
+                    fallbackBookings.map((booking) => (
+                        <DashboardBookingActivityRow key={`dashboard-booking-${booking.id}`} booking={booking} onOpenBooking={onOpenBooking} />
+                    ))
+                ) : (
+                    <p className="p-5 text-base font-bold text-charcoal/55">No appointment activity in this snapshot.</p>
+                )}
+            </div>
+        </section>
+    );
+}
+
+function DashboardActivityRow({
+    item,
+    onOpenBooking,
+}: {
+    item: AdminDashboardActivity;
+    onOpenBooking: (bookingId: string) => void;
+}) {
+    const date = dashboardDateParts(item.appointmentStartTime);
+
+    return (
+        <button
+            className="grid w-full gap-3 bg-white p-4 text-left transition hover:bg-[#f8fbf8] sm:grid-cols-[4.5rem_1fr_auto]"
+            onClick={() => onOpenBooking(item.bookingId)}
+        >
+            <DashboardDateBadge month={date.month} day={date.day} />
+            <span className="min-w-0">
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-2 text-sm font-black uppercase tracking-[0.08em] text-green">
+                        <ChannelIcon channel={item.channel} />
+                        {activityLabel(item.eventType)}
+                    </span>
+                    <span className="text-sm font-bold text-charcoal/45">{formatLocalTime(item.appointmentStartTime)}</span>
+                </span>
+                <span className="mt-1 block truncate text-lg font-black text-forest">{item.customerName}</span>
+                <span className="block truncate text-sm font-bold text-charcoal/58">
+                    {item.services.join(", ") || "Appointment"} with {item.barberName}
+                </span>
+            </span>
+            <span className="flex flex-wrap items-start gap-2 sm:justify-end">
+                <ActivityPill label={formatAdminStatus(item.appointmentStatus)} tone={item.appointmentStatus} />
+                <ActivityPill label={activityStatusLabel(item)} tone={item.status} />
+            </span>
+        </button>
+    );
+}
+
+function DashboardBookingActivityRow({
+    booking,
+    onOpenBooking,
+}: {
+    booking: AdminBookingSummary;
+    onOpenBooking: (bookingId: string) => void;
+}) {
+    const date = dashboardDateParts(booking.startTime);
+
+    return (
+        <button
+            className="grid w-full gap-3 bg-white p-4 text-left transition hover:bg-[#f8fbf8] sm:grid-cols-[4.5rem_1fr_auto]"
+            onClick={() => onOpenBooking(booking.id)}
+        >
+            <DashboardDateBadge month={date.month} day={date.day} />
+            <span className="min-w-0">
+                <span className="text-sm font-black uppercase tracking-[0.08em] text-green">{formatLocalTime(booking.startTime)}</span>
+                <span className="mt-1 block truncate text-lg font-black text-forest">{booking.customerName}</span>
+                <span className="block truncate text-sm font-bold text-charcoal/58">
+                    {booking.services.join(", ") || "Appointment"} with {booking.barberName}
+                </span>
+            </span>
+            <span className="flex flex-wrap items-start gap-2 sm:justify-end">
+                <ActivityPill label={formatAdminStatus(booking.status)} tone={booking.status} />
+                <ActivityPill label={formatBookingSourceLabel(booking.source)} tone="recipient" />
+            </span>
+        </button>
+    );
+}
+
+function DashboardDateBadge({ month, day }: { month: string; day: string }) {
+    return (
+        <span className="flex w-16 shrink-0 flex-col items-center justify-center rounded-md border border-[#e1e8e1] bg-[#fbfdfb] px-2 py-2 text-center">
+            <span className="text-[0.65rem] font-black uppercase tracking-[0.1em] text-charcoal/45">{month}</span>
+            <span className="text-xl font-black leading-tight text-forest">{day}</span>
+        </span>
+    );
+}
+
+function NotificationHealthPanel({
+    health,
+    activity,
+    upcomingReminders,
+    deliveryMode,
+    onOpenBooking,
+}: {
+    health: AdminDashboardSnapshot["notificationHealth"];
+    activity: AdminDashboardActivity[];
+    upcomingReminders: AdminUpcomingReminderPreview[];
+    deliveryMode: AdminDashboardSnapshot["notificationDeliveryMode"];
+    onOpenBooking: (bookingId: string) => void;
+}) {
+    const summary = summarizeNotificationHealth(health);
+    const activeFailures = getActiveNotificationFailures(activity);
+    const activeFailureIds = new Set(activeFailures.map((item) => item.id));
+    const recentRows = [
+        ...activeFailures,
+        ...activity.filter((item) => !activeFailureIds.has(item.id)).slice(0, Math.max(0, 4 - activeFailures.length)),
+    ].slice(0, 4);
+
+    return (
+        <section className="rounded-md border border-[#d7e0d7] bg-white shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#d7e0d7] px-5 py-4">
+                <div className="flex items-center gap-2">
+                    <Bell size={21} className="text-green" />
+                    <h2 className="text-2xl font-black text-forest">Notification health</h2>
+                </div>
+                <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.1em] ${deliveryModeTone(deliveryMode)}`}>
+                    {deliveryMode} mode
+                </span>
+            </div>
+            <div className="space-y-4 p-4 sm:p-5">
+                <div className="grid gap-4 sm:grid-cols-[auto_1fr]">
+                    <DashboardHealthMeter value={health.deliverySuccessRate} />
+                    <div className="min-w-0 space-y-3">
+                        <div className="grid gap-2">
+                            {summary.map((item) => (
+                                <p key={item} className="rounded-md bg-[#fbfdfb] px-3 py-2 text-sm font-black text-charcoal/65">
+                                    {item}
+                                </p>
+                            ))}
+                        </div>
+                        <NotificationHealthSegments health={health} />
+                    </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                    <DashboardMetricTile label="Sent" value={`${health.sentCount}`} detail="delivered" />
+                    <DashboardMetricTile label="Scheduled" value={`${health.scheduledCount}`} detail="pending" />
+                    <DashboardMetricTile label="Failed" value={`${health.failedActiveCount}`} detail={`${health.failedHistoricalCount} historical`} />
+                    <DashboardMetricTile label="Skipped" value={`${health.skippedCount}`} detail="missing contact" />
+                </div>
+                <div className="rounded-md border border-[#e1e8e1] bg-[#fbfdfb] p-3">
+                    <div className="flex items-center justify-between gap-3">
+                        <h3 className="text-base font-black text-forest">Reminder queue</h3>
+                        <span className="text-sm font-black text-charcoal/45">{upcomingReminders.length} scheduled</span>
+                    </div>
+                    {upcomingReminders.length === 0 ? (
+                        <p className="mt-2 text-sm font-bold text-charcoal/55">No upcoming reminders with customer contact info.</p>
+                    ) : (
+                        <div className="mt-3 grid gap-2">
+                            {upcomingReminders.slice(0, 2).map((item) => (
+                                <button
+                                    key={`health-reminder-${item.id}`}
+                                    className="min-w-0 rounded-md bg-white p-3 text-left transition hover:bg-[#f5fbf6]"
+                                    onClick={() => onOpenBooking(item.bookingId)}
+                                >
+                                    <span className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.08em] text-green">
+                                        <ChannelIcon channel={item.channel} />
+                                        {activityLabel(item.eventType)}
+                                    </span>
+                                    <span className="mt-1 block truncate text-base font-black text-forest">{item.customerName}</span>
+                                    <span className="block truncate text-xs font-bold text-charcoal/50">
+                                        {formatLocalDateTime(item.scheduledFor)}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+                <div>
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                        <h3 className="text-base font-black text-forest">Recent delivery</h3>
+                        {health.failedActiveCount > 0 ? (
+                            <span className="inline-flex items-center gap-1 text-sm font-black text-red-700">
+                                <AlertTriangle size={15} />
+                                {health.failedActiveCount} active
+                            </span>
+                        ) : (
+                            <span className="inline-flex items-center gap-1 text-sm font-black text-forest">
+                                <Check size={15} />
+                                Healthy
+                            </span>
+                        )}
+                    </div>
+                    {recentRows.length === 0 ? (
+                        <p className="rounded-md border border-dashed border-[#d7e0d7] bg-[#f8fbf8] p-4 text-sm font-bold text-charcoal/55">
+                            No notification delivery rows in this snapshot.
+                        </p>
+                    ) : (
+                        <div className="grid gap-2">
+                            {recentRows.map((item) => (
+                                <NotificationActivityCard key={`health-activity-${item.id}`} item={item} onOpenBooking={onOpenBooking} compact />
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </section>
+    );
+}
+
+function DashboardHealthMeter({ value }: { value: number }) {
+    const bounded = Math.max(0, Math.min(100, value));
+    const radius = 34;
+    const circumference = 2 * Math.PI * radius;
+    const dashOffset = circumference - (bounded / 100) * circumference;
+
+    return (
+        <div className="flex items-center justify-center rounded-md border border-[#e1e8e1] bg-[#fbfdfb] p-4">
+            <svg viewBox="0 0 88 88" className="size-28" role="img" aria-label={`${bounded}% notification delivery success`}>
+                <circle cx="44" cy="44" r={radius} fill="none" stroke="#e4ece4" strokeWidth="9" />
+                <circle
+                    cx="44"
+                    cy="44"
+                    r={radius}
+                    fill="none"
+                    stroke={bounded >= 90 ? "#009e65" : bounded >= 70 ? "#c6912f" : "#cf284e"}
+                    strokeLinecap="round"
+                    strokeWidth="9"
+                    strokeDasharray={circumference}
+                    strokeDashoffset={dashOffset}
+                    transform="rotate(-90 44 44)"
+                />
+                <text x="44" y="42" textAnchor="middle" className="fill-forest text-lg font-black">
+                    {bounded}%
+                </text>
+                <text x="44" y="58" textAnchor="middle" className="fill-charcoal/45 text-[0.58rem] font-black uppercase">
+                    success
+                </text>
+            </svg>
+        </div>
+    );
+}
+
+function NotificationHealthSegments({
+    health,
+}: {
+    health: AdminDashboardSnapshot["notificationHealth"];
+}) {
+    const segments = [
+        { label: "Sent", value: health.sentCount, className: "bg-[#009e65]" },
+        { label: "Scheduled", value: health.scheduledCount, className: "bg-[#7db9a5]" },
+        { label: "Failed", value: health.failedActiveCount, className: "bg-[#cf284e]" },
+        { label: "Skipped", value: health.skippedCount, className: "bg-[#d8a23b]" },
+    ];
+    const total = segments.reduce((sum, item) => sum + item.value, 0);
+
+    if (total === 0) {
+        return <div className="h-3 rounded-full bg-[#e4ece4]" aria-label="No notification delivery activity" />;
+    }
+
+    return (
+        <div className="flex h-3 overflow-hidden rounded-full bg-[#e4ece4]" aria-label="Notification delivery status mix">
+            {segments
+                .filter((item) => item.value > 0)
+                .map((item) => (
+                    <span
+                        key={item.label}
+                        className={item.className}
+                        style={{ width: `${Math.max(5, (item.value / total) * 100)}%` }}
+                        title={`${item.label}: ${item.value}`}
+                    />
+                ))}
+        </div>
     );
 }
 
@@ -3102,6 +3683,61 @@ function formatServiceSelectionPrice(services: AdminServiceOption[]) {
     const hasFromPrice = services.some((service) => service.priceType === "from");
     const formatted = `CA$ ${Math.round(total / 100)}`;
     return hasFromPrice ? `from ${formatted}` : formatted;
+}
+
+function chartPointX(index: number, count: number, left: number, width: number) {
+    return count <= 1 ? left + width / 2 : left + (index / (count - 1)) * width;
+}
+
+function chartPointY(value: number, max: number, top: number, height: number) {
+    return top + (1 - Math.min(1, Math.max(0, value / Math.max(1, max)))) * height;
+}
+
+function buildDashboardCountScale(maxValue: number) {
+    const max = Math.max(4, Math.ceil(maxValue / 4) * 4);
+    const step = max / 4;
+
+    return {
+        max,
+        ticks: [max, max - step, max - step * 2, max - step * 3, 0],
+    };
+}
+
+function formatDashboardSeriesDate(date: string) {
+    if (!date) return "";
+
+    return new Intl.DateTimeFormat("en-US", {
+        timeZone: "UTC",
+        month: "short",
+        day: "numeric",
+    }).format(parseLocalDate(date));
+}
+
+function formatDashboardUpdatedAt(value: string) {
+    return new Intl.DateTimeFormat("en-CA", {
+        timeZone: TIME_ZONE,
+        hour: "numeric",
+        minute: "2-digit",
+        second: "2-digit",
+    }).format(new Date(value));
+}
+
+function dashboardDateParts(value: string) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: TIME_ZONE,
+        month: "short",
+        day: "numeric",
+    }).formatToParts(new Date(value));
+
+    return {
+        month: parts.find((part) => part.type === "month")?.value ?? "",
+        day: parts.find((part) => part.type === "day")?.value ?? "",
+    };
+}
+
+function formatBookingSourceLabel(source: AdminBookingSummary["source"]) {
+    if (source === "walk_in") return "Walk-in";
+    return source[0].toUpperCase() + source.slice(1);
 }
 
 function activityLabel(eventType: AdminDashboardActivity["eventType"]) {
