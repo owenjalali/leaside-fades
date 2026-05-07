@@ -25,6 +25,7 @@ import {
     updateAdminShift,
     updateAdminShiftOverride,
 } from "./api";
+import { getAdminBarberPhotoUrl } from "./barber-photos";
 import {
     addDaysToLocalDate,
     buildWeeklyScheduleDraft,
@@ -275,7 +276,7 @@ function ShiftWorkspace({
                                     }`}
                                     onClick={() => selectBarber(barber.id)}
                                 >
-                                    <StaffAvatar name={barber.displayName} active={selected} />
+                                    <StaffAvatar barber={barber} active={selected} />
                                     <span className="min-w-0">
                                         <span className="block truncate text-sm font-black">{barber.displayName}</span>
                                         <span className="block truncate text-xs font-bold text-charcoal/50">
@@ -293,7 +294,7 @@ function ShiftWorkspace({
                     <div className="border-b border-forest/10 px-4 py-4 sm:px-5">
                         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                             <div className="flex min-w-0 items-start gap-3">
-                                <StaffAvatar name={selectedBarber?.displayName ?? "Staff"} active size="lg" />
+                                <StaffAvatar barber={selectedBarber ?? { displayName: "Staff" }} active size="lg" />
                                 <div className="min-w-0">
                                     <div className="flex flex-wrap items-center gap-2">
                                         <h2 className="truncate text-2xl font-black text-forest">{selectedBarber?.displayName ?? "Staff"}</h2>
@@ -727,7 +728,7 @@ function StaffScheduleOverview({ schedule, barbers }: { schedule: AdminSchedule;
                     <Panel key={barber.id}>
                         <div className="flex items-start justify-between gap-3">
                             <div className="flex min-w-0 items-center gap-3">
-                                <StaffAvatar name={barber.displayName} active />
+                                <StaffAvatar barber={barber} active />
                                 <div className="min-w-0">
                                     <h3 className="truncate text-base font-black text-forest">{barber.displayName}</h3>
                                     <p className="text-sm font-bold text-charcoal/55">{formatWeeklyHours(hours)} weekly</p>
@@ -761,9 +762,37 @@ function StaffScheduleOverview({ schedule, barbers }: { schedule: AdminSchedule;
     );
 }
 
-function StaffAvatar({ name, active, size = "md" }: { name: string; active?: boolean; size?: "md" | "lg" }) {
-    const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
+function StaffAvatar({
+    barber,
+    active,
+    size = "md",
+}: {
+    barber: Pick<AdminBarberOption, "displayName" | "slug">;
+    active?: boolean;
+    size?: "md" | "lg";
+}) {
+    const source = getAdminBarberPhotoUrl(barber);
+    const [imageFailed, setImageFailed] = useState(false);
+    const photo = imageFailed ? undefined : source;
+    const initials = barber.displayName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
     const sizeClass = size === "lg" ? "size-14 text-lg" : "size-11 text-sm";
+
+    useEffect(() => {
+        setImageFailed(false);
+    }, [source]);
+
+    if (photo) {
+        return (
+            <img
+                src={photo}
+                alt={barber.displayName}
+                className={`${sizeClass} shrink-0 rounded-full border border-white object-cover shadow-sm ${active ? "ring-2 ring-forest/20" : "ring-1 ring-forest/10"}`}
+                decoding="async"
+                loading="lazy"
+                onError={() => setImageFailed(true)}
+            />
+        );
+    }
 
     return (
         <span className={`grid shrink-0 place-items-center rounded-full ${sizeClass} ${active ? "bg-forest text-white" : "bg-white text-forest"} font-black shadow-sm`}>
