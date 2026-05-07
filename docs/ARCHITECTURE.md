@@ -341,7 +341,8 @@ Rules:
 - blocked times that overlap confirmed bookings in the affected scope are rejected
 
 Frontend:
-- `/admin/shifts` provides filters, weekly recurring shift grids grouped by barber/weekday, shift chips, split-window creation, duplication, one-off override controls, and click-to-edit forms
+- `/admin/shifts` provides a staff-first weekly schedule builder with inline day toggles, time windows, location selection, split shifts, effective dates, explicit save, one-off override tab, and team overview tab
+- when multiple active recurring date ranges are returned for one barber, the weekly builder displays and diffs the latest effective recurring pattern instead of mixing separate dated patterns into one editable week
 - `/admin/blocked-time` provides scope-aware blocked-time forms, all-day closure entry, and visible chips for barber blocks, location closures, and business closures
 - drag/drop editing is intentionally deferred; future drag/drop can call the same validated mutation endpoints
 
@@ -456,8 +457,8 @@ Phase 7 implemented:
 - `/admin/shifts`
 - `/admin/blocked-time`
 - authenticated schedule shell integration in the existing admin workspace
-- recurring shift list/create/edit/deactivate flows
-- one-off `add`, `remove`, and `not_working` shift override flows
+- recurring shift list/create/edit/deactivate flows through a staff-first weekly schedule builder that diffs inline day rows back to the existing mutation endpoints
+- one-off `add`, `remove`, and `not_working` shift override flows in a secondary `/admin/shifts` tab
 - barber, location, and business blocked-time flows
 - barber read context for broader closures and self-service mutation for own blocked time
 - `npm run qa:phase7-schedule` for local/dev real-route owner/barber schedule QA

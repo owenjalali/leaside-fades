@@ -11,8 +11,11 @@ import {
     buildCalendarWorkingWindows,
     buildMonthDays,
     buildWeekDays,
+    buildWeeklyScheduleDraft,
+    buildWeeklyScheduleSavePlan,
     bookingFallsOutsideWorkingWindows,
     calendarRangeFitsWorkingWindows,
+    calculateWeeklyScheduleHours,
     estimateMobileCalendarGridHeight,
     formatAdminStatus,
     compactNotificationFailureMessage,
@@ -194,6 +197,166 @@ describe("Phase 7 schedule UI utilities", () => {
     test("formats local schedule windows for compact shift chips", () => {
         expect(formatScheduleWindow("10:00", "19:00")).toBe("10:00 AM - 7:00 PM");
         expect(formatScheduleWindow("11:15", "15:45")).toBe("11:15 AM - 3:45 PM");
+    });
+
+    test("builds a selected barber weekly draft with inactive days and split windows", () => {
+        const schedule: AdminSchedule = {
+            locations: [
+                { id: "location-a", name: "Eglinton", sortOrder: 1 },
+                { id: "location-b", name: "Millwood", sortOrder: 2 },
+            ],
+            barbers: [
+                { id: "barber-a", displayName: "Laura Nguyen", locationIds: ["location-a", "location-b"], sortOrder: 1 },
+                { id: "barber-b", displayName: "Sam To", locationIds: ["location-a"], sortOrder: 2 },
+            ],
+            shifts: [
+                shiftA,
+                { ...shiftA, id: "shift-a-2", startTime: "15:00", endTime: "19:00", locationId: "location-b" },
+                shiftB,
+                { ...shiftA, id: "shift-other", barberId: "barber-b", dayOfWeek: 2 },
+                { ...shiftA, id: "inactive", dayOfWeek: 4, active: false },
+            ],
+            shiftOverrides: [],
+            blockedTimes: [],
+        };
+
+        const draft = buildWeeklyScheduleDraft(schedule, "barber-a");
+
+        expect(draft.barberId).toBe("barber-a");
+        expect(draft.effectiveFrom).toBe("");
+        expect(draft.sourceShiftIds).toEqual(["shift-a", "shift-a-2", "shift-b"]);
+        expect(draft.days[1]).toMatchObject({
+            dayOfWeek: 1,
+            active: true,
+            windows: [
+                { shiftId: "shift-a", locationId: "location-a", startTime: "10:00", endTime: "13:00" },
+                { shiftId: "shift-a-2", locationId: "location-b", startTime: "15:00", endTime: "19:00" },
+            ],
+        });
+        expect(draft.days[2]).toMatchObject({ dayOfWeek: 2, active: false, windows: [] });
+        expect(draft.days[3].windows[0]).toMatchObject({ shiftId: "shift-b", startTime: "14:00", endTime: "19:00" });
+    });
+
+    test("builds the weekly draft from the latest dated recurring pattern", () => {
+        const oldMonday = { ...shiftA, id: "old-monday", effectiveFrom: "2026-04-26", effectiveTo: "2026-05-26" };
+        const oldWednesday = { ...shiftB, id: "old-wednesday", effectiveFrom: "2026-04-26", effectiveTo: "2026-05-26" };
+        const currentMonday = {
+            ...shiftA,
+            id: "current-monday",
+            endTime: "19:00",
+            effectiveFrom: "2026-04-30",
+            effectiveTo: "2026-05-30",
+        };
+        const currentWednesday = {
+            ...shiftB,
+            id: "current-wednesday",
+            effectiveFrom: "2026-04-30",
+            effectiveTo: "2026-05-30",
+        };
+        const schedule: AdminSchedule = {
+            locations: [{ id: "location-a", name: "Eglinton", sortOrder: 1 }],
+            barbers: [{ id: "barber-a", displayName: "Laura Nguyen", locationIds: ["location-a"], sortOrder: 1 }],
+            shifts: [oldMonday, currentMonday, oldWednesday, currentWednesday],
+            shiftOverrides: [],
+            blockedTimes: [],
+        };
+
+        const draft = buildWeeklyScheduleDraft(schedule, "barber-a");
+
+        expect(draft.effectiveFrom).toBe("2026-04-30");
+        expect(draft.effectiveTo).toBe("2026-05-30");
+        expect(draft.sourceShiftIds).toEqual(["current-monday", "current-wednesday"]);
+        expect(calculateWeeklyScheduleHours(draft)).toBe(14);
+        expect(buildWeeklyScheduleSavePlan(schedule, draft)).toEqual([]);
+    });
+
+    test("calculates weekly schedule hours from active split windows", () => {
+        const draft = buildWeeklyScheduleDraft({
+            locations: [{ id: "location-a", name: "Eglinton", sortOrder: 1 }],
+            barbers: [{ id: "barber-a", displayName: "Laura Nguyen", locationIds: ["location-a"], sortOrder: 1 }],
+            shifts: [
+                shiftA,
+                { ...shiftA, id: "shift-a-2", startTime: "15:00", endTime: "19:00" },
+                { ...shiftB, startTime: "11:30", endTime: "19:00" },
+            ],
+            shiftOverrides: [],
+            blockedTimes: [],
+        }, "barber-a");
+
+        expect(calculateWeeklyScheduleHours(draft)).toBe(14.5);
+    });
+
+    test("diffs weekly draft changes into deactivate, update, and create operations", () => {
+        const schedule: AdminSchedule = {
+            locations: [
+                { id: "location-a", name: "Eglinton", sortOrder: 1 },
+                { id: "location-b", name: "Millwood", sortOrder: 2 },
+            ],
+            barbers: [{ id: "barber-a", displayName: "Laura Nguyen", locationIds: ["location-a", "location-b"], sortOrder: 1 }],
+            shifts: [
+                shiftA,
+                { ...shiftA, id: "shift-a-remove", dayOfWeek: 2 },
+                { ...shiftB, id: "shift-b-update" },
+            ],
+            shiftOverrides: [],
+            blockedTimes: [],
+        };
+        const draft = buildWeeklyScheduleDraft(schedule, "barber-a");
+        draft.effectiveFrom = "2026-05-19";
+        draft.effectiveTo = "2026-08-31";
+        draft.effectiveDatesTouched = true;
+        draft.days[1].windows[0].endTime = "14:00";
+        draft.days[2].active = false;
+        draft.days[2].windows = [];
+        draft.days[5].active = true;
+        draft.days[5].windows = [{
+            draftId: "new-friday",
+            locationId: "location-b",
+            startTime: "10:00",
+            endTime: "19:00",
+        }];
+
+        expect(buildWeeklyScheduleSavePlan(schedule, draft)).toEqual([
+            { type: "deactivate", shiftId: "shift-a-remove" },
+            {
+                type: "update",
+                shiftId: "shift-a",
+                payload: {
+                    barberId: "barber-a",
+                    locationId: "location-a",
+                    dayOfWeek: 1,
+                    startTime: "10:00",
+                    endTime: "14:00",
+                    effectiveFrom: "2026-05-19",
+                    effectiveTo: "2026-08-31",
+                },
+            },
+            {
+                type: "update",
+                shiftId: "shift-b-update",
+                payload: {
+                    barberId: "barber-a",
+                    locationId: "location-a",
+                    dayOfWeek: 3,
+                    startTime: "14:00",
+                    endTime: "19:00",
+                    effectiveFrom: "2026-05-19",
+                    effectiveTo: "2026-08-31",
+                },
+            },
+            {
+                type: "create",
+                payload: {
+                    barberId: "barber-a",
+                    locationId: "location-b",
+                    dayOfWeek: 5,
+                    startTime: "10:00",
+                    endTime: "19:00",
+                    effectiveFrom: "2026-05-19",
+                    effectiveTo: "2026-08-31",
+                },
+            },
+        ]);
     });
 
     test("builds all-day blocked time payloads with the next local end date", () => {

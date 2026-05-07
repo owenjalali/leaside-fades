@@ -762,6 +762,19 @@ function CalendarTopbar({
         ? "icon-text-button min-h-10 shrink-0 px-3 py-2 text-sm"
         : "icon-text-button min-h-11 px-4 py-2 text-base";
 
+    if (isSchedulePath) {
+        return (
+            <header data-admin-calendar-topbar className="sticky top-0 z-20 shrink-0 border-b border-[#cfdacf] bg-white/95 px-3 py-2 backdrop-blur lg:px-7 lg:py-4">
+                <div className="flex min-w-0 items-center justify-between gap-3">
+                    <div className="min-w-0">
+                        <p className="truncate text-xl font-black leading-tight text-forest sm:text-2xl">{title}</p>
+                        <p className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-charcoal/50 sm:text-xs">Setup</p>
+                    </div>
+                </div>
+            </header>
+        );
+    }
+
     return (
         <header data-admin-calendar-topbar className="sticky top-0 z-20 shrink-0 overflow-visible border-b border-[#cfdacf] bg-white/95 px-2 py-2 backdrop-blur lg:px-6 lg:py-3 2xl:px-8 2xl:py-4">
             <div className="relative space-y-2 lg:hidden">

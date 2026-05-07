@@ -41,6 +41,46 @@ export interface ScheduledCalendarBarber {
     scheduled: boolean;
 }
 
+export interface ShiftWindowDraft {
+    draftId: string;
+    shiftId?: string;
+    locationId: string;
+    startTime: string;
+    endTime: string;
+    effectiveFrom?: string;
+    effectiveTo?: string;
+}
+
+export interface DayScheduleDraft {
+    dayOfWeek: number;
+    active: boolean;
+    windows: ShiftWindowDraft[];
+}
+
+export interface WeeklyScheduleDraft {
+    barberId: string;
+    effectiveFrom: string;
+    effectiveTo: string;
+    effectiveDatesTouched: boolean;
+    sourceShiftIds: string[];
+    days: DayScheduleDraft[];
+}
+
+export type WeeklyScheduleShiftPayload = Record<string, unknown> & {
+    barberId: string;
+    locationId: string;
+    dayOfWeek: number;
+    startTime: string;
+    endTime: string;
+    effectiveFrom: string;
+    effectiveTo: string;
+};
+
+export type WeeklyScheduleSaveOperation =
+    | { type: "deactivate"; shiftId: string }
+    | { type: "update"; shiftId: string; payload: WeeklyScheduleShiftPayload }
+    | { type: "create"; payload: WeeklyScheduleShiftPayload };
+
 export const mobileAdminCalendarLayoutBudget = {
     viewportHeightPx: 568,
     railHeightPx: 56,
@@ -198,6 +238,97 @@ export function groupShiftsByBarberAndWeekday(shifts: AdminShift[]) {
         groups[shift.barberId][shift.dayOfWeek].sort((a, b) => a.startTime.localeCompare(b.startTime));
         return groups;
     }, {});
+}
+
+export function buildWeeklyScheduleDraft(schedule: AdminSchedule, barberId: string): WeeklyScheduleDraft {
+    const shifts = selectCurrentWeeklyShiftPattern(schedule.shifts
+        .filter((shift) => shift.active && shift.barberId === barberId)
+        .sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime)));
+    const effectiveFromValues = uniqueShiftDateValues(shifts, "effectiveFrom");
+    const effectiveToValues = uniqueShiftDateValues(shifts, "effectiveTo");
+    const days: DayScheduleDraft[] = Array.from({ length: 7 }, (_, dayOfWeek) => {
+        const windows = shifts
+            .filter((shift) => shift.dayOfWeek === dayOfWeek)
+            .map((shift) => ({
+                draftId: shift.id,
+                shiftId: shift.id,
+                locationId: shift.locationId,
+                startTime: shift.startTime,
+                endTime: shift.endTime,
+                effectiveFrom: shift.effectiveFrom ?? "",
+                effectiveTo: shift.effectiveTo ?? "",
+            }));
+
+        return {
+            dayOfWeek,
+            active: windows.length > 0,
+            windows,
+        };
+    });
+
+    return {
+        barberId,
+        effectiveFrom: effectiveFromValues.length === 1 ? effectiveFromValues[0] : "",
+        effectiveTo: effectiveToValues.length === 1 ? effectiveToValues[0] : "",
+        effectiveDatesTouched: false,
+        sourceShiftIds: shifts.map((shift) => shift.id),
+        days,
+    };
+}
+
+export function calculateWeeklyScheduleHours(draft: WeeklyScheduleDraft) {
+    return draft.days.reduce((total, day) => {
+        if (!day.active) {
+            return total;
+        }
+
+        return total + day.windows.reduce((dayTotal, window) => {
+            return dayTotal + Math.max(0, clockToMinutes(window.endTime) - clockToMinutes(window.startTime)) / 60;
+        }, 0);
+    }, 0);
+}
+
+export function buildWeeklyScheduleSavePlan(
+    schedule: Pick<AdminSchedule, "shifts">,
+    draft: WeeklyScheduleDraft,
+): WeeklyScheduleSaveOperation[] {
+    const sourceShiftIds = new Set(draft.sourceShiftIds);
+    const existingShifts = schedule.shifts.filter((shift) =>
+        shift.active && shift.barberId === draft.barberId && sourceShiftIds.has(shift.id),
+    );
+    const existingById = new Map(existingShifts.map((shift) => [shift.id, shift]));
+    const retainedShiftIds = new Set<string>();
+    const deactivates: WeeklyScheduleSaveOperation[] = [];
+    const updates: WeeklyScheduleSaveOperation[] = [];
+    const creates: WeeklyScheduleSaveOperation[] = [];
+
+    for (const day of draft.days) {
+        if (!day.active) {
+            continue;
+        }
+
+        for (const window of day.windows) {
+            const payload = buildWeeklyShiftPayload(draft, day.dayOfWeek, window);
+
+            if (window.shiftId && existingById.has(window.shiftId)) {
+                retainedShiftIds.add(window.shiftId);
+                const existing = existingById.get(window.shiftId);
+                if (existing && !weeklyShiftPayloadMatches(existing, payload)) {
+                    updates.push({ type: "update", shiftId: window.shiftId, payload });
+                }
+            } else {
+                creates.push({ type: "create", payload });
+            }
+        }
+    }
+
+    for (const shift of existingShifts) {
+        if (!retainedShiftIds.has(shift.id)) {
+            deactivates.push({ type: "deactivate", shiftId: shift.id });
+        }
+    }
+
+    return [...deactivates, ...updates, ...creates];
 }
 
 export function buildBlockedTimePayload(input: BlockedTimeFormInput) {
@@ -542,6 +673,65 @@ function formatLocalClockTime(time: string) {
         hour: "numeric",
         minute: "2-digit",
     }).format(date);
+}
+
+function uniqueShiftDateValues(shifts: AdminShift[], key: "effectiveFrom" | "effectiveTo") {
+    return Array.from(new Set(shifts.map((shift) => shift[key] ?? "")));
+}
+
+function selectCurrentWeeklyShiftPattern(shifts: AdminShift[]) {
+    if (shifts.length <= 1) {
+        return shifts;
+    }
+
+    const groups = new Map<string, AdminShift[]>();
+    for (const shift of shifts) {
+        const key = `${shift.effectiveFrom ?? ""}|${shift.effectiveTo ?? ""}`;
+        groups.set(key, [...(groups.get(key) ?? []), shift]);
+    }
+
+    return [...groups.values()]
+        .sort((a, b) => {
+            const latestStart = (b[0]?.effectiveFrom ?? "").localeCompare(a[0]?.effectiveFrom ?? "");
+            if (latestStart !== 0) {
+                return latestStart;
+            }
+
+            const latestEnd = (b[0]?.effectiveTo ?? "").localeCompare(a[0]?.effectiveTo ?? "");
+            if (latestEnd !== 0) {
+                return latestEnd;
+            }
+
+            return b.length - a.length;
+        })[0] ?? [];
+}
+
+function buildWeeklyShiftPayload(
+    draft: WeeklyScheduleDraft,
+    dayOfWeek: number,
+    window: ShiftWindowDraft,
+): WeeklyScheduleShiftPayload {
+    return {
+        barberId: draft.barberId,
+        locationId: window.locationId,
+        dayOfWeek,
+        startTime: window.startTime,
+        endTime: window.endTime,
+        effectiveFrom: draft.effectiveDatesTouched ? draft.effectiveFrom : window.effectiveFrom ?? draft.effectiveFrom,
+        effectiveTo: draft.effectiveDatesTouched ? draft.effectiveTo : window.effectiveTo ?? draft.effectiveTo,
+    };
+}
+
+function weeklyShiftPayloadMatches(shift: AdminShift, payload: WeeklyScheduleShiftPayload) {
+    return (
+        shift.barberId === payload.barberId &&
+        shift.locationId === payload.locationId &&
+        shift.dayOfWeek === payload.dayOfWeek &&
+        shift.startTime === payload.startTime &&
+        shift.endTime === payload.endTime &&
+        (shift.effectiveFrom ?? "") === payload.effectiveFrom &&
+        (shift.effectiveTo ?? "") === payload.effectiveTo
+    );
 }
 
 function addCalendarWindow(

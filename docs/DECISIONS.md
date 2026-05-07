@@ -566,3 +566,13 @@ When the Add appointment drawer is open, `/admin/calendar` protects a usable cal
 
 Reason:
 The desktop split-pane state could visually squeeze the calendar and drawer controls because the form internals responded to the full browser width rather than the narrower drawer column. The fix preserves the existing booking APIs and scheduling rules while making the operational surface fit the frame on phones, tablets, and desktop drawer layouts.
+
+### 2026-05-07 - Make Staff Shifts A Weekly Schedule Builder
+
+Decision:
+Replace the `/admin/shifts` all-staff CRUD grid with a staff-first weekly schedule builder. Owners/admins select one staff member, edit working days, split windows, locations, and effective dates inline, then commit with one explicit Save changes action that calls the existing shift create/update/deactivate endpoints. One-off overrides and team overview stay available as secondary tabs.
+
+If the schedule API returns multiple active recurring patterns for the same barber with different effective date ranges, the builder shows and diffs the latest effective pattern as the current weekly draft instead of combining separate patterns into duplicate day windows.
+
+Reason:
+Staff scheduling should answer "when does this barber work?" before exposing database objects. A guided weekly editor reduces cognitive load while preserving server-side schedule validation, existing APIs, and the no-double-booking/availability guarantees.
