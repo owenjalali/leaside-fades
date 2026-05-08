@@ -30,6 +30,7 @@ import yogeshThumb from "../assets/barbers/booking-thumbnails/yogesh-thumb.jpg";
 import fawadPhoto from "../assets/barbers/fawad.png";
 import shayonPhoto from "../assets/barbers/shayon.png";
 import {
+    ADMIN_AUTH_EXPIRED_EVENT,
     cancelAdminBooking,
     createManualBooking,
     createWalkInBooking,
@@ -119,6 +120,7 @@ export default function AdminApp() {
     const [path, setPath] = useState(window.location.pathname);
     const [user, setUser] = useState<SafeAdminUser | null>(null);
     const [sessionLoading, setSessionLoading] = useState(true);
+    const [loginNotice, setLoginNotice] = useState("");
 
     useEffect(() => {
         const handlePopState = () => setPath(window.location.pathname);
@@ -133,6 +135,19 @@ export default function AdminApp() {
             .finally(() => setSessionLoading(false));
     }, []);
 
+    useEffect(() => {
+        const handleAuthExpired = () => {
+            setUser(null);
+            setSessionLoading(false);
+            setLoginNotice("Your admin session expired. Sign in again to keep booking.");
+            window.history.replaceState({}, "", "/admin/login");
+            setPath("/admin/login");
+        };
+
+        window.addEventListener(ADMIN_AUTH_EXPIRED_EVENT, handleAuthExpired);
+        return () => window.removeEventListener(ADMIN_AUTH_EXPIRED_EVENT, handleAuthExpired);
+    }, []);
+
     function navigate(nextPath: string) {
         window.history.pushState({}, "", nextPath);
         setPath(nextPath);
@@ -141,7 +156,13 @@ export default function AdminApp() {
     async function handleLogout() {
         await logoutAdmin();
         setUser(null);
+        setLoginNotice("");
         navigate("/admin/login");
+    }
+
+    function handleLogin(nextUser: SafeAdminUser) {
+        setLoginNotice("");
+        setUser(nextUser);
     }
 
     if (sessionLoading) {
@@ -149,7 +170,7 @@ export default function AdminApp() {
     }
 
     if (!user || path === "/admin/login") {
-        return <LoginPage onLogin={setUser} onNavigate={navigate} />;
+        return <LoginPage notice={loginNotice} onLogin={handleLogin} onNavigate={navigate} />;
     }
 
     return (
@@ -163,9 +184,11 @@ export default function AdminApp() {
 }
 
 function LoginPage({
+    notice,
     onLogin,
     onNavigate,
 }: {
+    notice?: string;
     onLogin: (user: SafeAdminUser) => void;
     onNavigate: (path: string) => void;
 }) {
@@ -198,6 +221,7 @@ function LoginPage({
                     <h1 className="mt-2 text-5xl font-black leading-tight text-forest md:text-6xl">Admin login</h1>
                 </div>
                 <form onSubmit={handleSubmit} className="space-y-6 rounded-md border border-forest/10 bg-white p-6 shadow-sm md:p-8">
+                    {notice && <p className="rounded-md bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">{notice}</p>}
                     <Field label="Email">
                         <input
                             value={email}

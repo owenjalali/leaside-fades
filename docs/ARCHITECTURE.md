@@ -119,6 +119,7 @@ Responsibilities:
 - issue opaque random session tokens to the browser
 - store only SHA-256 session token hashes in PostgreSQL
 - set `lf_admin_session` as an HTTP-only `SameSite=Lax` cookie, with `Secure` enabled in production
+- use a 30-day default admin session window for owner/barber shop operations
 - reject missing, expired, revoked, or inactive-user sessions
 - enforce owner/admin vs barber booking visibility on server-side admin APIs
 - create password reset tokens for active users while returning generic forgot-password responses

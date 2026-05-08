@@ -57,7 +57,7 @@ interface AuthOptions {
     sessionDurationMs?: number;
 }
 
-const DEFAULT_SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+const DEFAULT_SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 
 export async function loginAdminUser(
     request: LoginRequest,

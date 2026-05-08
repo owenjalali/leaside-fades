@@ -99,7 +99,7 @@ describe("Phase 5A auth service", () => {
             userId: ownerId,
             tokenHash: hashSessionToken(result.sessionToken),
         });
-        expect(repository.sessions[0].expiresAt.toISOString()).toBe("2026-05-04T15:00:00.000Z");
+        expect(repository.sessions[0].expiresAt.toISOString()).toBe("2026-05-27T15:00:00.000Z");
     });
 
     test("barber users can log in with their linked barberId", async () => {
@@ -157,7 +157,7 @@ describe("Phase 5A auth service", () => {
         await expect(getAdminSession("", repository, { now })).rejects.toMatchObject({ status: 401 });
         await expect(
             getAdminSession(login.sessionToken, repository, {
-                now: new Date("2026-05-04T15:00:01.000Z"),
+                now: new Date("2026-05-27T15:00:01.000Z"),
             }),
         ).rejects.toMatchObject({ status: 401 });
 

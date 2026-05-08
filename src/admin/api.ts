@@ -11,9 +11,22 @@ import type {
     AdminSessionResponse,
 } from "./types";
 
+export const ADMIN_AUTH_EXPIRED_EVENT = "leaside-admin-auth-expired";
+
+export class AdminApiError extends Error {
+    readonly status: number;
+
+    constructor(message: string, status: number) {
+        super(message);
+        this.name = "AdminApiError";
+        this.status = status;
+    }
+}
+
 async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
     const response = await fetch(url, {
         ...options,
+        credentials: "same-origin",
         headers: {
             "Content-Type": "application/json",
             ...options?.headers,
@@ -22,7 +35,12 @@ async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-        throw new Error(typeof payload.message === "string" ? payload.message : "Admin service is unavailable.");
+        const message = typeof payload.message === "string" ? payload.message : "Admin service is unavailable.";
+        if (response.status === 401 && shouldNotifyAuthExpired(url)) {
+            notifyAdminAuthExpired(message);
+        }
+
+        throw new AdminApiError(message, response.status);
     }
 
     return payload as T;
@@ -36,7 +54,7 @@ export function loginAdmin(email: string, password: string) {
 }
 
 export async function logoutAdmin() {
-    await fetch("/api/admin/auth/logout", { method: "POST" });
+    await fetch("/api/admin/auth/logout", { method: "POST", credentials: "same-origin" });
 }
 
 export function fetchAdminSession() {
@@ -193,4 +211,18 @@ export function deleteAdminBlockedTime(blockedTimeId: string) {
     return requestJson<{ deleted: true }>(`/api/admin/schedule/blocked-times/${blockedTimeId}/delete`, {
         method: "POST",
     });
+}
+
+function shouldNotifyAuthExpired(url: string) {
+    return !url.includes("/api/admin/auth/login") && !url.includes("/api/admin/auth/session");
+}
+
+function notifyAdminAuthExpired(message: string) {
+    if (typeof window === "undefined") return;
+
+    const event =
+        typeof CustomEvent === "function"
+            ? new CustomEvent(ADMIN_AUTH_EXPIRED_EVENT, { detail: { message } })
+            : new Event(ADMIN_AUTH_EXPIRED_EVENT);
+    window.dispatchEvent(event);
 }

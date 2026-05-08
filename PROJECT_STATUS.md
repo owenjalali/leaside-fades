@@ -49,6 +49,7 @@ Phase 12 launch-prep status:
 - Local dashboard visual QA can now be seeded with `npm run qa:phase12-dashboard-fixture`, which is guarded to local development databases and creates priced confirmed/completed/cancelled/no-show/rescheduled/source-varied bookings for chart tuning.
 - The premium dashboard redesign is the intended production dashboard surface. A read-only production dashboard snapshot on May 5, 2026 returned real service-snapshot value data: CA$3,921 estimated appointment value across 124 priced appointments in the last 7-day window, plus 28 confirmed and 3 cancelled upcoming appointments in the next 7-day chart window.
 - Staff-created appointments now use one Add appointment workflow with optional customer phone/email, server-side availability validation, and staff-only zero-minute notice while preserving no-overlap checks.
+- Admin session handling now keeps owner/barber sessions active for 30 days by default and redirects expired active workspaces back to `/admin/login` instead of surfacing raw `Authentication required.` errors inside Add appointment or other admin forms.
 - The live Add appointment drawer includes an Appointment/Walk-in toggle. Walk-ins created from the drawer use `source = "walk_in"`; when customer phone/email exists they now dispatch booking confirmation attempts and are eligible for reminder jobs, while name-only walk-ins still create skipped/missing-contact attempts without failing creation.
 - Missing customer/staff contacts create skipped notification attempts and do not fail booking creation.
 - Notification metadata remains token-safe: raw customer management tokens and raw cancel/reschedule URLs are not persisted.
@@ -116,7 +117,7 @@ Do not seed local/dev sample shifts in production. Production currently uses the
 - Soft migration from Fresha is preferred for launch.
 - Phase 1 intentionally does not seed real recurring barber shifts because real schedules are unknown.
 - Phase 5A chose custom session auth. Existing `users` rows without `password_hash` cannot log in until bootstrapped, reset, or invited.
-- Admin sessions last seven days by default and use HTTP-only `SameSite=Lax` cookies with `Secure` enabled in production.
+- Admin sessions last 30 days by default and use HTTP-only `SameSite=Lax` cookies with `Secure` enabled in production.
 - Phase 5B password reset links expire after 45 minutes, use opaque random tokens, and persist only SHA-256 token hashes.
 - Password reset delivery is dev-mode logging until an approved email provider integration is added.
 - Phase 5C barber invites expire after seven days, use opaque random tokens, and persist only SHA-256 token hashes.
