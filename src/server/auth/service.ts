@@ -34,7 +34,7 @@ export interface AuthRepository {
         tokenHash: string,
     ): Promise<{ session: AuthSessionRecord; user: AuthUserRecord } | null>;
     revokeSession(tokenHash: string, revokedAt: Date): Promise<void>;
-    touchSession(sessionId: string, seenAt: Date): Promise<void>;
+    touchSession(sessionId: string, seenAt: Date, expiresAt: Date): Promise<void>;
 }
 
 export class AuthError extends Error {
@@ -57,7 +57,7 @@ interface AuthOptions {
     sessionDurationMs?: number;
 }
 
-const DEFAULT_SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+export const DEFAULT_SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 
 export async function loginAdminUser(
     request: LoginRequest,
@@ -121,11 +121,16 @@ export async function getAdminSession(
         throw authenticationRequiredError();
     }
 
-    await repository.touchSession(session.id, now);
+    const expiresAt = new Date(now.getTime() + (options.sessionDurationMs ?? DEFAULT_SESSION_DURATION_MS));
+    await repository.touchSession(session.id, now, expiresAt);
 
     return {
         user: toSafeAdminUser(user),
-        session,
+        session: {
+            ...session,
+            expiresAt,
+            lastSeenAt: now,
+        },
     };
 }
 

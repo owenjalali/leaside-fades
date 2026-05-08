@@ -596,7 +596,7 @@ Staff scheduling should answer "when does this barber work?" before exposing dat
 ### 2026-05-08 - Treat Expired Admin Sessions As A Login Recovery Flow
 
 Decision:
-Admin sessions now last 30 days by default, and the admin frontend redirects active workspaces to `/admin/login` when protected admin API calls return 401. The raw backend `Authentication required.` message must not appear inside Add appointment or other operational forms.
+Admin sessions now use a 30-day sliding inactivity window. Protected admin API activity renews both the stored session expiry and the HTTP-only browser cookie, and the admin frontend redirects active workspaces to `/admin/login` when protected admin API calls return 401. The raw backend `Authentication required.` message must not appear inside Add appointment or other operational forms.
 
 Reason:
-The shop runs the admin surface as an operating tool, not a short-lived back-office form. A seven-day fixed session caused a stale workspace to reach protected booking endpoints and show an alarming backend auth message in the Add appointment drawer. The longer session window reduces unnecessary interruptions, while the redirect keeps expired sessions explicit and recoverable.
+The shop runs the admin surface as an operating tool, not a short-lived back-office form. A seven-day fixed session caused a stale workspace to reach protected booking endpoints and show an alarming backend auth message in the Add appointment drawer. Sliding expiry keeps active shop devices signed in while still expiring abandoned sessions, and the redirect keeps expired sessions explicit and recoverable.

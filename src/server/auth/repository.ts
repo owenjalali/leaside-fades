@@ -129,12 +129,13 @@ class DrizzleAuthRepository implements AuthRepository {
             .where(eq(userSessions.tokenHash, tokenHash));
     }
 
-    async touchSession(sessionId: string, seenAt: Date): Promise<void> {
+    async touchSession(sessionId: string, seenAt: Date, expiresAt: Date): Promise<void> {
         const db = this.database as ReturnType<typeof createDatabaseClient>["db"];
         await db
             .update(userSessions)
             .set({
                 lastSeenAt: seenAt,
+                expiresAt,
                 updatedAt: sql`now()`,
             })
             .where(eq(userSessions.id, sessionId));

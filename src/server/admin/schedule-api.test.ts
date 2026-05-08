@@ -64,9 +64,12 @@ class InMemoryAuthRepository implements AuthRepository {
         if (session) session.revokedAt = now;
     }
 
-    async touchSession(sessionId: string, seenAt: Date) {
+    async touchSession(sessionId: string, seenAt: Date, expiresAt: Date) {
         const session = this.sessions.find((candidate) => candidate.id === sessionId);
-        if (session) session.lastSeenAt = seenAt;
+        if (session) {
+            session.lastSeenAt = seenAt;
+            session.expiresAt = expiresAt;
+        }
     }
 }
 

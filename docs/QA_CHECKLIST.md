@@ -96,6 +96,7 @@
 - [x] Barber cannot access other barber booking data through protected admin endpoints
 - [x] Misconfigured barber user without `barberId` receives no useful admin booking access
 - [x] Session cookies are secure in production, HTTP-only, and `SameSite=Lax`
+- [x] Protected admin activity renews both the stored session expiry and browser cookie expiry
 - [x] Expired active admin workspaces redirect to login instead of showing raw backend auth errors inside booking forms
 - [x] Unauthorized API requests are rejected
 - [x] Local/dev-only owner bootstrap exists and refuses production/non-local databases

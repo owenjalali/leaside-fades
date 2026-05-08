@@ -91,11 +91,14 @@ class InMemoryAuthRepository implements AuthRepository, PasswordResetRepository,
         }
     }
 
-    async touchSession(sessionId: string, seenAt: Date) {
+    async touchSession(sessionId: string, seenAt: Date, expiresAt?: Date) {
         const session = this.sessions.find((candidate) => candidate.id === sessionId);
 
         if (session) {
             session.lastSeenAt = seenAt;
+            if (expiresAt) {
+                session.expiresAt = expiresAt;
+            }
         }
     }
 
@@ -619,7 +622,7 @@ function dashboardActivityFixture(
     };
 }
 
-async function createTestApp() {
+async function createTestApp(options: { now?: () => Date } = {}) {
     const authRepository = new InMemoryAuthRepository();
     const passwordResetDelivery = new InMemoryPasswordResetDelivery();
     const teamInviteDelivery = new InMemoryTeamInviteDelivery();
@@ -644,10 +647,15 @@ async function createTestApp() {
         teamRepository: authRepository,
         teamInviteDelivery,
         appUrl: "http://localhost:3000",
-        now: () => now,
+        now: options.now ?? (() => now),
     });
 
     return { app, authRepository, passwordResetDelivery, teamInviteDelivery, bookingsRepository };
+}
+
+function cookieExpiryIso(setCookie: string | undefined) {
+    const expires = setCookie?.match(/Expires=([^;]+)/)?.[1];
+    return expires ? new Date(expires).toISOString() : "";
 }
 
 function tokenFromResetUrl(resetUrl: string) {
@@ -693,6 +701,24 @@ describe("Phase 5A admin API", () => {
         const sessionResponse = await agent.get("/api/admin/auth/session").expect(200);
         expect(sessionResponse.body.user.email).toBe("owner@example.com");
         expect(sessionResponse.body.user.passwordHash).toBeUndefined();
+    });
+
+    test("protected admin activity renews the session cookie and stored expiry", async () => {
+        let currentNow = now;
+        const { app, authRepository } = await createTestApp({ now: () => currentNow });
+        const agent = request.agent(app);
+
+        await agent
+            .post("/api/admin/auth/login")
+            .send({ email: "owner@example.com", password: "correct-password" })
+            .expect(200);
+
+        currentNow = new Date("2026-05-20T15:00:00.000Z");
+        const bookingsResponse = await agent.get("/api/admin/bookings").expect(200);
+
+        expect(cookieExpiryIso(bookingsResponse.headers["set-cookie"]?.[0])).toBe("2026-06-19T15:00:00.000Z");
+        expect(authRepository.sessions[0].lastSeenAt?.toISOString()).toBe("2026-05-20T15:00:00.000Z");
+        expect(authRepository.sessions[0].expiresAt.toISOString()).toBe("2026-06-19T15:00:00.000Z");
     });
 
     test("login marks the admin session cookie Secure in production", async () => {

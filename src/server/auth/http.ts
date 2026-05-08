@@ -1,7 +1,7 @@
-import type { SafeAdminUser } from "./service.ts";
+import { DEFAULT_SESSION_DURATION_MS, type SafeAdminUser } from "./service.ts";
 
 export const ADMIN_SESSION_COOKIE_NAME = "lf_admin_session";
-export const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+export const SESSION_DURATION_MS = DEFAULT_SESSION_DURATION_MS;
 
 interface CookieResponse {
     cookie: (name: string, value: string, options: Record<string, unknown>) => void;

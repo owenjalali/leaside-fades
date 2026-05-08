@@ -324,6 +324,22 @@ export async function handleAdminLogin(
     }
 }
 
+async function requireAdminSession(
+    request: any,
+    response: any,
+    dependencies: AdminApiDependencies,
+) {
+    const sessionToken = readAdminSessionToken(request);
+    const session = await getAdminSession(
+        sessionToken,
+        dependencies.authRepository ?? createDrizzleAuthRepository(),
+        { now: dependencies.now?.() ?? new Date() },
+    );
+
+    setAdminSessionCookie(response, sessionToken, session.session.expiresAt);
+    return session;
+}
+
 export async function handleAdminLogout(
     request: any,
     response: any,
@@ -434,11 +450,7 @@ export async function handleAdminSession(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         response.set("Cache-Control", "no-store");
         response.status(200).json(serializeSessionResponse(session.user));
     } catch (error) {
@@ -454,11 +466,7 @@ export async function handleAdminBookings(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const bookings = await listAdminBookings(
             session.user,
             dependencies.bookingsRepository ?? createDrizzleAdminBookingsRepository(),
@@ -480,11 +488,7 @@ export async function handleAdminDashboard(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const dashboard = await getAdminDashboard(
             session.user,
             dependencies.bookingsRepository ?? createDrizzleAdminBookingsRepository(),
@@ -509,11 +513,7 @@ export async function handleAdminCalendarOptions(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const options = await getAdminCalendarOptions(
             session.user,
             dependencies.bookingsRepository ?? createDrizzleAdminBookingsRepository(),
@@ -534,11 +534,7 @@ export async function handleAdminAvailability(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const availability = await getAdminAvailability(
             session.user,
             parseAdminAvailabilityQuery(request.query, dependencies.now?.() ?? new Date()),
@@ -560,11 +556,7 @@ export async function handleAdminBookingDetail(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const booking = await getAdminBookingDetail(
             session.user,
             request.params?.bookingId,
@@ -586,11 +578,7 @@ export async function handleAdminCreateManualBooking(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const booking = await createAdminManualBooking(
             session.user,
             request.body,
@@ -613,11 +601,7 @@ export async function handleAdminCreateWalkInBooking(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const booking = await createAdminWalkInBooking(
             session.user,
             request.body,
@@ -640,11 +624,7 @@ export async function handleAdminCancelBooking(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const booking = await cancelAdminBooking(
             session.user,
             request.params?.bookingId,
@@ -667,11 +647,7 @@ export async function handleAdminNoShowBooking(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const booking = await markAdminBookingNoShow(
             session.user,
             request.params?.bookingId,
@@ -694,11 +670,7 @@ export async function handleAdminRescheduleBooking(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const booking = await rescheduleAdminBooking(
             session.user,
             request.params?.bookingId,
@@ -722,11 +694,7 @@ export async function handleAdminSchedule(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const schedule = await listAdminSchedule(
             session.user,
             dependencies.scheduleRepository ?? createDrizzleAdminScheduleRepository(),
@@ -748,11 +716,7 @@ export async function handleAdminCreateShift(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const shift = await createAdminShift(
             session.user,
             request.body,
@@ -775,11 +739,7 @@ export async function handleAdminUpdateShift(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const shift = await updateAdminShift(
             session.user,
             request.params?.shiftId,
@@ -803,11 +763,7 @@ export async function handleAdminDeactivateShift(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const shift = await deactivateAdminShift(
             session.user,
             request.params?.shiftId,
@@ -830,11 +786,7 @@ export async function handleAdminCreateShiftOverride(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const shiftOverride = await createAdminShiftOverride(
             session.user,
             request.body,
@@ -857,11 +809,7 @@ export async function handleAdminUpdateShiftOverride(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const shiftOverride = await updateAdminShiftOverride(
             session.user,
             request.params?.overrideId,
@@ -885,11 +833,7 @@ export async function handleAdminDeleteShiftOverride(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const result = await deleteAdminShiftOverride(
             session.user,
             request.params?.overrideId,
@@ -912,11 +856,7 @@ export async function handleAdminCreateBlockedTime(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const blockedTime = await createAdminBlockedTime(
             session.user,
             request.body,
@@ -939,11 +879,7 @@ export async function handleAdminUpdateBlockedTime(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const blockedTime = await updateAdminBlockedTime(
             session.user,
             request.params?.blockedTimeId,
@@ -967,11 +903,7 @@ export async function handleAdminDeleteBlockedTime(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const result = await deleteAdminBlockedTime(
             session.user,
             request.params?.blockedTimeId,
@@ -994,11 +926,7 @@ export async function handleAdminCreateBarber(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const result = await createBarberOnboarding(
             session.user,
             {
@@ -1030,11 +958,7 @@ export async function handleAdminDeactivateBarber(
 ) {
     try {
         assertAdminMutationOrigin(request, dependencies);
-        const session = await getAdminSession(
-            readAdminSessionToken(request),
-            dependencies.authRepository ?? createDrizzleAuthRepository(),
-            { now: dependencies.now?.() ?? new Date() },
-        );
+        const session = await requireAdminSession(request, response, dependencies);
         const result = await deactivateBarberAccess(
             session.user,
             request.params?.barberId,

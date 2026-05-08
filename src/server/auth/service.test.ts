@@ -52,11 +52,14 @@ class InMemoryAuthRepository implements AuthRepository {
         }
     }
 
-    async touchSession(sessionId: string, seenAt: Date) {
+    async touchSession(sessionId: string, seenAt: Date, expiresAt?: Date) {
         const session = this.sessions.find((candidate) => candidate.id === sessionId);
 
         if (session) {
             session.lastSeenAt = seenAt;
+            if (expiresAt) {
+                session.expiresAt = expiresAt;
+            }
         }
     }
 }
@@ -165,6 +168,23 @@ describe("Phase 5A auth service", () => {
         await expect(getAdminSession(login.sessionToken, repository, { now })).rejects.toMatchObject({
             status: 401,
         });
+    });
+
+    test("session lookup renews an active session from the latest activity time", async () => {
+        const repository = await repositoryWithUser();
+        const login = await loginAdminUser(
+            { email: "owner@example.com", password: "correct-password" },
+            repository,
+            { now },
+        );
+
+        const activityNow = new Date("2026-05-20T15:00:00.000Z");
+        const session = await getAdminSession(login.sessionToken, repository, { now: activityNow });
+
+        expect(session.session.lastSeenAt?.toISOString()).toBe("2026-05-20T15:00:00.000Z");
+        expect(session.session.expiresAt.toISOString()).toBe("2026-06-19T15:00:00.000Z");
+        expect(repository.sessions[0].lastSeenAt?.toISOString()).toBe("2026-05-20T15:00:00.000Z");
+        expect(repository.sessions[0].expiresAt.toISOString()).toBe("2026-06-19T15:00:00.000Z");
     });
 
     test("logout revokes the current session", async () => {
