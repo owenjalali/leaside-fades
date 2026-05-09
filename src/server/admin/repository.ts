@@ -598,6 +598,83 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
         return this.getBookingByIdForAdminScope({ bookingId: input.bookingId });
     }
 
+    async updateBookingAppointmentForAdminScope(input: {
+        bookingId: string;
+        barberId?: string;
+        nextBarberId: string;
+        locationId: string;
+        startTime: Date;
+        endTime: Date;
+        totalDurationMinutes: number;
+        customer: {
+            firstName: string;
+            lastName: string;
+            phoneE164: string | null;
+            email: string | null;
+            notes?: string | null;
+        };
+        customerNotes: string | null;
+        internalNotes: string | null;
+        serviceSnapshots: BookingServiceSnapshot[];
+        updatedAt: Date;
+    }) {
+        const db = this.database as ReturnType<typeof createDatabaseClient>["db"];
+        const [existing] = await db
+            .select({
+                id: bookings.id,
+                customerId: bookings.customerId,
+            })
+            .from(bookings)
+            .where(
+                compactAnd(
+                    eq(bookings.id, input.bookingId),
+                    input.barberId ? eq(bookings.barberId, input.barberId) : undefined,
+                    eq(bookings.status, "confirmed"),
+                ),
+            )
+            .limit(1);
+
+        if (!existing) {
+            return null;
+        }
+
+        await db
+            .update(customers)
+            .set({
+                firstName: input.customer.firstName,
+                lastName: input.customer.lastName,
+                phoneE164: input.customer.phoneE164,
+                email: input.customer.email,
+                notes: input.customer.notes ?? null,
+                updatedAt: input.updatedAt,
+            })
+            .where(eq(customers.id, existing.customerId));
+
+        const [updated] = await db
+            .update(bookings)
+            .set({
+                barberId: input.nextBarberId,
+                locationId: input.locationId,
+                startTime: input.startTime,
+                endTime: input.endTime,
+                totalDurationMinutes: input.totalDurationMinutes,
+                customerNotes: input.customerNotes,
+                internalNotes: input.internalNotes,
+                updatedAt: input.updatedAt,
+            })
+            .where(eq(bookings.id, input.bookingId))
+            .returning({ id: bookings.id });
+
+        if (!updated) {
+            return null;
+        }
+
+        await db.delete(bookingServices).where(eq(bookingServices.bookingId, input.bookingId));
+        await this.insertBookingServices(input.bookingId, input.serviceSnapshots);
+
+        return this.getBookingByIdForAdminScope({ bookingId: input.bookingId });
+    }
+
     private async attachServiceNames(
         bookingRows: Array<{
             id: string;

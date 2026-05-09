@@ -10,6 +10,7 @@ import {
     deleteAdminBlockedTime,
     deleteAdminShiftOverride,
     listAdminSchedule,
+    replaceAdminDayShift,
     updateAdminBlockedTime,
     updateAdminShift,
     updateAdminShiftOverride,
@@ -544,5 +545,120 @@ describe("Phase 7 admin schedule service", () => {
         expect(schedule.barbers.map((barber) => barber.id)).toEqual(["barber-a"]);
         expect(schedule.shifts.map((shift) => shift.barberId)).toEqual(["barber-a"]);
         expect(schedule.blockedTimes.map((blockedTime) => blockedTime.scope)).toEqual(["business"]);
+    });
+
+    test("barber replaces their own one-day location shift by diffing overrides against the recurring baseline", async () => {
+        const repository = new InMemoryScheduleRepository();
+        await createAdminShift(
+            owner,
+            {
+                barberId: "barber-a",
+                locationId: locationA,
+                dayOfWeek: 1,
+                startTime: "10:00",
+                endTime: "19:00",
+            },
+            repository,
+            { now },
+        );
+        repository.shiftOverrides.push({
+            id: "old-same-day",
+            barberId: "barber-a",
+            locationId: locationA,
+            overrideDate: "2026-05-04",
+            overrideType: "add",
+            startTime: "09:00",
+            endTime: "10:00",
+            reason: "old edit",
+        });
+
+        const result = await replaceAdminDayShift(
+            barberUser,
+            {
+                barberId: "barber-a",
+                locationId: locationA,
+                date: "2026-05-04",
+                windows: [
+                    { startTime: "09:00", endTime: "12:00" },
+                    { startTime: "13:00", endTime: "18:00" },
+                ],
+            },
+            repository,
+            { now },
+        );
+
+        expect(result).toMatchObject({
+            barberId: "barber-a",
+            locationId: locationA,
+            date: "2026-05-04",
+            windows: [
+                { startTime: "09:00", endTime: "12:00" },
+                { startTime: "13:00", endTime: "18:00" },
+            ],
+        });
+        expect(repository.shiftOverrides).toHaveLength(3);
+        expect(
+            repository.shiftOverrides
+                .map(({ overrideType, startTime, endTime, reason }) => ({ overrideType, startTime, endTime, reason }))
+                .sort((left, right) => `${left.overrideType}${left.startTime}`.localeCompare(`${right.overrideType}${right.startTime}`)),
+        ).toEqual([
+            { overrideType: "add", startTime: "09:00", endTime: "10:00", reason: "One-day shift edit" },
+            { overrideType: "remove", startTime: "12:00", endTime: "13:00", reason: "One-day shift edit" },
+            { overrideType: "remove", startTime: "18:00", endTime: "19:00", reason: "One-day shift edit" },
+        ]);
+    });
+
+    test("owner can clear another barber's selected-day location shift and barber users cannot edit someone else's day shift", async () => {
+        const repository = new InMemoryScheduleRepository();
+        await createAdminShift(
+            owner,
+            {
+                barberId: "barber-b",
+                locationId: locationA,
+                dayOfWeek: 1,
+                startTime: "10:00",
+                endTime: "19:00",
+            },
+            repository,
+            { now },
+        );
+
+        await expect(
+            replaceAdminDayShift(
+                barberUser,
+                {
+                    barberId: "barber-b",
+                    locationId: locationA,
+                    date: "2026-05-04",
+                    windows: [],
+                },
+                repository,
+                { now },
+            ),
+        ).rejects.toMatchObject({ status: 403 });
+
+        await expect(
+            replaceAdminDayShift(
+                owner,
+                {
+                    barberId: "barber-b",
+                    locationId: locationA,
+                    date: "2026-05-04",
+                    windows: [],
+                },
+                repository,
+                { now },
+            ),
+        ).resolves.toMatchObject({ barberId: "barber-b", windows: [] });
+        expect(repository.shiftOverrides).toEqual([
+            expect.objectContaining({
+                barberId: "barber-b",
+                locationId: locationA,
+                overrideDate: "2026-05-04",
+                overrideType: "remove",
+                startTime: "10:00",
+                endTime: "19:00",
+            }),
+        ]);
     });
 });

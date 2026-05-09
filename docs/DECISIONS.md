@@ -600,3 +600,43 @@ Admin sessions now use a 30-day sliding inactivity window. Protected admin API a
 
 Reason:
 The shop runs the admin surface as an operating tool, not a short-lived back-office form. A seven-day fixed session caused a stale workspace to reach protected booking endpoints and show an alarming backend auth message in the Add appointment drawer. Sliding expiry keeps active shop devices signed in while still expiring abandoned sessions, and the redirect keeps expired sessions explicit and recoverable.
+
+### 2026-05-09 - Separate Staff Scheduling Authority From Public Availability
+
+Decision:
+Public customers continue to use the strict availability engine with business hours, shifts, 30-minute minimum notice, 30-day max window, blocked time, and no-overlap rules. Authenticated staff use a separate transactional scheduling path for create, reschedule, drag/drop, and full edit: they can book any visible 15-minute admin calendar time, including grey off-shift time, while still enforcing active records, role scope, blocked-time/closure conflicts, and same-barber no-overlap.
+
+Reason:
+Fresha lets staff place appointments into non-public working-time gaps while keeping those times unavailable online. The shop needs that operational flexibility without weakening customer-facing availability or the no-double-booking guarantee.
+
+### 2026-05-09 - Make One-Day Shift Editing Calendar-Native
+
+Decision:
+Expose `Edit shift` from each barber header on the day board and back it with `POST /api/admin/schedule/day-shifts`. The endpoint replaces the selected barber/location/date shift by diffing desired windows against the recurring baseline into same-day `add` and `remove` override rows. Owner/admin users can edit any barber; barber users can edit only their own selected-day shift.
+
+Reason:
+Laura's Fresha workflow edits the specific day directly from the calendar, and that change must flow through the same schedule model that drives public client availability. A calendar-native one-day override keeps the recurring weekly builder intact while making exceptions fast and safe.
+
+### 2026-05-09 - Add Full Admin Appointment Editing Instead Of Cancel/Recreate
+
+Decision:
+Confirmed bookings can be edited through `POST /api/admin/bookings/:bookingId/edit` and the booking drawer. Editing can update customer name, phone, email, customer notes, internal notes, date/time, barber, location, and selected services. The mutation updates the linked customer row, recalculates service snapshots/duration/end time, replaces `booking_services`, and preserves booking source/status/customer token hashes.
+
+Reason:
+Imported/public/manual appointments often need contact or service corrections after creation. Requiring cancel/recreate would risk lost booking history, broken customer tokens, and operator mistakes during launch.
+
+### 2026-05-09 - Default Admin Day Board To A Fresha-Like 9 AM View
+
+Decision:
+The admin day board keeps the full 12:00 AM through 11:00 PM operating surface for staff scheduling, but it default-scrolls to 9:00 AM and uses a scrollable, non-compressed 15-minute grid instead of squeezing the whole day into one screen. Grey off-shift overlays remain visual only for staff operations, with hover time labels rendered above them.
+
+Reason:
+Staff need access to early/late administrative slots without forcing the normal workday view to start at midnight or making the calendar unreadably dense. Defaulting to 9:00 AM makes the day board match the Fresha operating posture while preserving the staff-only scheduling flexibility and blocked-time safeguards already enforced server-side.
+
+### 2026-05-09 - Add Josef As An Eglinton-Only Launch Barber
+
+Decision:
+Add Josef to the launch barber roster as an Eglinton-only barber, replace the old Fawad-facing profile asset with Josef's profile asset in the React marketing/booking surfaces, and sync Josef with recurring 11:00 AM-7:00 PM shifts. The launch staff sync also enforces the existing Yogesh Millwood-only override so stale barber-location rows cannot leak into public booking.
+
+Reason:
+The owner explicitly added Josef for Eglinton and wants clients to book with him immediately. Because public availability is location and shift driven, the data sync must update the catalog, service capabilities, location assignment, and recurring shifts while preserving official business-hour clipping and the existing Yogesh launch override.

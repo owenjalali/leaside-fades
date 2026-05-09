@@ -79,7 +79,7 @@
 - [x] Full DB-backed browser booking manually completed against local PostgreSQL with migrated schema and clearly marked sample shifts
 - [x] Confirmed browser booking blocks overlapping future availability for the assigned barber
 - [x] Service list order verified from DB-backed catalog, with Men's Perm shown as the sixth men's option
-- [x] Barber profile photos render on the barber selection step for Sam, Laura, Yogesh, and Shayon
+- [x] Barber profile photos render on the barber selection step for Sam, Laura, Josef, Yogesh, and Shayon
 - [x] Booking flow uses optimized barber avatar thumbnails instead of full-size original images
 - [x] Weekly time picker shows seven visible days, skips past/out-of-window dates, and keeps the calendar selector available
 - [x] Phone entry formats local numbers and includes a country/area code selector
@@ -124,6 +124,10 @@
 ## Phase 6 - Admin Calendar
 
 - [x] Month view works
+- [x] Month view title stays anchored to the selected month while fetching the padded calendar grid range
+- [x] Month next/previous controls navigate by real calendar months
+- [x] Whole month date boxes, including blank cell space, open the exact date in day view
+- [x] Month booking cards open booking details without also triggering the date-cell open action
 - [x] Week view works
 - [x] Day view intentionally deferred for Phase 6 MVP
 - [x] List view works
@@ -168,14 +172,22 @@
 
 - [x] `/admin/calendar` uses a calendar-first day board
 - [x] Owner/admin can view multi-barber calendar columns
+- [x] Owner/admin day board shows all active barbers assigned to the selected location even when a barber has no shift
 - [x] Barber users default to their own scoped calendar
+- [x] Admin day board shows a full 12:00 AM through 11:00 PM operating surface
+- [x] Admin day board default-scrolls to 9:00 AM while retaining scroll access to earlier hours
+- [x] Admin day board uses denser 15-minute rows so desktop shows a Fresha-like 9:00 AM through 11:00 PM span
+- [x] Green hover time labels remain visible over grey off-shift zones
 - [x] Calendar booking cards visually distinguish confirmed, walk-in, no-show, completed, and cancelled bookings
 - [x] Blocked time context appears on the calendar board
 - [x] Booking detail opens in a side drawer from the calendar
+- [x] Booking detail drawer can edit customer name, phone, email, customer notes, internal notes, date/time, barber/location, and selected services
 - [x] Manual and walk-in creation are unified into one Add appointment workflow
-- [x] Add appointment loads server availability for the selected barber/location/date/services
+- [x] Add appointment loads online availability suggestions for the selected barber/location/date/services
+- [x] Add appointment can create staff bookings in grey off-shift/non-public times
 - [x] Multi-service selection updates total duration, price summary, and calendar preview length
 - [x] Add appointment drawer can create name-only staff appointments without phone/email
+- [x] Add/edit appointment can add or clear customer phone and email
 - [x] Add appointment drawer can create true walk-ins with `source = "walk_in"`
 - [x] Add appointment drawer keeps the create action visible while available times and services scroll
 - [x] Calendar appointment preview fills the selected barber/time duration instead of showing only a thin marker
@@ -183,15 +195,21 @@
 - [x] Walk-ins are stored as `source = "walk_in"`
 - [x] Barber walk-ins are limited to the linked barber profile
 - [x] Owner/admin walk-ins can target any active eligible barber
-- [x] Walk-ins still reject overlap, outside-shift, blocked-time, closure, inactive-barber, and spoofed-barber attempts
+- [x] Walk-ins can be created in grey off-shift time by staff
+- [x] Walk-ins still reject overlap, blocked-time, closure, inactive-barber, and spoofed-barber attempts
 - [x] No-show status is supported for current/past confirmed bookings
 - [x] Future, cancelled, completed, and already no-show bookings reject no-show transitions
 - [x] Barber no-show actions are limited to their own bookings
 - [x] Booking drag/drop calls the admin reschedule endpoint
 - [x] Rejected drag/drop moves leave the booking in its original slot
+- [x] Drag/drop can target grey off-shift time while blocked-time cells remain unavailable
 - [x] Barber drag/drop cannot move bookings to another barber
-- [x] Owner/admin cross-barber drag/drop uses backend availability validation
+- [x] Owner/admin cross-barber drag/drop uses backend staff-scheduling validation
+- [x] Barber header `Edit shift` is available only for permitted users
+- [x] One-day shift edits update the same schedule/availability model used by public booking
 - [x] Repeatable local/dev Phase 7.5 real-route QA runner exists as `npm run qa:phase7-5-calendar`
+- [x] Local Playwright admin login can use a fresh Express port when stale port `3000` is unavailable
+- [x] Local/dev owner bootstrap supports QA login without storing temporary passwords in repo files
 
 ## Phase 8 - Customer Cancellation/Rescheduling
 
@@ -273,6 +291,9 @@
 - [x] Fresha source-of-truth rule documented with explicit launch overrides
 - [x] Yogesh launch override applied to static seed data
 - [x] Local/dev sample shifts do not create Yogesh Eglinton availability
+- [x] Josef launch override applied to static seed data and launch staff sync
+- [x] Public booking shows Josef at Eglinton and does not show Josef at Millwood
+- [x] Josef availability starts at 11:00 AM, ends before 7:00 PM, and clips to the Sunday 5:00 PM business close
 - [x] Eglinton phone number treated as confirmed current value in env templates and seed data
 - [x] Service reconciliation documented as name/category/price/duration based, not count-only
 - [x] Customer/staff booking-confirmation notification tests and owner/admin dashboard visibility tests added
@@ -322,7 +343,7 @@
 - [x] `https://leasidefades.com/book` loads the booking app shell
 - [x] Vercel Neon production database integration `leaside-fades-db` is attached
 - [x] `https://leasidefades.com/api/booking/catalog` returns catalog data
-- [x] Production `/api/booking/catalog` returns 2 locations, 3 categories, 37 services, and 4 barbers
+- [x] Production `/api/booking/catalog` returns 2 locations, 3 categories, 37 services, and 5 barbers
 - [x] Marketing service list has regression coverage against booking seed names, prices, durations, and order
 - [x] Production availability smoke test returns launch slots while keeping Yogesh out of Eglinton
 - [x] Production admin owner login API/session verified for `owner@leasidefades.com`
@@ -333,6 +354,9 @@
 - [x] Admin calendar mobile filters open as an overlay and close without permanently hiding or resizing away the day board
 - [x] Admin calendar mobile slot taps and topbar Add both open a fully framed Add appointment drawer with the create action visible
 - [x] Local Playwright MCP stress test covered `/admin/calendar` at 320x568, 340x600, 340x720, 375x667, 390x844, 414x896, 768x1024, 1280x720, and 1440x900 without creating appointments
+- [x] Local launch-critical browser QA verified customer cancellation from a token link, admin full-day board labels from 12:00 AM through the 11:00 PM hour, grey-slot staff booking, appointment phone/email/notes edit, one-day shift edit, and mobile calendar filters/add controls
+- [x] Production launch-critical redeploy `dpl_Dtpu3bguZC7ZAVQfo8DdcZJR6i74` is `Ready` and aliased to `https://www.leasidefades.com`
+- [x] Production non-mutating smoke verified `/api/health`, `/api/booking/catalog`, `/book`, `/booking/not-a-real-token/cancel`, fake-token cancellation 404s, and protected admin edit/day-shift route 401s
 - [x] Tablet-width Sam-only calendar resets to the 10:00 AM opening rows after date/location/staff context changes and does not remain stuck at the 7:00 PM boundary
 - [x] Headless Chrome CDP stress test covered `/admin/calendar` at 320x568, 340x600, 340x720, 375x667, 390x844, 414x896, 768x1024, 1280x720, 1440x900, and 1920x900 with no body horizontal overflow, visible board height, closing-boundary reach, framed Add drawer, and visible sticky create action
 - [x] Desktop Add appointment split pane at 1280x720, 1440x900, and 1920x900 keeps the calendar board in frame instead of crunching the board/form controls
@@ -376,7 +400,7 @@
 - [x] Imported bookings marked with source
 - [x] Imported bookings excluded from lifecycle notifications and reminders
 - [x] Calendar parity manually verified
-- [x] Admin calendar day-board columns are based on selected date/location shifts and shift overrides
+- [x] Admin calendar day-board columns are based on active location staff, selected date/location shifts, and shift overrides
 - [x] Admin calendar shows a clean empty state when no staff are scheduled at a location/date
 - [x] Admin calendar shades non-working time and renders explicit blocked-time overlays
 - [x] Admin calendar prevents empty-slot creation from non-working or blocked greyed-out cells

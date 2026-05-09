@@ -80,12 +80,14 @@ export const barberSeeds: readonly BarberSeed[] = [
     { slug: "sam-to", displayName: "Sam To", sortOrder: 10 },
     { slug: "yogesh-kumar", displayName: "Yogesh Kumar", sortOrder: 20 },
     { slug: "laura-nguyen", displayName: "Laura Nguyen", sortOrder: 30 },
+    { slug: "josef", displayName: "Josef", sortOrder: 35 },
     { slug: "shayan-hussain", displayName: "Shayan Hussain", sortOrder: 40 },
 ] as const;
 
 export const barberLocationSeeds = [
     { barberSlug: "sam-to", locationSlug: "eglinton" },
     { barberSlug: "laura-nguyen", locationSlug: "eglinton" },
+    { barberSlug: "josef", locationSlug: "eglinton" },
     { barberSlug: "laura-nguyen", locationSlug: "millwood" },
     { barberSlug: "yogesh-kumar", locationSlug: "millwood" },
     { barberSlug: "shayan-hussain", locationSlug: "millwood" },

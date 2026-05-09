@@ -49,6 +49,20 @@ export interface AdminBookingDetail extends AdminBookingSummary {
     internalNotes: string | null;
 }
 
+export interface AdminBookingEditPayload {
+    locationId: string;
+    barberId: string;
+    startTime: string;
+    serviceIds: string[];
+    customer: {
+        name: string;
+        phone: string;
+        email: string;
+        notes: string;
+    };
+    internalNotes: string;
+}
+
 export interface AdminLocationOption {
     id: string;
     name: string;
@@ -165,6 +179,13 @@ export interface AdminSchedule {
 export interface AdminScheduleFilters {
     from?: string;
     to?: string;
+}
+
+export interface AdminDayShiftReplacePayload {
+    barberId: string;
+    locationId: string;
+    date: string;
+    windows: Array<{ startTime: string; endTime: string }>;
 }
 
 export type AdminNotificationChannel = "sms" | "email" | "calendar";

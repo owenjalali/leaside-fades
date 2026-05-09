@@ -1,7 +1,7 @@
 ﻿import AnimateOnScroll from "@/components/AnimateOnScroll";
 import samImage from "@/assets/barbers/sam.png";
 import lauraImage from "@/assets/barbers/laura.jpg";
-import fawadImage from "@/assets/barbers/fawad.png";
+import josefImage from "@/assets/barbers/josef.jpg";
 import yogeshImage from "@/assets/barbers/yogesh.jpg";
 import shayonImage from "@/assets/barbers/shayon.png";
 
@@ -32,9 +32,9 @@ const team: TeamMember[] = [
         specialty: "Fades & Line Work",
     },
     {
-        name: "Fawad",
+        name: "Josef",
         role: "Barber",
-        image: fawadImage,
+        image: josefImage,
         specialty: "Classic Cuts, Beard Work & Fades",
     },
     {

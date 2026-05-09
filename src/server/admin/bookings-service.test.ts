@@ -13,6 +13,7 @@ import {
     cancelAdminBooking,
     createAdminManualBooking,
     createAdminWalkInBooking,
+    editAdminBooking,
     getAdminAvailability,
     getAdminBookingDetail,
     getAdminCalendarOptions,
@@ -33,6 +34,7 @@ const barberBId = "22222222-2222-2222-2222-222222222222";
 const locationAId = "33333333-3333-3333-3333-333333333333";
 const locationBId = "44444444-4444-4444-4444-444444444444";
 const serviceId = "55555555-5555-5555-5555-555555555555";
+const serviceBId = "66666666-6666-6666-6666-666666666666";
 const now = new Date("2026-05-01T13:00:00.000Z");
 
 const bookings: AdminBookingRecord[] = [
@@ -184,7 +186,10 @@ function baseAvailability(overrides: Partial<AvailabilityData> = {}): Availabili
             { barberId: barberAId, locationId: locationAId },
             { barberId: barberBId, locationId: locationAId },
         ],
-        services: [{ id: serviceId, durationMinutes: 30, active: true }],
+        services: [
+            { id: serviceId, durationMinutes: 30, active: true },
+            { id: serviceBId, durationMinutes: 15, active: true },
+        ],
         shifts: [
             {
                 barberId: barberAId,
@@ -219,6 +224,17 @@ const serviceSnapshot: BookingServiceSnapshot = {
     priceType: "fixed",
     displayPrice: "$30",
     sortOrder: 10,
+};
+
+const serviceSnapshotB: BookingServiceSnapshot = {
+    serviceId: serviceBId,
+    serviceName: "Beard Trim",
+    categoryName: "Hair & Styling (Men)",
+    durationMinutes: 15,
+    priceCents: 1500,
+    priceType: "fixed",
+    displayPrice: "$15",
+    sortOrder: 20,
 };
 
 class InMemoryPhase6Repository
@@ -311,7 +327,7 @@ class InMemoryPhase6Repository
             ? {
                   ...booking,
                   serviceIds: booking.serviceIds ?? [serviceId],
-                  serviceDetails: [serviceSnapshot],
+                  serviceDetails: booking.serviceDetails ?? [serviceSnapshot],
                   customerNotes: booking.customerNotes ?? null,
                   internalNotes: booking.internalNotes ?? null,
               }
@@ -338,6 +354,15 @@ class InMemoryPhase6Repository
                     priceType: "fixed" as const,
                     sortOrder: 10,
                 },
+                {
+                    id: serviceBId,
+                    name: "Beard Trim",
+                    durationMinutes: 15,
+                    displayPrice: "$15",
+                    priceCents: 1500,
+                    priceType: "fixed" as const,
+                    sortOrder: 20,
+                },
             ],
         };
     }
@@ -357,7 +382,15 @@ class InMemoryPhase6Repository
     }
 
     async loadServiceSnapshots(serviceIds: string[]) {
-        return serviceIds.map(() => serviceSnapshot);
+        return serviceIds
+            .map((requestedServiceId) =>
+                requestedServiceId === serviceId
+                    ? serviceSnapshot
+                    : requestedServiceId === serviceBId
+                      ? serviceSnapshotB
+                      : null,
+            )
+            .filter((snapshot): snapshot is BookingServiceSnapshot => Boolean(snapshot));
     }
 
     async countConfirmedBookingsByBarber() {
@@ -390,11 +423,12 @@ class InMemoryPhase6Repository
             id: `manual-${this.bookings.length + 1}`,
             barberName: input.barberId === barberAId ? "Sam To" : "Laura Nguyen",
             locationName: "Leaside Fades Eglinton",
-            customerName: `${customer?.firstName} ${customer?.lastName}`,
-            customerEmail: customer?.email ?? "",
-            customerPhone: customer?.phoneE164 ?? "",
-            services: ["Men's Cut"],
+            customerName: `${customer?.firstName} ${customer?.lastName}`.trim(),
+            customerEmail: customer?.email ?? null,
+            customerPhone: customer?.phoneE164 ?? null,
+            services: [serviceSnapshot.serviceName],
             serviceIds: [serviceId],
+            serviceDetails: [serviceSnapshot],
             ...input,
         };
         this.bookings.push(created);
@@ -477,6 +511,55 @@ class InMemoryPhase6Repository
         booking.endTime = input.endTime;
         booking.totalDurationMinutes = input.totalDurationMinutes;
         return booking;
+    }
+
+    async updateBookingAppointmentForAdminScope(input: {
+        bookingId: string;
+        barberId?: string;
+        nextBarberId: string;
+        locationId: string;
+        startTime: Date;
+        endTime: Date;
+        totalDurationMinutes: number;
+        customer: CreateBookingRequest["customer"];
+        customerNotes: string | null;
+        internalNotes: string | null;
+        serviceSnapshots: BookingServiceSnapshot[];
+    }) {
+        const booking = this.bookings.find(
+            (candidate) =>
+                candidate.id === input.bookingId &&
+                (!input.barberId || candidate.barberId === input.barberId),
+        );
+
+        if (!booking) {
+            return null;
+        }
+
+        booking.barberId = input.nextBarberId;
+        booking.locationId = input.locationId;
+        booking.startTime = input.startTime;
+        booking.endTime = input.endTime;
+        booking.totalDurationMinutes = input.totalDurationMinutes;
+        booking.customerName = `${input.customer.firstName} ${input.customer.lastName}`.trim();
+        booking.customerEmail = input.customer.email;
+        booking.customerPhone = input.customer.phoneE164;
+        booking.customerNotes = input.customerNotes;
+        booking.internalNotes = input.internalNotes;
+        booking.serviceIds = input.serviceSnapshots.map((snapshot) => snapshot.serviceId).filter(Boolean) as string[];
+        booking.services = input.serviceSnapshots.map((snapshot) => snapshot.serviceName);
+        booking.serviceDetails = input.serviceSnapshots;
+        this.bookingServices = this.bookingServices.filter((snapshot) => snapshot.bookingId !== input.bookingId);
+        this.bookingServices.push(
+            ...input.serviceSnapshots.map((snapshot) => ({ ...snapshot, bookingId: input.bookingId })),
+        );
+        return {
+            ...booking,
+            serviceIds: booking.serviceIds,
+            serviceDetails: booking.serviceDetails,
+            customerNotes: booking.customerNotes ?? null,
+            internalNotes: booking.internalNotes ?? null,
+        };
     }
 }
 
@@ -1070,6 +1153,172 @@ describe("Phase 6 admin calendar and booking management service", () => {
         ).rejects.toMatchObject({ status: 409 });
     });
 
+    test("staff-created manual bookings can use grey off-shift times without changing public availability", async () => {
+        const repository = new InMemoryPhase6Repository();
+        const publicAvailabilityBefore = await getAdminAvailability(
+            { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+            {
+                locationId: locationAId,
+                serviceIds: [serviceId],
+                date: "2026-05-04",
+                barberId: barberAId,
+                now,
+            },
+            repository,
+        );
+
+        expect(publicAvailabilityBefore.barberSlots[0]?.slots.map((slot) => slot.startTime)).not.toContain(
+            utc(9).toISOString(),
+        );
+
+        await expect(
+            createAdminManualBooking(
+                { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+                {
+                    locationId: locationAId,
+                    serviceIds: [serviceId],
+                    barberId: barberAId,
+                    startTime: utc(9).toISOString(),
+                    customer: {
+                        name: "Grey Slot Client",
+                        phone: "+16475550123",
+                        email: "grey@example.com",
+                    },
+                },
+                repository,
+                { now },
+            ),
+        ).resolves.toMatchObject({
+            barberId: barberAId,
+            startTime: utc(9),
+            endTime: utc(9, 30),
+        });
+
+        const publicAvailabilityAfter = await getAdminAvailability(
+            { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+            {
+                locationId: locationAId,
+                serviceIds: [serviceId],
+                date: "2026-05-04",
+                barberId: barberAId,
+                now,
+            },
+            repository,
+        );
+        expect(publicAvailabilityAfter.barberSlots[0]?.slots.map((slot) => slot.startTime)).not.toContain(
+            utc(9).toISOString(),
+        );
+    });
+
+    test("edit updates customer contact, notes, service snapshots, and schedule while preserving source/status", async () => {
+        const repository = new InMemoryPhase6Repository();
+        const dispatched: Parameters<BookingLifecycleNotificationDispatcher>[0][] = [];
+        repository.bookings[0] = {
+            ...repository.bookings[0],
+            source: "imported",
+            customerEmail: null,
+            customerPhone: null,
+            customerNotes: "old customer notes",
+            internalNotes: "old internal notes",
+            serviceIds: [serviceId],
+            serviceDetails: [serviceSnapshot],
+        };
+
+        await expect(
+            editAdminBooking(
+                { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+                "booking-a",
+                {
+                    locationId: locationAId,
+                    barberId: barberAId,
+                    startTime: utc(9).toISOString(),
+                    serviceIds: [serviceId, serviceBId],
+                    customer: {
+                        name: "Ada Edited",
+                        phone: "(647) 555-0123",
+                        email: "edited@example.com",
+                        notes: "new customer notes",
+                    },
+                    internalNotes: "front desk edit",
+                },
+                repository,
+                {
+                    now,
+                    notificationDispatcher: async (input) => {
+                        dispatched.push(input);
+                        return [];
+                    },
+                },
+            ),
+        ).resolves.toMatchObject({
+            id: "booking-a",
+            status: "confirmed",
+            source: "imported",
+            customerName: "Ada Edited",
+            customerEmail: "edited@example.com",
+            customerPhone: "+16475550123",
+            customerNotes: "new customer notes",
+            internalNotes: "front desk edit",
+            startTime: utc(9),
+            endTime: utc(9, 45),
+            totalDurationMinutes: 45,
+            services: ["Men's Cut", "Beard Trim"],
+            serviceIds: [serviceId, serviceBId],
+        });
+        expect(repository.bookingServices.filter((snapshot) => snapshot.bookingId === "booking-a")).toHaveLength(2);
+        expect(dispatched).toEqual([
+            expect.objectContaining({
+                eventType: "reschedule_confirmation",
+                bookingId: "booking-a",
+                occurrenceKey: "2026-05-04T13:00:00.000Z",
+            }),
+        ]);
+    });
+
+    test("barber can edit own booking but cannot edit another barber booking", async () => {
+        const repository = new InMemoryPhase6Repository();
+
+        await expect(
+            editAdminBooking(
+                { id: "barber", email: "sam@example.com", displayName: "Sam", role: "barber", barberId: barberAId },
+                "booking-b",
+                {
+                    locationId: locationAId,
+                    barberId: barberBId,
+                    startTime: utc(9).toISOString(),
+                    serviceIds: [serviceId],
+                    customer: { name: "Blocked Edit" },
+                    internalNotes: "",
+                },
+                repository,
+                { now },
+            ),
+        ).rejects.toMatchObject({ status: 403 });
+
+        await expect(
+            editAdminBooking(
+                { id: "barber", email: "sam@example.com", displayName: "Sam", role: "barber", barberId: barberAId },
+                "booking-a",
+                {
+                    locationId: locationAId,
+                    barberId: barberAId,
+                    startTime: utc(9).toISOString(),
+                    serviceIds: [serviceId],
+                    customer: { name: "Own Edit", phone: "", email: "" },
+                    internalNotes: "own note",
+                },
+                repository,
+                { now },
+            ),
+        ).resolves.toMatchObject({
+            id: "booking-a",
+            customerName: "Own Edit",
+            customerPhone: null,
+            customerEmail: null,
+            internalNotes: "own note",
+        });
+    });
+
     test("cancellation is idempotent for cancelled bookings and rejects completed bookings", async () => {
         const repository = new InMemoryPhase6Repository();
         const dispatched: Parameters<BookingLifecycleNotificationDispatcher>[0][] = [];
@@ -1213,6 +1462,28 @@ describe("Phase 6 admin calendar and booking management service", () => {
                 occurrenceKey: "2026-05-04T16:00:00.000Z",
             }),
         ]);
+    });
+
+    test("reschedule can move a staff-managed booking into grey off-shift time", async () => {
+        const repository = new InMemoryPhase6Repository();
+
+        await expect(
+            rescheduleAdminBooking(
+                { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+                "booking-a",
+                {
+                    locationId: locationAId,
+                    barberId: barberAId,
+                    startTime: utc(9).toISOString(),
+                },
+                repository,
+                { now },
+            ),
+        ).resolves.toMatchObject({
+            id: "booking-a",
+            startTime: utc(9),
+            endTime: utc(9, 30),
+        });
     });
 
     test("reschedule excludes the booking being moved but rejects other overlaps", async () => {
@@ -1467,7 +1738,7 @@ describe("Phase 7.5 walk-in and no-show booking operations", () => {
         ).resolves.toMatchObject({ source: "walk_in", barberId: barberBId });
     });
 
-    test("walk-in still rejects overlap, outside shift, and blocked time", async () => {
+    test("walk-in still rejects overlap, blocked time, and appointments that do not fit in the admin day", async () => {
         const overlappingRepository = new InMemoryPhase6Repository();
         overlappingRepository.availabilityData = baseAvailability({
             bookings: [
@@ -1504,8 +1775,8 @@ describe("Phase 7.5 walk-in and no-show booking operations", () => {
                     locationId: locationAId,
                     serviceIds: [serviceId],
                     barberId: barberAId,
-                    startTime: utc(9).toISOString(),
-                    customerName: "Early",
+                    startTime: utc(23, 45).toISOString(),
+                    customerName: "Too Late",
                 },
                 new InMemoryPhase6Repository(),
                 { now },

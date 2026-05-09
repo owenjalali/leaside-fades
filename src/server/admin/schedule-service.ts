@@ -1,5 +1,5 @@
 import type { SafeAdminUser } from "../auth/index.ts";
-import { localDateTimeToUtc } from "../availability/time.ts";
+import { localDateTimeToUtc, localDateToDayOfWeek, minutesToTime, timeToMinutes } from "../availability/time.ts";
 
 export type AdminBlockedTimeScope = "barber" | "location" | "business";
 export type AdminShiftOverrideType = "add" | "remove" | "not_working";
@@ -57,6 +57,21 @@ export interface AdminScheduleData {
     shifts: AdminShiftRecord[];
     shiftOverrides: AdminShiftOverrideRecord[];
     blockedTimes: AdminBlockedTimeRecord[];
+}
+
+export interface AdminDayShiftPayload {
+    barberId?: unknown;
+    locationId?: unknown;
+    date?: unknown;
+    windows?: unknown;
+}
+
+export interface AdminDayShiftReplacement {
+    barberId: string;
+    locationId: string;
+    date: string;
+    windows: Array<{ startTime: string; endTime: string }>;
+    shiftOverrides: AdminShiftOverrideRecord[];
 }
 
 export interface AdminScheduleRepository {
@@ -227,6 +242,97 @@ export async function deleteAdminShiftOverride(
     }
 
     return { deleted: true };
+}
+
+export async function replaceAdminDayShift(
+    user: SafeAdminUser,
+    payload: AdminDayShiftPayload,
+    repository: AdminScheduleRepository,
+    _options: { now?: Date } = {},
+): Promise<AdminDayShiftReplacement> {
+    const barberId = resolveWritableShiftBarberId(
+        user,
+        asNonEmptyString(payload.barberId, "Barber is required."),
+    );
+    const locationId = asNonEmptyString(payload.locationId, "Location is required.");
+    const date = asLocalDate(payload.date, "A valid shift date is required.");
+    const desiredWindows = normalizeDayShiftWindows(payload.windows);
+
+    await assertActiveBarberLocation(barberId, locationId, repository);
+
+    const schedule = await repository.listSchedule({ barberId, from: date, to: date });
+    const existingOverrides = schedule.shiftOverrides.filter(
+        (override) =>
+            override.barberId === barberId &&
+            override.overrideDate === date &&
+            (override.locationId === locationId ||
+                (override.overrideType === "not_working" && override.locationId === null)),
+    );
+
+    for (const override of existingOverrides) {
+        await repository.deleteShiftOverride(override.id);
+    }
+
+    const baseline = normalizeMinuteRanges(
+        schedule.shifts
+            .filter(
+                (shift) =>
+                    shift.active &&
+                    shift.barberId === barberId &&
+                    shift.locationId === locationId &&
+                    shift.dayOfWeek === localDateToDayOfWeek(date) &&
+                    shiftIsEffectiveOnDate(shift, date),
+            )
+            .map((shift) => ({ start: timeToMinutes(shift.startTime), end: timeToMinutes(shift.endTime) })),
+    );
+    const desired = normalizeMinuteRanges(
+        desiredWindows.map((window) => ({
+            start: timeToMinutes(window.startTime),
+            end: timeToMinutes(window.endTime),
+        })),
+    );
+    const addWindows = subtractMinuteRanges(desired, baseline);
+    const removeWindows = subtractMinuteRanges(baseline, desired);
+    const shiftOverrides: AdminShiftOverrideRecord[] = [];
+
+    for (const window of addWindows) {
+        shiftOverrides.push(
+            await repository.createShiftOverride({
+                barberId,
+                locationId,
+                overrideDate: date,
+                overrideType: "add",
+                startTime: minutesToTime(window.start),
+                endTime: minutesToTime(window.end),
+                reason: "One-day shift edit",
+            }),
+        );
+    }
+
+    for (const window of removeWindows) {
+        shiftOverrides.push(
+            await repository.createShiftOverride({
+                barberId,
+                locationId,
+                overrideDate: date,
+                overrideType: "remove",
+                startTime: minutesToTime(window.start),
+                endTime: minutesToTime(window.end),
+                reason: "One-day shift edit",
+            }),
+        );
+    }
+
+    return {
+        barberId,
+        locationId,
+        date,
+        windows: desired.map((window) => ({
+            startTime: minutesToTime(window.start),
+            endTime: minutesToTime(window.end),
+        })),
+        shiftOverrides,
+    };
 }
 
 export async function createAdminBlockedTime(
@@ -451,6 +557,88 @@ function parseBlockedTimeWindow(payload: Record<string, unknown>) {
     };
 }
 
+function normalizeDayShiftWindows(value: unknown) {
+    if (!Array.isArray(value)) {
+        throw new AdminScheduleRequestError(400, "Shift windows are required.");
+    }
+
+    const windows = value.map((item) => {
+        if (!item || typeof item !== "object") {
+            throw new AdminScheduleRequestError(400, "Shift windows are invalid.");
+        }
+
+        const window = item as Record<string, unknown>;
+        const startTime = asQuarterHourTime(window.startTime, "A valid shift start time is required.");
+        const endTime = asQuarterHourTime(window.endTime, "A valid shift end time is required.");
+
+        if (startTime >= endTime) {
+            throw new AdminScheduleRequestError(400, "Shift start time must be before end time.");
+        }
+
+        return { startTime, endTime };
+    });
+
+    return normalizeMinuteRanges(
+        windows.map((window) => ({
+            start: timeToMinutes(window.startTime),
+            end: timeToMinutes(window.endTime),
+        })),
+    ).map((range) => ({
+        startTime: minutesToTime(range.start),
+        endTime: minutesToTime(range.end),
+    }));
+}
+
+function shiftIsEffectiveOnDate(shift: AdminShiftRecord, date: string) {
+    return (!shift.effectiveFrom || shift.effectiveFrom <= date) && (!shift.effectiveTo || shift.effectiveTo >= date);
+}
+
+function normalizeMinuteRanges(ranges: Array<{ start: number; end: number }>) {
+    return ranges
+        .filter((range) => range.start < range.end)
+        .sort((left, right) => left.start - right.start || left.end - right.end)
+        .reduce<Array<{ start: number; end: number }>>((merged, range) => {
+            const previous = merged[merged.length - 1];
+            if (previous && range.start <= previous.end) {
+                previous.end = Math.max(previous.end, range.end);
+                return merged;
+            }
+
+            merged.push({ ...range });
+            return merged;
+        }, []);
+}
+
+function subtractMinuteRanges(
+    sourceRanges: Array<{ start: number; end: number }>,
+    blockedRanges: Array<{ start: number; end: number }>,
+) {
+    let remaining = sourceRanges.map((range) => ({ ...range }));
+
+    for (const blocked of blockedRanges) {
+        remaining = remaining.flatMap((range) => subtractMinuteRange(range, blocked));
+    }
+
+    return normalizeMinuteRanges(remaining);
+}
+
+function subtractMinuteRange(source: { start: number; end: number }, blocked: { start: number; end: number }) {
+    if (blocked.start >= source.end || blocked.end <= source.start) {
+        return [source];
+    }
+
+    const ranges: Array<{ start: number; end: number }> = [];
+    if (blocked.start > source.start) {
+        ranges.push({ start: source.start, end: blocked.start });
+    }
+
+    if (blocked.end < source.end) {
+        ranges.push({ start: blocked.end, end: source.end });
+    }
+
+    return ranges;
+}
+
 async function assertNoShiftOverlap(
     shift: Omit<AdminShiftRecord, "id" | "active"> & { excludeShiftId?: string },
     repository: AdminScheduleRepository,
@@ -543,6 +731,22 @@ function resolveWritableBarberId(user: SafeAdminUser, requestedBarberId?: string
 
     if (requestedBarberId && requestedBarberId !== user.barberId) {
         throw new AdminScheduleRequestError(403, "Barber accounts can only manage their own blocked time.");
+    }
+
+    return user.barberId;
+}
+
+function resolveWritableShiftBarberId(user: SafeAdminUser, requestedBarberId: string) {
+    if (user.role === "owner" || user.role === "admin") {
+        return requestedBarberId;
+    }
+
+    if (!user.barberId) {
+        throw new AdminScheduleRequestError(403, "Barber account is not linked to a barber profile.");
+    }
+
+    if (requestedBarberId !== user.barberId) {
+        throw new AdminScheduleRequestError(403, "Barber accounts can only edit their own shift.");
     }
 
     return user.barberId;

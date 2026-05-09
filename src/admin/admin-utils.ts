@@ -24,6 +24,8 @@ const statusLabels: Record<AdminBookingStatus, string> = {
 const weeklyScheduleDayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 const weeklyScheduleDisplayOrder = [1, 2, 3, 4, 5, 6, 0] as const;
 
+export type AdminCalendarView = "day" | "week" | "month" | "list";
+
 export interface CalendarWorkingWindow {
     barberId: string;
     locationId: string;
@@ -247,6 +249,32 @@ export function buildMonthDays(selectedDate: string) {
     return Array.from({ length: dayCount }, (_, index) => dayInfo(addDays(gridStart, index), currentMonth));
 }
 
+export function buildDateRangeForView(view: AdminCalendarView, date: string) {
+    if (view === "week" || view === "list") {
+        const days = buildWeekDays(date);
+        return { from: days[0]?.date ?? date, to: days[days.length - 1]?.date ?? date };
+    }
+
+    if (view === "month") {
+        const days = buildMonthDays(date);
+        return { from: days[0]?.date ?? date, to: days[days.length - 1]?.date ?? date };
+    }
+
+    return { from: date, to: date };
+}
+
+export function navigateCalendarDate(view: AdminCalendarView, date: string, direction: -1 | 1) {
+    if (view === "month") {
+        return addMonthsToLocalDate(date, direction);
+    }
+
+    if (view === "week" || view === "list") {
+        return addDaysToLocalDate(date, direction * 7);
+    }
+
+    return addDaysToLocalDate(date, direction);
+}
+
 export function groupBookingsByLocalDate(bookings: AdminBookingSummary[]) {
     return bookings.reduce<Record<string, AdminBookingSummary[]>>((groups, booking) => {
         const localDate = formatLocalDate(new Date(booking.startTime));
@@ -429,6 +457,19 @@ export function buildCalendarBoardRows(startTime: string, endTime: string, inter
         bookableSlots: buildCalendarTimeSlots(startTime, endTime, intervalMinutes),
         closeBoundary: endTime,
     };
+}
+
+export function getCalendarInitialScrollTop({
+    dayStartTime,
+    targetTime,
+    slotHeightPx,
+}: {
+    dayStartTime: string;
+    targetTime: string;
+    slotHeightPx: number;
+}) {
+    const minutesAfterStart = Math.max(0, clockToMinutes(targetTime) - clockToMinutes(dayStartTime));
+    return Math.floor((minutesAfterStart / 15) * slotHeightPx);
 }
 
 export function buildCalendarWorkingWindows({
@@ -619,6 +660,7 @@ export function getScheduledCalendarBarbers({
 
     return options.barbers
         .filter((barber) => !requestedId || barber.id === requestedId)
+        .filter((barber) => barber.locationIds.includes(locationId))
         .map((barber) => {
             const workingWindows = windowsByBarber[barber.id] ?? [];
             const offScheduleBookings = bookings.filter(
@@ -636,7 +678,6 @@ export function getScheduledCalendarBarbers({
                 scheduled: workingWindows.length > 0,
             };
         })
-        .filter((item) => item.scheduled || item.offScheduleBookings.length > 0)
         .sort((a, b) => a.barber.sortOrder - b.barber.sortOrder || a.barber.displayName.localeCompare(b.barber.displayName));
 }
 
@@ -678,6 +719,15 @@ export function buildBookingDragPayload({
 
 export function addDaysToLocalDate(localDate: string, days: number) {
     return dateToLocalString(addDays(parseLocalDate(localDate), days));
+}
+
+function addMonthsToLocalDate(localDate: string, months: number) {
+    const date = parseLocalDate(localDate);
+    const targetMonthStart = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1));
+    const targetMonthEnd = new Date(Date.UTC(targetMonthStart.getUTCFullYear(), targetMonthStart.getUTCMonth() + 1, 0));
+    const targetDay = Math.min(date.getUTCDate(), targetMonthEnd.getUTCDate());
+
+    return dateToLocalString(new Date(Date.UTC(targetMonthStart.getUTCFullYear(), targetMonthStart.getUTCMonth(), targetDay)));
 }
 
 function dayInfo(date: Date, currentMonth: string): AdminDay {

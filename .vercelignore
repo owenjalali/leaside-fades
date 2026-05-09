@@ -5,3 +5,6 @@
 .vercel
 node_modules
 output
+test-results
+phase12-*.png
+phase13-*.png

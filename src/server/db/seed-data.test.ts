@@ -23,10 +23,10 @@ describe("Phase 1 seed data", () => {
 
     test("matches the Phase 1 expected business counts", () => {
         expect(locationSeeds).toHaveLength(2);
-        expect(barberSeeds).toHaveLength(4);
+        expect(barberSeeds).toHaveLength(5);
         expect(serviceCategorySeeds).toHaveLength(3);
         expect(serviceSeeds).toHaveLength(37);
-        expect(barberLocationSeeds).toHaveLength(5);
+        expect(barberLocationSeeds).toHaveLength(6);
     });
 
     test("has complete business hours for each week", () => {
@@ -65,6 +65,17 @@ describe("Phase 1 seed data", () => {
         expect(barberLocationSeeds).not.toContainEqual({
             barberSlug: "yogesh-kumar",
             locationSlug: "eglinton",
+        });
+    });
+
+    test("keeps Josef Eglinton-only for launch", () => {
+        expect(barberLocationSeeds).toContainEqual({
+            barberSlug: "josef",
+            locationSlug: "eglinton",
+        });
+        expect(barberLocationSeeds).not.toContainEqual({
+            barberSlug: "josef",
+            locationSlug: "millwood",
         });
     });
 

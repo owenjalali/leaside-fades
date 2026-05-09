@@ -6,6 +6,7 @@ describe("admin barber photos", () => {
     test("resolves launch barbers to their repo profile assets by slug", () => {
         expect(getAdminBarberPhotoUrl({ displayName: "Sam To", slug: "sam-to" })).toContain("sam-thumb");
         expect(getAdminBarberPhotoUrl({ displayName: "Laura Nguyen", slug: "laura-nguyen" })).toContain("laura-thumb");
+        expect(getAdminBarberPhotoUrl({ displayName: "Josef", slug: "josef" })).toContain("josef-thumb");
         expect(getAdminBarberPhotoUrl({ displayName: "Yogesh Kumar", slug: "yogesh-kumar" })).toContain("yogesh-thumb");
         expect(getAdminBarberPhotoUrl({ displayName: "Shayan Hussain", slug: "shayan-hussain" })).toContain("shayon-thumb");
     });

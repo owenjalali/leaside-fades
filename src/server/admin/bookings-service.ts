@@ -1,12 +1,11 @@
-import { getAvailableSlots } from "../availability/index.ts";
-import { getLocalDate, localDateTimeToUtc } from "../availability/time.ts";
+import { getAvailableSlots, type AvailabilityData } from "../availability/index.ts";
+import { addMinutes, getLocalDate, localDateTimeToUtc, rangesOverlap } from "../availability/time.ts";
 import {
-    BookingCreationError,
-    createBooking,
     type BookingRepository,
     type BookingServiceSnapshot,
     type CreateBookingCustomerInput,
     type CreateBookingRequest,
+    type CreatedBooking,
 } from "../bookings/index.ts";
 import type { SafeAdminUser } from "../auth/index.ts";
 import {
@@ -259,6 +258,23 @@ export interface AdminRescheduleBookingPayload {
     [key: string]: unknown;
 }
 
+export interface AdminBookingEditPayload {
+    locationId?: unknown;
+    serviceIds?: unknown;
+    barberId?: unknown;
+    startTime?: unknown;
+    customer?: {
+        name?: unknown;
+        firstName?: unknown;
+        lastName?: unknown;
+        phone?: unknown;
+        phoneE164?: unknown;
+        email?: unknown;
+        notes?: unknown;
+    };
+    internalNotes?: unknown;
+}
+
 export interface AdminBookingsRepository {
     listBookingsForAdminScope(scope: AdminBookingQueryScope): Promise<AdminBookingRecord[]>;
 }
@@ -305,6 +321,20 @@ export interface AdminBookingManagementRepository
         totalDurationMinutes: number;
         updatedAt: Date;
     }): Promise<AdminBookingRecord | null>;
+    updateBookingAppointmentForAdminScope(input: {
+        bookingId: string;
+        barberId?: string;
+        nextBarberId: string;
+        locationId: string;
+        startTime: Date;
+        endTime: Date;
+        totalDurationMinutes: number;
+        customer: CreateBookingCustomerInput;
+        customerNotes: string | null;
+        internalNotes: string | null;
+        serviceSnapshots: BookingServiceSnapshot[];
+        updatedAt: Date;
+    }): Promise<AdminBookingDetailRecord | null>;
 }
 
 export class AdminAuthorizationError extends Error {
@@ -564,28 +594,55 @@ async function createAdminBookingFromRequest(
     repository: BookingRepository,
 ) {
     try {
-        const result = await createBooking(request, repository);
+        return await repository.withTransaction(async (transaction) => {
+            const slot = await resolveStaffAppointmentSlot(request, transaction);
+            const customer = await transaction.createCustomer(request.customer);
+            const booking = await transaction.insertBooking({
+                customerId: customer.id,
+                barberId: slot.barberId,
+                locationId: slot.locationId,
+                status: "confirmed",
+                source: request.source ?? "manual",
+                startTime: slot.startTime,
+                endTime: slot.endTime,
+                totalDurationMinutes: slot.totalDurationMinutes,
+                customerNotes: request.customerNotes ?? null,
+                internalNotes: request.internalNotes ?? null,
+                cancellationTokenHash: null,
+                rescheduleTokenHash: null,
+            });
 
-        return {
-            ...result.booking,
-            customerName: `${request.customer.firstName} ${request.customer.lastName}`.trim(),
-            customerEmail: request.customer.email,
-            customerPhone: request.customer.phoneE164,
-            startTime: result.booking.startTime,
-            endTime: result.booking.endTime,
-            services: result.bookingServices.map((service) => service.serviceName),
-            serviceDetails: result.bookingServices,
-        };
+            await transaction.insertBookingServices(booking.id, slot.serviceSnapshots);
+
+            return formatCreatedAdminBooking(request, booking, slot.serviceSnapshots);
+        });
     } catch (error) {
-        if (error instanceof BookingCreationError) {
-            throw new AdminBookingRequestError(
-                error.code === "UNAVAILABLE_SLOT" ? 409 : 400,
-                error.message,
-            );
+        if (isDatabaseConflictError(error)) {
+            throw unavailableStaffSlotError();
         }
 
         throw error;
     }
+}
+
+function formatCreatedAdminBooking(
+    request: CreateBookingRequest,
+    booking: CreatedBooking,
+    serviceSnapshots: BookingServiceSnapshot[],
+) {
+    return {
+        ...booking,
+        customerName: `${request.customer.firstName} ${request.customer.lastName}`.trim(),
+        customerEmail: request.customer.email,
+        customerPhone: request.customer.phoneE164,
+        startTime: booking.startTime,
+        endTime: booking.endTime,
+        services: serviceSnapshots.map((service) => service.serviceName),
+        serviceIds: serviceSnapshots.map((service) => service.serviceId).filter((serviceId): serviceId is string => Boolean(serviceId)),
+        serviceDetails: serviceSnapshots,
+        customerNotes: request.customerNotes ?? null,
+        internalNotes: request.internalNotes ?? null,
+    };
 }
 
 export async function cancelAdminBooking(
@@ -645,6 +702,25 @@ export async function markAdminBookingNoShow(
     }
 
     return withoutMutableFlag(booking);
+}
+
+export async function editAdminBooking(
+    user: SafeAdminUser,
+    bookingId: string,
+    payload: AdminBookingEditPayload,
+    repository: AdminBookingManagementRepository,
+    options: AdminBookingMutationOptions = {},
+) {
+    const result = await repository.withTransaction(async (transaction) => {
+        const tx = transaction as AdminBookingManagementRepository;
+        return editAdminBookingInTransaction(user, bookingId, payload, tx, options);
+    });
+
+    if (result.notification) {
+        await dispatchLifecycleNotification(options.notificationDispatcher, result.notification);
+    }
+
+    return result.booking;
 }
 
 export async function rescheduleAdminBooking(
@@ -709,8 +785,6 @@ async function rescheduleAdminBookingInTransaction(
 
     const nextLocationId = asNonEmptyString(payload.locationId, "Location is required.");
     const startTime = parseDate(payload.startTime, "A valid appointment start time is required.");
-    const timeZone = DEFAULT_TIME_ZONE;
-    const localDate = getLocalDate(startTime, timeZone);
     const request: CreateBookingRequest = {
         locationId: nextLocationId,
         serviceIds: booking.serviceIds,
@@ -725,50 +799,10 @@ async function rescheduleAdminBookingInTransaction(
             email: booking.customerEmail,
         },
         now: options.now,
-        timeZone,
+        timeZone: DEFAULT_TIME_ZONE,
     };
 
-    const availabilityData = await repository.loadAvailabilityData(request, localDate);
-    const availability = getAvailableSlots(
-        {
-            locationId: nextLocationId,
-            serviceIds: booking.serviceIds,
-            barberId: nextBarberId,
-            date: localDate,
-            now: options.now,
-            timeZone,
-        },
-        availabilityData,
-    );
-    const requestedSlot = availability.barberSlots
-        .flatMap((barberSlots) => barberSlots.slots)
-        .find(
-            (slot) =>
-                slot.barberId === nextBarberId &&
-                slot.locationId === nextLocationId &&
-                slot.startTime.getTime() === startTime.getTime(),
-        );
-
-    if (!requestedSlot) {
-        throw new AdminBookingRequestError(409, "The requested appointment slot is not available.");
-    }
-
-    const hasBookingOverlap = await repository.hasConfirmedBookingOverlap(
-        requestedSlot.barberId,
-        requestedSlot.startTime,
-        requestedSlot.endTime,
-        booking.id,
-    );
-    const hasBlockedOverlap = await repository.hasBlockedTimeOverlap(
-        requestedSlot.barberId,
-        requestedSlot.locationId,
-        requestedSlot.startTime,
-        requestedSlot.endTime,
-    );
-
-    if (hasBookingOverlap || hasBlockedOverlap) {
-        throw new AdminBookingRequestError(409, "The requested appointment slot is not available.");
-    }
+    const requestedSlot = await resolveStaffAppointmentSlot(request, repository);
 
     const updated = await repository.updateBookingScheduleForAdminScope({
         bookingId: booking.id,
@@ -786,6 +820,282 @@ async function rescheduleAdminBookingInTransaction(
     }
 
     return updated;
+}
+
+async function editAdminBookingInTransaction(
+    user: SafeAdminUser,
+    bookingId: string,
+    payload: AdminBookingEditPayload,
+    repository: AdminBookingManagementRepository,
+    options: { now?: Date },
+) {
+    const nextBarberId = resolveWritableBarberId(
+        user,
+        asNonEmptyString(payload.barberId, "Barber is required."),
+    );
+    if (!nextBarberId) {
+        throw new AdminBookingRequestError(400, "Barber is required.");
+    }
+
+    const booking = await getAdminBookingDetail(user, bookingId, repository);
+    if (booking.status !== "confirmed") {
+        throw new AdminBookingRequestError(409, "Only confirmed bookings can be edited.");
+    }
+
+    const customerPayload = payload.customer ?? {};
+    const customer = normalizeCustomer(customerPayload);
+    const nextLocationId = asNonEmptyString(payload.locationId, "Location is required.");
+    const nextServiceIds = asStringArray(payload.serviceIds, "At least one service is required.");
+    const request: CreateBookingRequest = {
+        locationId: nextLocationId,
+        serviceIds: nextServiceIds,
+        barberId: nextBarberId,
+        startTime: parseDate(payload.startTime, "A valid appointment start time is required."),
+        source: booking.source,
+        excludeBookingId: booking.id,
+        customer,
+        customerNotes: customer.notes ?? null,
+        internalNotes: optionalString(payload.internalNotes) ?? null,
+        now: options.now,
+        timeZone: DEFAULT_TIME_ZONE,
+    };
+    const slot = await resolveStaffAppointmentSlot(request, repository);
+    const updated = await repository.updateBookingAppointmentForAdminScope({
+        bookingId: booking.id,
+        barberId: buildActorScope(user).barberId,
+        nextBarberId,
+        locationId: nextLocationId,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        totalDurationMinutes: slot.totalDurationMinutes,
+        customer,
+        customerNotes: request.customerNotes ?? null,
+        internalNotes: request.internalNotes ?? null,
+        serviceSnapshots: slot.serviceSnapshots,
+        updatedAt: options.now ?? new Date(),
+    });
+
+    if (!updated) {
+        throw new AdminBookingRequestError(404, "Booking was not found.");
+    }
+
+    return {
+        booking: updated,
+        notification: buildEditNotification(booking, updated, slot.serviceSnapshots, options.now ?? new Date()),
+    };
+}
+
+async function resolveStaffAppointmentSlot(
+    request: CreateBookingRequest,
+    repository: Pick<
+        BookingRepository,
+        "loadAvailabilityData" | "loadServiceSnapshots" | "hasConfirmedBookingOverlap" | "hasBlockedTimeOverlap"
+    >,
+) {
+    if (!request.barberId) {
+        throw new AdminBookingRequestError(400, "Barber is required.");
+    }
+
+    const startTime = request.startTime;
+    if (!(startTime instanceof Date) || Number.isNaN(startTime.getTime())) {
+        throw new AdminBookingRequestError(400, "A valid appointment start time is required.");
+    }
+
+    assertStaffStartTime(startTime, request.timeZone ?? DEFAULT_TIME_ZONE);
+
+    const serviceSnapshots = await repository.loadServiceSnapshots(request.serviceIds);
+    assertStaffSnapshotCoverage(request.serviceIds, serviceSnapshots);
+    const totalDurationMinutes = serviceSnapshots.reduce((sum, service) => sum + service.durationMinutes, 0);
+    const endTime = addMinutes(startTime, totalDurationMinutes);
+    const timeZone = request.timeZone ?? DEFAULT_TIME_ZONE;
+    const localDate = getLocalDate(startTime, timeZone);
+
+    assertFitsInAdminDay(startTime, endTime, localDate, timeZone);
+
+    const availabilityData = await repository.loadAvailabilityData(request, localDate);
+    assertStaffEntitiesAvailable(request, availabilityData);
+
+    const hasLoadedBookingOverlap = hasAvailabilityBookingOverlap(
+        availabilityData,
+        request.barberId,
+        startTime,
+        endTime,
+        request.excludeBookingId,
+    );
+    const hasLoadedBlockedOverlap = hasAvailabilityBlockedOverlap(
+        availabilityData,
+        request.barberId,
+        request.locationId,
+        startTime,
+        endTime,
+    );
+    const hasBookingOverlap =
+        hasLoadedBookingOverlap ||
+        await repository.hasConfirmedBookingOverlap(request.barberId, startTime, endTime, request.excludeBookingId);
+    const hasBlockedOverlap =
+        hasLoadedBlockedOverlap ||
+        await repository.hasBlockedTimeOverlap(request.barberId, request.locationId, startTime, endTime);
+
+    if (hasBookingOverlap || hasBlockedOverlap) {
+        throw unavailableStaffSlotError();
+    }
+
+    return {
+        barberId: request.barberId,
+        locationId: request.locationId,
+        startTime,
+        endTime,
+        totalDurationMinutes,
+        serviceSnapshots,
+    };
+}
+
+function assertStaffStartTime(startTime: Date, timeZone: string) {
+    if (startTime.getUTCSeconds() !== 0 || startTime.getUTCMilliseconds() !== 0) {
+        throw new AdminBookingRequestError(400, "Appointments must start on a 15-minute boundary.");
+    }
+
+    const minute = localClockParts(startTime, timeZone).minute;
+    if (minute % 15 !== 0) {
+        throw new AdminBookingRequestError(400, "Appointments must start on a 15-minute boundary.");
+    }
+}
+
+function assertFitsInAdminDay(startTime: Date, endTime: Date, localDate: string, timeZone: string) {
+    const dayStart = localDateTimeToUtc(localDate, "00:00", timeZone);
+    const dayEnd = localDateTimeToUtc(nextLocalDate(localDate), "00:00", timeZone);
+
+    if (startTime < dayStart || endTime > dayEnd || startTime >= endTime) {
+        throw new AdminBookingRequestError(409, "The requested appointment slot is not available.");
+    }
+}
+
+function assertStaffSnapshotCoverage(serviceIds: string[], snapshots: BookingServiceSnapshot[]) {
+    if (snapshots.length !== serviceIds.length) {
+        throw new AdminBookingRequestError(400, "Every selected service must have a booking snapshot.");
+    }
+}
+
+function assertStaffEntitiesAvailable(request: CreateBookingRequest, data: AvailabilityData) {
+    const barberIsActive = data.barbers.some((barber) => barber.id === request.barberId && barber.active !== false);
+    const barberAtLocation = data.barberLocations.some(
+        (assignment) => assignment.barberId === request.barberId && assignment.locationId === request.locationId,
+    );
+    const activeServiceIds = new Set(
+        data.services.filter((service) => service.active !== false).map((service) => service.id),
+    );
+
+    if (!barberIsActive) {
+        throw new AdminBookingRequestError(400, "Barber is not available.");
+    }
+
+    if (!barberAtLocation) {
+        throw new AdminBookingRequestError(400, "Barber is not assigned to this location.");
+    }
+
+    if (!request.serviceIds.every((serviceId) => activeServiceIds.has(serviceId))) {
+        throw new AdminBookingRequestError(400, "Every selected service must be active.");
+    }
+}
+
+function hasAvailabilityBookingOverlap(
+    data: AvailabilityData,
+    barberId: string,
+    startTime: Date,
+    endTime: Date,
+    excludeBookingId?: string,
+) {
+    return (data.bookings ?? []).some((booking) => {
+        const bookingId = "id" in booking ? (booking as { id?: string }).id : undefined;
+        return (
+            bookingId !== excludeBookingId &&
+            booking.barberId === barberId &&
+            booking.status === "confirmed" &&
+            rangesOverlap(startTime, endTime, booking.startTime, booking.endTime)
+        );
+    });
+}
+
+function hasAvailabilityBlockedOverlap(
+    data: AvailabilityData,
+    barberId: string,
+    locationId: string,
+    startTime: Date,
+    endTime: Date,
+) {
+    return (data.blockedTimes ?? []).some((blockedTime) => {
+        if (!rangesOverlap(startTime, endTime, blockedTime.startTime, blockedTime.endTime)) {
+            return false;
+        }
+
+        if (blockedTime.scope === "business") {
+            return true;
+        }
+
+        if (blockedTime.scope === "location") {
+            return blockedTime.locationId === locationId;
+        }
+
+        if (blockedTime.locationId && blockedTime.locationId !== locationId) {
+            return false;
+        }
+
+        return blockedTime.barberId === barberId;
+    });
+}
+
+function buildEditNotification(
+    previous: AdminBookingDetailRecord,
+    updated: AdminBookingDetailRecord,
+    serviceSnapshots: BookingServiceSnapshot[],
+    now: Date,
+): Parameters<BookingLifecycleNotificationDispatcher>[0] | null {
+    const serviceIds = serviceSnapshots.map((service) => service.serviceId).filter(Boolean);
+    const scheduleChanged =
+        previous.startTime.getTime() !== updated.startTime.getTime() ||
+        previous.endTime.getTime() !== updated.endTime.getTime() ||
+        previous.barberId !== updated.barberId ||
+        previous.locationId !== updated.locationId ||
+        previous.totalDurationMinutes !== updated.totalDurationMinutes;
+    const servicesChanged = previous.serviceIds.join("|") !== serviceIds.join("|");
+
+    if (scheduleChanged || servicesChanged) {
+        return {
+            eventType: "reschedule_confirmation",
+            bookingId: updated.id,
+            occurrenceKey: updated.startTime.toISOString(),
+        };
+    }
+
+    const contactAdded =
+        (!previous.customerEmail && Boolean(updated.customerEmail)) ||
+        (!previous.customerPhone && Boolean(updated.customerPhone));
+    if (contactAdded && updated.status === "confirmed" && updated.startTime > now) {
+        return {
+            eventType: "booking_confirmation",
+            bookingId: updated.id,
+        };
+    }
+
+    return null;
+}
+
+function localClockParts(date: Date, timeZone: string) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone,
+        hourCycle: "h23",
+        hour: "2-digit",
+        minute: "2-digit",
+    }).formatToParts(date);
+
+    return {
+        hour: Number(parts.find((part) => part.type === "hour")?.value ?? "0"),
+        minute: Number(parts.find((part) => part.type === "minute")?.value ?? "0"),
+    };
+}
+
+function unavailableStaffSlotError() {
+    return new AdminBookingRequestError(409, "The requested appointment slot is not available.");
 }
 
 function buildActorBookingScope(user: SafeAdminUser, filters: AdminBookingFilters): AdminBookingQueryScope {
@@ -1368,6 +1678,15 @@ function lastNameFromCustomerName(customerName: string) {
 function withoutMutableFlag<T extends { mutable: boolean }>(booking: T) {
     const { mutable: _mutable, ...rest } = booking;
     return rest;
+}
+
+function isDatabaseConflictError(error: unknown) {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    const code = "code" in error ? (error as { code?: unknown }).code : undefined;
+    return code === "23P01" || code === "23505";
 }
 
 async function dispatchLifecycleNotification(

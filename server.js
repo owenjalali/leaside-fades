@@ -522,6 +522,14 @@ app.post(
 );
 
 app.post(
+  "/api/admin/bookings/:bookingId/edit",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminEditBooking(req, res, next);
+  }),
+);
+
+app.post(
   "/api/admin/bookings/:bookingId/reschedule",
   asyncRoute(async (req, res, next) => {
     const adminApi = await loadAdminApi();
@@ -582,6 +590,14 @@ app.post(
   asyncRoute(async (req, res, next) => {
     const adminApi = await loadAdminApi();
     return adminApi.handleAdminDeleteShiftOverride(req, res, next);
+  }),
+);
+
+app.post(
+  "/api/admin/schedule/day-shifts",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminReplaceDayShift(req, res, next);
   }),
 );
 
