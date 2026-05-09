@@ -71,6 +71,8 @@ Phase 7 implements this as `src/server/admin/schedule-service.ts` with a Drizzle
 
 The `/admin/shifts` UI is a staff-first weekly schedule builder for recurring patterns and a team overview. One-off shift overrides remain part of the server schedule model and calendar availability engine, but the visible Staff Shifts override editor is hidden until the exception workflow can be redesigned with a clearer calendar-native interaction.
 
+The calendar-native one-day shift editor is exposed from `/admin/calendar` barber headers through `POST /api/admin/schedule/day-shifts`. It replaces the selected barber/location/date shift by deleting same-day overrides for that scope and diffing desired windows against the recurring baseline into `add` and `remove` override rows. Owner/admin users can edit any barber; barber users can edit only their own selected-day shift.
+
 ### Blocked Time Service
 
 Responsible for:
@@ -301,20 +303,23 @@ Implemented:
 - `POST /api/admin/bookings/:bookingId/cancel`
 - `POST /api/admin/bookings/:bookingId/no-show`
 - `POST /api/admin/bookings/:bookingId/reschedule`
+- `POST /api/admin/bookings/:bookingId/edit`
 
 Rules:
 - all routes require the Phase 5 custom session cookie
 - state-changing admin routes validate Origin/Referer headers when present, allowing the configured `APP_URL`, local Vite dev origins, and the API origin
 - owner/admin users can view and manage all bookings
 - barber users are scoped to their linked barber profile on the server
-- manual booking creation requires an explicit barber and uses the existing transactional booking service with `source = "manual"`
-- walk-in creation is staff-only, requires name/service/barber/time/location, allows missing phone/email, uses the same transactional booking service with `source = "walk_in"`, and bypasses only the public 30-minute minimum notice
-- admin rescheduling moves time/location/barber only and reuses availability/no-overlap checks while excluding only the booking being moved from its own old slot
-- service-changing admin reschedule payload fields are rejected with a 400 response; staff must cancel/recreate to change services
+- manual booking creation requires an explicit barber and uses a staff-only transactional scheduling path with `source = "manual"`
+- walk-in creation is staff-only, requires name/service/barber/time/location, allows missing phone/email, uses the same staff-only transactional scheduling path with `source = "walk_in"`, and can use grey off-shift admin-calendar time
+- staff create/reschedule/edit validates active location/barber/service records, 15-minute boundaries, admin-day bounds, role scope, same-barber confirmed booking overlap, and blocked-time/closure conflicts, while public booking and customer token rescheduling stay on the public availability engine with business hours, shifts, 30-minute notice, and 30-day window
+- admin rescheduling moves time/location/barber only and reuses the staff-only no-overlap/blocked-time path while excluding only the booking being moved from its own old slot
+- service-changing admin reschedule payload fields are rejected with a 400 response; service/contact/note/duration changes belong to `POST /api/admin/bookings/:bookingId/edit`
+- admin booking edit updates the linked customer row, booking schedule/duration/notes, and `booking_services` snapshots transactionally while preserving booking source/status and existing customer management token hashes
 - cancellation is idempotent for already-cancelled bookings but rejects completed/no-show bookings
 - no-show is allowed only for current or past confirmed bookings, is role-scoped server-side, and does not send notifications or charge fees in Phase 7.5
 - manual booking creation, cancellation, and rescheduling dispatch Phase 9 lifecycle notifications after successful mutation
-- walk-ins and no-shows create no notification attempts in Phase 9
+- contacted walk-ins create lifecycle notification attempts through the shared dispatcher; no-shows create no notification attempts
 - customer token UI, shift management, blocked-time management, payments, and Fresha automation are outside Phase 6
 
 Dashboard snapshot:
@@ -335,6 +340,7 @@ Implemented:
 - `POST /api/admin/schedule/shift-overrides`
 - `POST /api/admin/schedule/shift-overrides/:overrideId`
 - `POST /api/admin/schedule/shift-overrides/:overrideId/delete`
+- `POST /api/admin/schedule/day-shifts`
 - `POST /api/admin/schedule/blocked-times`
 - `POST /api/admin/schedule/blocked-times/:blockedTimeId`
 - `POST /api/admin/schedule/blocked-times/:blockedTimeId/delete`
@@ -343,14 +349,14 @@ Rules:
 - all routes require the Phase 5 custom session cookie
 - state-changing schedule routes reuse the Phase 6 admin mutation Origin/Referer guard
 - owner/admin users manage recurring shifts, one-off overrides, and all blocked-time scopes
-- barber users can view relevant schedule context and manage only their own barber-scoped blocked time
+- barber users can view relevant schedule context, manage only their own barber-scoped blocked time, and replace only their own one-day shift from the calendar header
 - schedule inputs use `America/Toronto` local date and time fields and 15-minute boundaries
 - recurring shifts are soft-deactivated rather than hard-deleted
 - blocked times use UTC `timestamptz` persistence after server-side local-to-UTC conversion
 - blocked times that overlap confirmed bookings in the affected scope are rejected
 
 Frontend:
-- `/admin/shifts` provides a staff-first weekly schedule builder with inline day toggles, time windows, location selection, split shifts, effective dates, explicit save, one-off override tab, and team overview tab
+- `/admin/shifts` provides a staff-first weekly schedule builder with inline day toggles, time windows, location selection, split shifts, effective dates, explicit save, and team overview tab; one-day exception editing is available from `/admin/calendar` barber headers
 - when multiple active recurring date ranges are returned for one barber, the weekly builder displays and diffs the latest effective recurring pattern instead of mixing separate dated patterns into one editable week
 - `/admin/blocked-time` provides scope-aware blocked-time forms, all-day closure entry, and visible chips for barber blocks, location closures, and business closures
 - drag/drop editing is intentionally deferred; future drag/drop can call the same validated mutation endpoints
@@ -455,8 +461,7 @@ Phase 6 implemented:
 
 Deferred:
 - drag/drop calendar editing
-- day view
-- service-change rescheduling
+- service-change rescheduling shortcut
 - owner override for double-booking
 - notification sends were deferred from Phase 6 and implemented for booking lifecycle events in Phase 9
 
@@ -485,9 +490,10 @@ Implemented:
 - `/admin/dashboard` owner/staff landing surface with estimated appointment value, upcoming confirmed/cancelled appointment trends, appointment activity, and compact notification health
 - dashboard estimated value uses booking service price snapshots and is labeled estimated appointment value, not actual paid revenue
 - dashboard appointment charts show active confirmed/completed value separately from cancellation and delivery history
-- `/admin/calendar` day-board with compact dark rail, topbar filters, owner/admin multi-barber columns, barber single-calendar scoping, 15-minute grid rows, current-time marker, blocked-time overlays, status/source-styled booking cards, purple appointment preview, and right-side drawers
-- unified staff Add appointment drawer using the authenticated transactional booking path, optional customer contact, service-derived duration/price summary, and availability-backed time selection
-- booking detail drawer with cancel, reschedule, and no-show actions
+- `/admin/calendar` day-board with compact dark rail, topbar filters, owner/admin multi-barber columns for active location-assigned barbers, barber single-calendar scoping, a Fresha-style full-day 12:00 AM-11:00 PM operating surface, 15-minute grid rows, current-time marker, blocked-time overlays, status/source-styled booking cards, purple appointment preview, and right-side drawers
+- unified staff Add appointment drawer using the authenticated staff-only scheduling path, optional customer contact, service-derived duration/price summary, online-availability suggestions, and staff booking for grey off-shift cells
+- booking detail drawer with edit, cancel, reschedule, and no-show actions
+- barber header `Edit shift` dropdown that calls the one-day shift replacement endpoint and updates the same schedule model used by public availability
 - booking-only drag/drop rescheduling through `POST /api/admin/bookings/:bookingId/reschedule`
 - `/admin/bookings` retained as search/history rather than the primary workflow
 - `/admin/shifts` and `/admin/blocked-time` remain setup pages inside the same admin shell
@@ -497,6 +503,7 @@ Rules:
 - barber users can create staff-entered appointments and use no-show/reschedule/cancel only for their linked barber calendar
 - owner/admin users can operate across calendars
 - unified Add appointment entries require customer name, service, barber, time, and location; phone/email are optional for staff-created appointments
+- grey off-shift time is clickable for staff create/reschedule/edit/drag-drop but remains unavailable to public clients
 - the legacy walk-in API remains available for compatibility and continues to store `source = "walk_in"`
 - drag/drop is snapped by the UI to 15-minute slots and never updates local state as truth; rejected backend moves leave the card in its original slot
 - drag/drop applies only to bookings, not shifts or blocked time

@@ -26,6 +26,7 @@ If a barber shift extends outside official business hours, customer availability
 Eglinton:
 - Sam To
 - Laura Nguyen
+- Josef
 
 Millwood:
 - Laura Nguyen
@@ -35,6 +36,8 @@ Millwood:
 Laura may work at both locations.
 
 Yogesh Kumar is Millwood-only for launch. He must not be bookable at Eglinton unless the owner explicitly changes this launch rule.
+
+Josef is Eglinton-only for launch. He works 11:00 AM-7:00 PM; customer availability must still be clipped to official business hours, including the Sunday 5:00 PM close.
 
 Barbers can work split shifts and can work at different locations on the same day.
 
@@ -51,19 +54,25 @@ Phase 7 schedule management rules:
 - one-off `add` overrides require a location
 - one-off `not_working` overrides cover the whole date and must not include start/end times
 - barber users can view relevant schedule context but cannot manage recurring shifts or shift overrides
+- barber users can replace only their own one-day shift from the selected day/location calendar header
+- owner/admin users can replace any barber's one-day shift from the selected day/location calendar header
+- one-day shift replacement diffs desired windows against the recurring baseline and writes same-day `add`/`remove` override rows
 - all shift and override mutations are validated server-side and use 15-minute local-time boundaries
 
 ## Admin Calendar Visibility
 
-The admin day-board columns are derived from the selected date, selected location, active shifts, and same-day shift overrides.
+The admin day-board columns are derived from active barber-location assignment and role scope.
 
 Rules:
-- show a staff column only when the barber has a working window for that selected location/date
-- static barber-location assignment is not enough to show a day-board column
+- owner/admin users see all active barbers assigned to the selected location, even if a barber has no working window that day
+- barber users see only their linked barber column when assigned to the selected location
+- the day board keeps a full staff operating surface from 12:00 AM through the 11:00 PM hour, but the initial viewport defaults to 9:00 AM and scrolls rather than compressing the whole day into one screen
 - `add`, `remove`, and `not_working` shift overrides must affect displayed working windows
-- non-working time should be shaded visually, and explicit blocked time should render separately
+- non-working time should be shaded visually, explicit blocked time should render separately, and blocked time remains non-clickable
+- authenticated staff can click or drag appointments into grey non-working cells when they need to book outside public online availability
+- public customers cannot book grey non-working cells; public availability still requires official business hours, shifts, minimum notice, and 30-day max window
 - if a booking exists outside a staff member's working window, show it with an outside-hours warning instead of deleting or silently hiding the data
-- if no staff are scheduled for the selected location/date, show a clean empty state
+- if no active staff are assigned to the selected location, show a clean empty state
 
 ## Booking Window
 
@@ -228,10 +237,11 @@ Current staff-created appointment rules:
 - customer phone/email are optional for staff-created appointments
 - barber users can create appointments only for their linked barber profile
 - owner/admin users can create appointments for any active eligible barber
-- staff-created appointments use the same transactional availability and overlap path as public bookings
+- staff-created appointments use a dedicated transactional staff-scheduling path
 - staff-created appointments are stored with `source = "manual"` or `source = "walk_in"` from the unified Add appointment workflow
-- staff-created appointments bypass only the public 30-minute minimum notice by passing a staff-only minimum notice of zero
-- staff-created appointments still enforce active location/barber/service, official business hours, barber shifts, 15-minute boundaries, blocked time, and no-overlap validation
+- staff-created appointments can use grey off-shift/non-public times shown on the admin calendar
+- staff-created appointments bypass public-only business-hour, shift-fit, 30-minute notice, and 30-day max-window limits
+- staff-created appointments still enforce active location/barber/service, barber ownership permissions, 15-minute boundaries, same-local-day admin board bounds, blocked time/closures, and no-overlap validation
 - no owner override exists
 - Phase 8 does not expose customer management links in the staff-created appointment UI
 - Phase 9 sends/logs staff-created lifecycle notifications after successful create/cancel/reschedule when valid customer/staff contact exists; missing contact creates skipped attempts and does not fail the booking
@@ -268,11 +278,22 @@ Admin rescheduling:
 - owner/admin can reschedule any scoped confirmed booking
 - barber users can reschedule only their own bookings
 - rescheduling changes time, location, and/or barber only
-- service changes are handled by cancelling and recreating the booking
-- rescheduling revalidates availability and overlap server-side
+- rescheduling can use grey off-shift/non-public times shown on the admin calendar
+- service changes are handled by the full admin edit flow, not the reschedule shortcut
+- rescheduling revalidates active records, role scope, 15-minute/admin-day bounds, blocked time, and overlap server-side
 - the booking being moved is excluded from its own old-slot conflict check, but no other confirmed booking is excluded
 - customer rescheduling token flows were implemented in Phase 8
 - Phase 9 reschedule notifications dispatch after the reschedule transaction commits and use occurrence-aware idempotency
+
+Admin editing:
+- owner/admin can edit any scoped confirmed booking
+- barber users can edit only their own confirmed bookings
+- editing can update customer name, phone, email, customer notes, internal notes, date/time, barber, location, and selected services
+- empty phone/email values clear the linked customer contact fields
+- editing recalculates service snapshots, total duration, and end time transactionally
+- editing preserves booking source, status, and existing customer management token hashes
+- editing can use grey off-shift/non-public times shown on the admin calendar
+- editing rejects same-barber overlaps, blocked time/closures, invalid services/barbers/locations, out-of-admin-day times, and unauthorized barber changes
 
 Phase 7.5 no-show:
 - owner/admin can mark any current or past confirmed booking as no-show

@@ -2,10 +2,12 @@ import { buildAdminBookingQuery, buildAdminScheduleQuery } from "./admin-utils";
 import type {
     AdminAvailability,
     AdminBookingDetail,
+    AdminBookingEditPayload,
     AdminBookingFilters,
     AdminBookingSummary,
     AdminCalendarOptions,
     AdminDashboardSnapshot,
+    AdminDayShiftReplacePayload,
     AdminSchedule,
     AdminScheduleFilters,
     AdminSessionResponse,
@@ -135,6 +137,13 @@ export function rescheduleAdminBooking(bookingId: string, input: Record<string, 
     );
 }
 
+export function editAdminBooking(bookingId: string, input: AdminBookingEditPayload) {
+    return requestJson<{ booking: AdminBookingDetail }>(`/api/admin/bookings/${bookingId}/edit`, {
+        method: "POST",
+        body: JSON.stringify(input),
+    });
+}
+
 export function fetchAdminSchedule(filters: AdminScheduleFilters = {}) {
     const query = buildAdminScheduleQuery(filters);
     return requestJson<AdminSchedule>(`/api/admin/schedule${query ? `?${query}` : ""}`);
@@ -185,6 +194,16 @@ export function deleteAdminShiftOverride(overrideId: string) {
     return requestJson<{ deleted: true }>(`/api/admin/schedule/shift-overrides/${overrideId}/delete`, {
         method: "POST",
     });
+}
+
+export function replaceAdminDayShift(input: AdminDayShiftReplacePayload) {
+    return requestJson<{ dayShift: AdminDayShiftReplacePayload & { shiftOverrides: AdminSchedule["shiftOverrides"] } }>(
+        "/api/admin/schedule/day-shifts",
+        {
+            method: "POST",
+            body: JSON.stringify(input),
+        },
+    );
 }
 
 export function createAdminBlockedTime(input: Record<string, unknown>) {

@@ -41,21 +41,29 @@ Phase 11 inspection confirmed:
 
 Phase 12 launch-prep status:
 - `docs/LAUNCH_PREP.md`, `docs/PRODUCTION_RUNBOOK.md`, and `docs/OWNER_SIGNOFF_CHECKLIST.md` now define launch readiness, deployment, smoke testing, rollback, cutover, and owner signoff.
-- Production seed data and local/dev sample shifts now keep Yogesh Kumar Millwood-only for launch.
+- Production seed data and local/dev sample shifts now keep Yogesh Kumar Millwood-only for launch, and Josef is added as an Eglinton-only launch barber.
 - Eglinton phone number is treated as the confirmed current value and matches env templates/static seed data: `+1 (647) 348-2200`.
 - Service reconciliation must use name/category/price/duration and owner approval, not the Fresha 38-service count alone. The repo still contains 37 services pending owner launch approval.
 - Booking confirmations now notify customer SMS/email and assigned barber SMS/email when contact info exists. Owner/admin awareness is dashboard-first through the in-app Dashboard Notification Center, not outbound owner/admin email.
 - `/admin/dashboard` now presents a Fresha-inspired operating dashboard with estimated appointment value from booking service price snapshots, upcoming confirmed/cancelled appointment trends, compact notification health, recent appointment activity, and 30-second polling that preserves the last good snapshot on refresh failure.
 - Local dashboard visual QA can now be seeded with `npm run qa:phase12-dashboard-fixture`, which is guarded to local development databases and creates priced confirmed/completed/cancelled/no-show/rescheduled/source-varied bookings for chart tuning.
 - The premium dashboard redesign is the intended production dashboard surface. A read-only production dashboard snapshot on May 5, 2026 returned real service-snapshot value data: CA$3,921 estimated appointment value across 124 priced appointments in the last 7-day window, plus 28 confirmed and 3 cancelled upcoming appointments in the next 7-day chart window.
-- Staff-created appointments now use one Add appointment workflow with optional customer phone/email, server-side availability validation, and staff-only zero-minute notice while preserving no-overlap checks.
+- Staff-created appointments now use one Add appointment workflow with optional customer phone/email and a staff-only scheduling path. Staff can create, reschedule, or edit appointments on any visible 15-minute admin-calendar time, including grey off-shift time, while the server still enforces active location/barber/service records, barber ownership, no same-barber overlap, and blocked-time/closure conflicts.
 - Admin session handling now keeps owner/barber sessions active for 30 days by default, renews that 30-day window on protected admin activity, and redirects expired active workspaces back to `/admin/login` instead of surfacing raw `Authentication required.` errors inside Add appointment or other admin forms.
 - The live Add appointment drawer includes an Appointment/Walk-in toggle. Walk-ins created from the drawer use `source = "walk_in"`; when customer phone/email exists they now dispatch booking confirmation attempts and are eligible for reminder jobs, while name-only walk-ins still create skipped/missing-contact attempts without failing creation.
 - Missing customer/staff contacts create skipped notification attempts and do not fail booking creation.
 - Notification metadata remains token-safe: raw customer management tokens and raw cancel/reschedule URLs are not persisted.
-- `/admin/calendar` now uses a mobile-first staff day-board with shift-based staff columns, horizontal mobile scrolling, sticky time/staff headers, diagonal unavailable zones, blocked-time overlays, outside-hours warning badges, current-time line, tap/click slot creation, and a visible closing boundary row so weekday boards reach 7:00 PM without creating a 7:00 PM bookable slot.
-- Calendar empty-slot actions are disabled anywhere a 30-minute staff-created appointment would fall outside the selected barber's working window or overlap blocked time; those non-working cells render with stronger grey diagonal shading.
-- Calendar staff columns are computed from selected date, selected location, active shifts, and shift overrides. Static barber-location assignment alone no longer makes a staff member appear on that day board.
+- `/admin/calendar` now uses a mobile-first staff day-board with active location-assigned barber columns, horizontal mobile scrolling, sticky time/staff headers, diagonal unavailable zones, blocked-time overlays, outside-hours warning badges, current-time line, tap/click slot creation, and a full staff operating surface from 12:00 AM through the 11:00 PM hour.
+- Calendar empty-slot actions are disabled only for blocked-time/closure conflicts. Grey off-shift cells remain visually unavailable to the public but are clickable/drag-drop targets for authenticated staff, with final validation still server-side.
+- Calendar staff columns are computed from active barber-location assignment plus selected role scope. Owner/admin users see all active barbers at the selected location even when a barber has no shift that day; barber users remain scoped to their linked barber column.
+- `/admin/calendar` month/week/list views now keep the visible selected date separate from the booking fetch range, so month titles and arrows stay anchored to the intended month while still fetching the padded calendar grid.
+- Month calendar cells are fully clickable blank-space targets that open the exact date in day view, while booking cards still stop propagation and open booking details.
+- The admin day board keeps the full 12:00 AM through 11:00 PM scrollable operating surface, default-scrolls to 9:00 AM on load/context changes, uses a non-compressed 15-minute grid so the whole day is not squeezed into one screen, and keeps the green hover time label visible above grey off-shift overlays.
+- The booking drawer now includes an edit flow for confirmed bookings covering customer name, phone, email, customer notes, internal notes, date/time, barber, location, and selected services. The authenticated edit endpoint updates customer/contact rows and booking service snapshots transactionally while preserving booking source/status and customer tokens.
+- Each barber header on the day board now exposes a permitted `Edit shift` action. Owner/admin users can edit any barber's selected-day/location shift; barber users can edit only their own. The one-day shift endpoint replaces same-day overrides by diffing desired windows against the recurring baseline, so public client availability updates from the same schedule model.
+- Launch-critical admin calendar/customer cancellation fixes were deployed to Vercel production on May 8, 2026 at 10:32 PM America/Toronto. Deployment `dpl_Dtpu3bguZC7ZAVQfo8DdcZJR6i74` is `Ready` and aliased to `https://www.leasidefades.com`.
+- Pre-deploy verification for the launch-critical fixes passed: targeted customer/admin tests (136 tests), `npm run qa:phase8-customer-token`, `npm run qa:phase9-notifications`, full `npm run test` (243 tests), `npm run build`, and local Playwright browser QA for public cancellation, admin grey-slot create, appointment phone/email edit, one-day shift edit, and mobile calendar controls.
+- Post-deploy non-mutating production smoke passed for `/api/health`, `/api/booking/catalog`, `/book`, `/booking/not-a-real-token/cancel`, fake-token customer cancellation API 404s, protected admin calendar/options 401s, and protected new admin edit/day-shift routes returning 401 instead of 404.
 - `/admin/calendar` mobile rescue now keeps the admin rail/topbar compact, moves location/barber/status filters into an overlay panel, preserves visible day-board grid height on 320px-class phones, and keeps the Add appointment drawer framed to the viewport with a sticky create action.
 - `/admin/calendar` tablet/mobile polish now resets the day-board scroll to opening time when the visible date/location/staff context changes, expands the Sam-only board into a full-width working surface, and labels single-staff views as `1 staff` instead of `1 columns`.
 - `/admin/calendar` Add appointment split-pane polish now protects the calendar working width when the drawer opens, constrains the desktop create drawer to an inspector-width panel, and uses auto-fit drawer grids so summary, contact, time, and slot controls wrap naturally instead of looking crunched.
@@ -67,7 +75,7 @@ Phase 12 launch-prep status:
 - Vercel production routing is configured for `/book`, `/booking`, and `/admin` while `/api/*` remains on the Express serverless route.
 - Vercel project `owenjalalis-projects/leaside-fades` is linked and deployed. `leasidefades.com` is live on Vercel production.
 - Production PostgreSQL is connected through the Vercel Neon integration `leaside-fades-db`. Migrations and the static owner-approved seed have been applied.
-- Production `/api/booking/catalog` returns the launch catalog: 2 locations, 3 service categories, 37 services, and 4 barbers.
+- Production `/api/booking/catalog` returns the launch catalog: 2 locations, 3 service categories, 37 services, and 5 barbers.
 - The public marketing Services section now derives from the same 37-service launch catalog source as booking: Men 15, Women 14, Boys 8, with booking prices and durations displayed.
 - Production owner login has been created for `owner@leasidefades.com` and verified through the live admin auth/session API. The temporary generated password is stored only in ignored local launch output and must be rotated after owner handoff.
 - Observed launch recurring shifts from the Phase 11 Fresha inspection were entered as the initial production schedule after the Phase 13 launch "Go": 24 recurring shifts, with Yogesh remaining Millwood-only. Owner should still verify this roster before full public cutover.
@@ -82,6 +90,7 @@ Phase 12 launch-prep status:
 - Read-only Fresha calendar extraction for May 1-June 30, 2026 completed through Playwright MCP for both locations and all visible service providers. It found 55 Fresha booking blocks, transformed them into 53 appointment candidates after grouping stacked services, and generated `output/fresha-import/fresha-import-review-2026-05-01-to-2026-06-30.md`.
 - Two owner-approved test bookings that blocked import were marked `cancelled` in production: Owen/Yogesh/Millwood and Ethan/Laura/Eglinton on May 1.
 - The May 1-June 30, 2026 Fresha appointment import has been applied to production: 53 confirmed bookings were inserted with `source = "imported"`, no immediate lifecycle notifications/reminder jobs were sent, and a post-apply dry-run reported 53 duplicates with 0 new imports and 0 blocked rows.
+- Local Playwright QA for the calendar repair used a fresh Express app on port `3005` because the stale port `3000` process returned `Service is currently unavailable.` A local-only owner login for `nmatto866@gmail.com` was bootstrapped through `npm run db:seed:dev-owner`; its generated password was not stored in repo files.
 
 ## Next Recommended Task
 
@@ -124,9 +133,9 @@ Do not seed local/dev sample shifts in production. Production currently uses the
 - Phase 5C remains API-first. Minimal admin team UI was not built.
 - `npm run qa:phase5-auth` is local/dev-only, refuses non-local database URLs, and captures reset/invite links only from dev delivery logs during QA.
 - Phase 6 uses the existing custom session auth gate for `/admin/*` and `/api/admin/*`.
-- Phase 6 manual bookings require an explicit barber, use `source = "manual"`, obey normal availability/no-overlap checks, and do not support owner override.
-- Phase 6 admin rescheduling moves time/location/barber only; service changes remain a cancel/recreate workflow.
-- Phase 6 admin rescheduling explicitly rejects service-changing request fields instead of silently ignoring them.
+- Phase 6 manual bookings require an explicit barber, use `source = "manual"`, obey no-overlap and blocked-time checks, and do not support owner double-booking override.
+- Admin rescheduling still moves time/location/barber only; the full admin edit flow can also change services, duration, customer contact, customer notes, and internal notes.
+- Phase 6 admin rescheduling explicitly rejects service-changing request fields instead of silently ignoring them; service changes now belong to the dedicated admin edit endpoint.
 - Phase 6 admin state-changing routes validate Origin/Referer headers when present. Allowed origins are the configured `APP_URL`, local Vite dev origins, and the API origin. Public `/api/booking/*` routes are not affected by this admin-only guard.
 - Transaction-bound availability and final conflict reads are sequentialized inside booking transactions to avoid pg overlapping client-query warnings. Normal non-transactional availability loading still uses concurrent reads.
 - `npm run qa:phase6-admin` is local/dev-only, refuses non-local database URLs, and requires local dev shifts for real availability.
@@ -139,7 +148,7 @@ Do not seed local/dev sample shifts in production. Production currently uses the
 - `npm run qa:phase7-schedule` is local/dev-only, refuses non-local database URLs, exercises real schedule routes, verifies blocked time affects availability, verifies barber scoping, and cleans up QA rows.
 - Phase 7.5 introduces a migration for `booking_source = "walk_in"` and nullable customer phone/email.
 - Public booking still requires customer contact. Staff-created appointments from the unified Add appointment workflow use `source = "manual"` and allow customer phone/email to be optional.
-- Staff-created appointments bypass only the public 30-minute minimum notice and still enforce shifts, business hours, blocked time, active records, 15-minute boundaries, and no-overlap rules.
+- Staff-created appointments bypass public online-availability limits: 30-minute notice, 30-day public window, business-hour clipping, and shift-fit are not required for staff. They still enforce active records, 15-minute boundaries, same-local-day admin board bounds, blocked time/closures, role scope, and no-overlap rules.
 - No-show is a status transition only in Phase 7.5. It sends no notifications, charges no fees, and creates no payment records.
 - Booking drag/drop is a UI shortcut over the existing reschedule endpoint; shifts, closures, and blocked time are not drag/drop editable.
 - `npm run qa:phase7-5-calendar` is local/dev-only, refuses non-local database URLs, exercises real walk-in/no-show/reschedule routes, verifies role scoping and rejection cases, and cleans up QA rows.
@@ -370,7 +379,7 @@ Phase 6 admin calendar and booking management tests:
 - completed/no-show bookings are rejected for cancellation
 - admin rescheduling excludes the booking being moved from its own conflict check
 - admin rescheduling rejects overlaps with other confirmed bookings
-- admin rescheduling explicitly rejects service-changing fields and preserves cancel/recreate as the service-change workflow
+- admin rescheduling explicitly rejects service-changing fields; full service/contact/note edits use the dedicated admin edit workflow
 - admin rescheduling still succeeds for valid time, location, and barber changes
 - admin mutation Origin/Referer hardening rejects invalid origins and allows configured/local development origins
 - public booking catalog and availability remain unauthenticated and outside the admin mutation Origin guard
@@ -402,7 +411,7 @@ Phase 7.5 calendar operations tests:
 - barber walk-ins are scoped to the linked barber profile
 - barber `barberId` spoofing is rejected
 - walk-ins reject overlapping confirmed bookings
-- walk-ins reject outside-shift/outside-business-hour slots
+- walk-ins can use authenticated grey off-shift/admin full-day slots
 - walk-ins reject barber blocked time, location closures, and business closures
 - owner/admin can create walk-ins for any active eligible barber
 - inactive users and misconfigured barber users cannot use staff operations
@@ -411,10 +420,12 @@ Phase 7.5 calendar operations tests:
 - future, cancelled, completed, and already no-show bookings reject no-show transitions
 - barber no-show attempts on another barber's booking are scoped out
 - drag/drop utility payloads reject invalid/non-owned moves
-- reschedule API rejects overlap, outside-shift, and blocked-time moves
+- reschedule API allows grey off-shift/admin full-day moves but rejects overlap and blocked-time moves
 - barber cross-barber reschedule is rejected
-- owner/admin cross-barber reschedule passes only through backend availability validation
+- owner/admin cross-barber reschedule passes only through backend staff-scheduling validation
 - calendar feed reflects created walk-ins and rescheduled bookings
+- booking edit service updates customer contact, notes, service snapshots, schedule, duration, and preserves source/status/customer tokens
+- one-day shift replacement diffs desired windows against recurring baselines and enforces own-shift permissions for barber users
 
 Phase 8 customer token flow tests:
 - booking management tokens are generated as opaque random values and stored only as SHA-256 hashes
@@ -987,4 +998,4 @@ Phase 6 hardening verification:
 
 ## Latest Session Summary
 
-Phase 12/13 launch cutover implementation is in progress. The admin calendar viewport cut-off bug was addressed with a bounded app shell, internal board scrolling, desktop split-pane drawers, sticky board headers, and a weekday 7:00 PM visual close boundary; Phase 13 now further upgrades the day board to use shift-based staff columns, unavailable shading, blocked overlays, current-time/preview affordances, mobile horizontal scrolling, and full-screen mobile appointment creation. The May 5 mobile rescue compacts the phone rail/topbar, moves filters into an overlay panel, preserves visible 44px day-board slots on 320px-class phones, keeps slot/topbar Add flows framed inside a full-height drawer, resets tablet/mobile boards to opening time when date/location/staff context changes, and de-crunches the desktop Add appointment split pane so opening the drawer no longer squeezes the calendar or form controls out of frame. Stale admin session/public booking tests now use deterministic fixture clocks, and the full suite is back to 215 passing tests. Staff-created walk-ins with customer contact now reuse the booking-confirmation and reminder infrastructure, while imported bookings stay non-notifying/non-reminded. Public Fresha booking fallbacks now point to the custom booking flow, Book Now CTAs open `/book` directly without a dropdown, and the marketing Services section is generated from the same 37-service launch catalog source as booking. Vercel routing config exists for production app routes, and Phase 13 Fresha import tooling has a dry-run/report/apply gate with imported bookings excluded from lifecycle notifications and reminder jobs. Vercel production is deployed for `leasidefades.com`, production PostgreSQL is connected through the Vercel Neon `leaside-fades-db` integration, migrations/seed have been applied, owner/Sam admin login has been verified, observed Fresha launch shifts have been entered as the initial production recurring schedule, and the May 1-June 30 Fresha appointment import has been applied as 53 `source = "imported"` production bookings. Vercel production has encrypted Twilio/Resend env vars, and controlled live SMS/email smoke has passed with approved test contacts. Production reminders use cron-job.org job `7551064` every five minutes against the secured `www.leasidefades.com` reminder endpoint after a May 1, 2026 `CRON_SECRET` rotation and redeploy; the 10:20 PM America/Toronto scheduled run succeeded with `200 OK`. Remaining launch items are operational: scheduler history monitoring, owner password handoff/rotation, owner verification of shifts/services/staff contacts, and final owner signoff.
+Phase 12/13 launch cutover implementation is in progress. The admin calendar now separates public availability from staff scheduling authority: public/customer-token flows keep strict business-hours, shifts, 30-minute notice, and 30-day-window rules, while authenticated staff can create, reschedule, drag, and edit appointments in any visible 15-minute full-day admin slot, including grey off-shift time, with no-overlap and blocked-time checks preserved. The day board shows active barbers assigned to the selected location, default-scrolls to 9:00 AM in a non-compressed scrollable grid, exposes booking edit fields for customer contact/notes/services/schedule, and provides a calendar-header `Edit shift` action backed by same-day shift override diffing. Josef has been added as an Eglinton-only launch barber with 11:00 AM-7:00 PM shifts, public booking shows him at Eglinton only, the launch staff sync actively enforces Josef Eglinton-only and Yogesh Millwood-only, and production staff/catalog data has been synced to 5 barbers and 37 services. Full Vitest is green at 32 files and 248 tests, production build/typecheck passes, and local Playwright verifies Josef booking visibility plus admin month navigation/date-cell/day-board hover behavior. Remaining launch items are operational: scheduler history monitoring, owner password handoff/rotation, owner verification of shifts/services/staff contacts, and final owner signoff.

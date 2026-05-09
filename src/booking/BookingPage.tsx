@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import lauraImage from "@/assets/barbers/booking-thumbnails/laura-thumb.jpg";
+import josefImage from "@/assets/barbers/booking-thumbnails/josef-thumb.jpg";
 import samImage from "@/assets/barbers/booking-thumbnails/sam-thumb.jpg";
 import shayonImage from "@/assets/barbers/booking-thumbnails/shayon-thumb.jpg";
 import yogeshImage from "@/assets/barbers/booking-thumbnails/yogesh-thumb.jpg";
@@ -89,6 +90,11 @@ const barberProfiles: Record<
         image: lauraImage,
         shortName: "Laura",
         role: "Barber & Stylist",
+    },
+    josef: {
+        image: josefImage,
+        shortName: "Josef",
+        role: "Barber",
     },
     "yogesh-kumar": {
         image: yogeshImage,

@@ -25,15 +25,16 @@ import {
 } from "lucide-react";
 
 import lauraThumb from "../assets/barbers/booking-thumbnails/laura-thumb.jpg";
+import josefThumb from "../assets/barbers/booking-thumbnails/josef-thumb.jpg";
 import samThumb from "../assets/barbers/booking-thumbnails/sam-thumb.jpg";
 import yogeshThumb from "../assets/barbers/booking-thumbnails/yogesh-thumb.jpg";
-import fawadPhoto from "../assets/barbers/fawad.png";
 import shayonPhoto from "../assets/barbers/shayon.png";
 import {
     ADMIN_AUTH_EXPIRED_EVENT,
     cancelAdminBooking,
     createManualBooking,
     createWalkInBooking,
+    editAdminBooking,
     fetchAdminAvailability,
     fetchAdminBookingDetail,
     fetchAdminBookings,
@@ -44,25 +45,26 @@ import {
     loginAdmin,
     logoutAdmin,
     markAdminBookingNoShow,
+    replaceAdminDayShift,
     rescheduleAdminBooking,
 } from "./api";
 import SchedulePage from "./SchedulePage";
 import {
-    addDaysToLocalDate,
     buildDashboardChartScale,
     buildBookingDragPayload,
     buildCalendarBoardRows,
     buildCalendarUnavailableRanges,
+    buildDateRangeForView,
     buildMonthDays,
     buildWeekDays,
     bookingFallsOutsideWorkingWindows,
-    calendarRangeFitsWorkingWindows,
     compactNotificationFailureMessage,
     formatAdminStatus,
     formatCompactDashboardCurrency,
     formatDashboardCurrency,
     formatLocalDateTime,
     formatLocalTime,
+    getCalendarInitialScrollTop,
     getBookingCardTone,
     getActiveNotificationFailures,
     getScheduledCalendarBarbers,
@@ -72,6 +74,8 @@ import {
     seriesHasDashboardData,
     summarizeNotificationHealth,
     todayLocalDate,
+    navigateCalendarDate,
+    type AdminCalendarView,
     type NotificationCenterFilter,
     type ScheduledCalendarBarber,
 } from "./admin-utils";
@@ -92,7 +96,7 @@ import type {
     SafeAdminUser,
 } from "./types";
 
-type AdminView = "day" | "week" | "month" | "list";
+type AdminView = AdminCalendarView;
 interface AppointmentPreview {
     barberId: string;
     locationId: string;
@@ -103,14 +107,15 @@ interface AppointmentPreview {
 type DrawerState =
     | { mode: "detail"; bookingId: string }
     | { mode: "add_appointment"; barberId: string; locationId: string; startTime: string }
+    | { mode: "edit_shift"; barberId: string; locationId: string; date: string }
     | null;
 
 const TIME_ZONE = "America/Toronto";
-const SLOT_HEIGHT = 44;
+const SLOT_HEIGHT = 22;
 const TIME_GUTTER_WIDTH = "clamp(66px, 7vw, 132px)";
 
 const defaultFilters = (date = todayLocalDate(), view: AdminView = "day"): AdminBookingFilters => ({
-    ...dateRangeForView(view, date),
+    ...buildDateRangeForView(view, date),
     locationId: "",
     barberId: "",
     status: "",
@@ -267,8 +272,10 @@ function AdminWorkspace({
     const [schedule, setSchedule] = useState<AdminSchedule | null>(null);
     const [dashboard, setDashboard] = useState<AdminDashboardSnapshot | null>(null);
     const [bookings, setBookings] = useState<AdminBookingSummary[]>([]);
-    const [filters, setFilters] = useState<AdminBookingFilters>(() => defaultFilters());
-    const [view, setView] = useState<AdminView>(path.startsWith("/admin/bookings") ? "list" : "day");
+    const initialView: AdminView = path.startsWith("/admin/bookings") ? "list" : "day";
+    const [calendarDate, setCalendarDate] = useState(() => todayLocalDate());
+    const [filters, setFilters] = useState<AdminBookingFilters>(() => defaultFilters(todayLocalDate(), initialView));
+    const [view, setView] = useState<AdminView>(initialView);
     const [drawer, setDrawer] = useState<DrawerState>(null);
     const [message, setMessage] = useState("");
     const [error, setError] = useState("");
@@ -283,7 +290,7 @@ function AdminWorkspace({
     const isShiftsPath = path.startsWith("/admin/shifts");
     const isBlockedTimePath = path.startsWith("/admin/blocked-time");
     const isSchedulePath = isShiftsPath || isBlockedTimePath;
-    const selectedDate = filters.from || todayLocalDate();
+    const selectedDate = calendarDate;
     const pageTitle = isDashboardPath ? "Dashboard" : isShiftsPath ? "Staff shifts" : isBlockedTimePath ? "Blocked time" : "Calendar";
 
     useEffect(() => {
@@ -310,13 +317,21 @@ function AdminWorkspace({
     useEffect(() => {
         if (path.startsWith("/admin/bookings")) {
             setView("list");
+            setFilters((current) => ({
+                ...current,
+                ...buildDateRangeForView("list", calendarDate),
+            }));
             setDrawer(null);
         } else if (path.startsWith("/admin/dashboard")) {
             setDrawer(null);
         } else if (path.startsWith("/admin/calendar") && view === "list") {
             setView("day");
+            setFilters((current) => ({
+                ...current,
+                ...buildDateRangeForView("day", calendarDate),
+            }));
         }
-    }, [path, view]);
+    }, [calendarDate, path, view]);
 
     useEffect(() => {
         if (isSchedulePath) {
@@ -433,9 +448,10 @@ function AdminWorkspace({
     }
 
     function applyDate(nextDate: string, nextView = view) {
+        setCalendarDate(nextDate);
         setFilters((current) => ({
             ...current,
-            ...dateRangeForView(nextView, nextDate),
+            ...buildDateRangeForView(nextView, nextDate),
         }));
     }
 
@@ -549,6 +565,7 @@ function AdminWorkspace({
                 <CalendarTopbar
                     title={pageTitle}
                     view={view}
+                    selectedDate={selectedDate}
                     filters={filters}
                     options={options}
                     user={user}
@@ -617,6 +634,9 @@ function AdminWorkspace({
                             onDragStart={setDraggingBookingId}
                             onDragEnd={() => setDraggingBookingId(null)}
                             onDropBooking={handleBookingDrop}
+                            onEditShift={(barberId) =>
+                                setDrawer({ mode: "edit_shift", barberId, locationId: activeLocationId, date: selectedDate })
+                            }
                         />
                     ) : (
                         <CalendarGrid
@@ -624,6 +644,11 @@ function AdminWorkspace({
                             bookingsByDate={groupedBookings}
                             view={view}
                             onOpen={(bookingId) => setDrawer({ mode: "detail", bookingId })}
+                            onDayOpen={(date) => {
+                                setView("day");
+                                applyDate(date, "day");
+                                if (!path.startsWith("/admin/calendar")) onNavigate("/admin/calendar");
+                            }}
                         />
                     )}
                 </section>
@@ -657,6 +682,23 @@ function AdminWorkspace({
                         setAppointmentPreview(null);
                         setDrawer(null);
                         setMessage("Appointment created.");
+                        await refreshBookings();
+                    }}
+                />
+            )}
+            {drawer?.mode === "edit_shift" && options && schedule && (
+                <EditShiftDrawer
+                    key={`${drawer.barberId}-${drawer.locationId}-${drawer.date}`}
+                    options={options}
+                    schedule={schedule}
+                    user={user}
+                    barberId={drawer.barberId}
+                    locationId={drawer.locationId}
+                    date={drawer.date}
+                    onClose={() => setDrawer(null)}
+                    onSaved={async () => {
+                        setDrawer(null);
+                        setMessage("Shift updated.");
                         await refreshBookings();
                     }}
                 />
@@ -729,6 +771,7 @@ function AdminRail({
 function CalendarTopbar({
     title,
     view,
+    selectedDate,
     filters,
     options,
     user,
@@ -745,6 +788,7 @@ function CalendarTopbar({
 }: {
     title: string;
     view: AdminView;
+    selectedDate: string;
     filters: AdminBookingFilters;
     options: AdminCalendarOptions | null;
     user: SafeAdminUser;
@@ -760,8 +804,6 @@ function CalendarTopbar({
     onNewBooking: () => void;
 }) {
     const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
-    const selectedDate = filters.from || todayLocalDate();
-    const step = view === "month" ? 30 : view === "week" || view === "list" ? 7 : 1;
     const locationId = options ? resolveDefaultLocationId(options, user, filters.locationId) : filters.locationId ?? "";
     const businessWindow = businessWindowForDate(selectedDate);
     const showCalendarControls = !isSchedulePath && !isDashboardPath;
@@ -840,10 +882,10 @@ function CalendarTopbar({
                     <button className="text-button !min-h-10 shrink-0 bg-white px-3 py-1.5 text-sm" onClick={() => onDate(todayLocalDate())} disabled={isSchedulePath}>
                         Today
                     </button>
-                    <button className="icon-button !min-h-10 !w-10 shrink-0" onClick={() => onDate(addDaysToLocalDate(selectedDate, -step))} title="Previous" disabled={isSchedulePath}>
+                    <button className="icon-button !min-h-10 !w-10 shrink-0" onClick={() => onDate(navigateCalendarDate(view, selectedDate, -1))} title="Previous" disabled={isSchedulePath}>
                         <ChevronLeft size={21} />
                     </button>
-                    <button className="icon-button !min-h-10 !w-10 shrink-0" onClick={() => onDate(addDaysToLocalDate(selectedDate, step))} title="Next" disabled={isSchedulePath}>
+                    <button className="icon-button !min-h-10 !w-10 shrink-0" onClick={() => onDate(navigateCalendarDate(view, selectedDate, 1))} title="Next" disabled={isSchedulePath}>
                         <ChevronRight size={21} />
                     </button>
                     <div className="min-w-0 flex-1 px-1">
@@ -937,10 +979,10 @@ function CalendarTopbar({
                     <button className="text-button min-h-11 bg-white px-4 py-2 text-base" onClick={() => onDate(todayLocalDate())} disabled={isSchedulePath}>
                         Today
                     </button>
-                    <button className="icon-button min-h-11 min-w-11" onClick={() => onDate(addDaysToLocalDate(selectedDate, -step))} title="Previous" disabled={isSchedulePath}>
+                    <button className="icon-button min-h-11 min-w-11" onClick={() => onDate(navigateCalendarDate(view, selectedDate, -1))} title="Previous" disabled={isSchedulePath}>
                         <ChevronLeft size={24} />
                     </button>
-                    <button className="icon-button min-h-11 min-w-11" onClick={() => onDate(addDaysToLocalDate(selectedDate, step))} title="Next" disabled={isSchedulePath}>
+                    <button className="icon-button min-h-11 min-w-11" onClick={() => onDate(navigateCalendarDate(view, selectedDate, 1))} title="Next" disabled={isSchedulePath}>
                         <ChevronRight size={24} />
                     </button>
                     <div className={desktopTitleBlockClass}>
@@ -1883,6 +1925,7 @@ function DayCalendarBoard({
     onDragStart,
     onDragEnd,
     onDropBooking,
+    onEditShift,
 }: {
     bookings: AdminBookingSummary[];
     schedule: AdminSchedule | null;
@@ -1904,6 +1947,7 @@ function DayCalendarBoard({
         targetLocationId: string,
         targetStartTime: string,
     ) => Promise<void>;
+    onEditShift: (barberId: string) => void;
 }) {
     const window = businessWindowForDate(selectedDate);
     const boardRows = buildCalendarBoardRows(window.start, window.end, 15);
@@ -1918,15 +1962,24 @@ function DayCalendarBoard({
     const offScheduleBookings = barberItems.flatMap((item) => item.offScheduleBookings);
     const currentLineStyle = selectedDate === todayLocalDate() ? currentTimeLineStyle(window) : null;
     const boardContextKey = `${selectedDate}:${locationId}:${window.start}-${window.end}:${barbers.map((barber) => barber.id).join(",")}`;
+    const boardReady = Boolean(schedule && !loading && barbers.length > 0);
 
     useEffect(() => {
         const scroll = boardScrollRef.current;
 
-        if (!scroll) return;
+        if (!scroll || !boardReady) return;
 
-        scroll.scrollTop = 0;
-        scroll.scrollLeft = 0;
-    }, [boardContextKey]);
+        const frame = globalThis.requestAnimationFrame(() => {
+            scroll.scrollTop = getCalendarInitialScrollTop({
+                dayStartTime: window.start,
+                targetTime: "09:00",
+                slotHeightPx: SLOT_HEIGHT,
+            });
+            scroll.scrollLeft = 0;
+        });
+
+        return () => globalThis.cancelAnimationFrame(frame);
+    }, [boardContextKey, boardReady, window.start]);
 
     if (!schedule || loading) {
         return (
@@ -1941,9 +1994,9 @@ function DayCalendarBoard({
         return (
             <section className="flex min-h-[320px] flex-col items-center justify-center rounded-md border border-[#d6ded6] bg-white p-5 text-center shadow-sm sm:min-h-[520px] sm:p-8">
                 <CalendarDays size={34} className="text-green" />
-                <p className="mt-4 text-xl font-black text-forest sm:text-2xl">No team members scheduled at this location today.</p>
+                <p className="mt-4 text-xl font-black text-forest sm:text-2xl">No active team members at this location.</p>
                 <p className="mt-2 max-w-lg text-base font-bold text-charcoal/55">
-                    Use the date or location controls above to check another day board.
+                    Use the location controls above to check another day board.
                 </p>
             </section>
         );
@@ -1974,17 +2027,38 @@ function DayCalendarBoard({
                 <div style={{ minWidth: `max(100%, ${boardMinWidth}px)` }}>
                     <div className="sticky top-0 z-10 grid border-b border-[#c5d0c5] bg-white" style={{ gridTemplateColumns }}>
                         <div className="sticky left-0 z-20 border-r border-[#d2dcd2] bg-white px-2 py-2 text-[0.68rem] font-black uppercase tracking-[0.12em] text-charcoal/55 sm:px-4 sm:py-4 sm:text-sm 2xl:px-5">Time</div>
-                        {barberItems.map((item) => (
-                            <div key={item.barber.id} className="flex min-w-0 items-center gap-2 border-r border-[#d2dcd2] px-2 py-2 last:border-r-0 sm:gap-3 sm:px-4 sm:py-3 2xl:gap-4 2xl:px-5">
-                                <BarberAvatar barber={item.barber} size={headerAvatarSize} />
-                                <span className="min-w-0">
-                                    <span className="block truncate text-sm font-black text-forest sm:text-lg 2xl:text-xl">{item.barber.displayName}</span>
-                                    <span className="block truncate text-[0.64rem] font-black uppercase tracking-[0.06em] text-charcoal/45 sm:text-xs sm:tracking-[0.08em]">
-                                        {item.workingWindows.map((range) => `${formatClockLabel(range.startTime)}-${formatClockLabel(range.endTime)}`).join(", ") || "Off schedule"}
+                        {barberItems.map((item) => {
+                            const canEditShift = user.role !== "barber" || user.barberId === item.barber.id;
+
+                            return (
+                                <div key={item.barber.id} className="flex min-w-0 items-center gap-2 border-r border-[#d2dcd2] px-2 py-2 last:border-r-0 sm:gap-3 sm:px-4 sm:py-3 2xl:gap-4 2xl:px-5">
+                                    <BarberAvatar barber={item.barber} size={headerAvatarSize} />
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block truncate text-sm font-black text-forest sm:text-lg 2xl:text-xl">{item.barber.displayName}</span>
+                                        <span className="block truncate text-[0.64rem] font-black uppercase tracking-[0.06em] text-charcoal/45 sm:text-xs sm:tracking-[0.08em]">
+                                            {item.workingWindows.map((range) => `${formatClockLabel(range.startTime)}-${formatClockLabel(range.endTime)}`).join(", ") || "Off schedule"}
+                                        </span>
                                     </span>
-                                </span>
-                            </div>
-                        ))}
+                                    {canEditShift && (
+                                        <details className="group/details relative shrink-0 [&_summary::-webkit-details-marker]:hidden">
+                                            <summary className="flex size-9 cursor-pointer list-none items-center justify-center rounded-md border border-[#d6ded6] bg-white text-forest shadow-sm transition hover:bg-[#f4f8f4]" title="Shift options">
+                                                <SlidersHorizontal size={16} />
+                                            </summary>
+                                            <div className="absolute right-0 top-11 z-30 min-w-40 rounded-md border border-[#d6ded6] bg-white p-1 shadow-lg">
+                                                <button
+                                                    type="button"
+                                                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-black text-forest hover:bg-[#eef5f1]"
+                                                    onClick={() => onEditShift(item.barber.id)}
+                                                >
+                                                    <Clock size={15} />
+                                                    Edit shift
+                                                </button>
+                                            </div>
+                                        </details>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
                     <div className="grid" style={{ gridTemplateColumns }}>
                         <div className="sticky left-0 z-[5] border-r border-[#c5d0c5] bg-white" style={{ height: boardHeight }}>
@@ -2026,29 +2100,24 @@ function DayCalendarBoard({
                                     {slots.map((slot) => {
                                         const startTime = localDateTimeToIso(selectedDate, slot);
                                         const slotEnd = addMinutesToIso(startTime, 30);
-                                        const slotEndClock = localClockFromIso(slotEnd);
-                                        const fitsWorkingWindow = calendarRangeFitsWorkingWindows(
-                                            { startTime: slot, endTime: slotEndClock },
-                                            item.workingWindows,
-                                        );
                                         const blocked = blockedTimesOverlapRange(schedule.blockedTimes, {
                                             barberId: item.barber.id,
                                             locationId,
                                             startTime,
                                             endTime: slotEnd,
                                         });
-                                        const canCreateHere = fitsWorkingWindow && !blocked;
+                                        const canCreateHere = !blocked;
 
                                         return (
                                             <button
                                                 key={`${item.barber.id}-${slot}`}
-                                                className={`group absolute left-0 right-0 z-[2] border-b ${calendarRowLineClasses(slot)} outline-none transition ${
+                                                className={`group absolute left-0 right-0 z-[4] border-b ${calendarRowLineClasses(slot)} outline-none transition ${
                                                     canCreateHere ? "hover:bg-[#dff6e7]/55 focus:bg-[#dff6e7]/70" : "cursor-not-allowed"
                                                 } ${
                                                     draggingBookingId && canCreateHere ? "hover:ring-2 hover:ring-inset hover:ring-green/45" : ""
                                                 }`}
                                                 style={{ top: timeTopFromClock(slot, window.start), height: SLOT_HEIGHT }}
-                                                disabled={!canCreateHere}
+                                                aria-disabled={!canCreateHere}
                                                 onClick={() => {
                                                     if (canCreateHere) onSlot(item.barber.id, startTime);
                                                 }}
@@ -2064,11 +2133,11 @@ function DayCalendarBoard({
                                                 }}
                                                 title={
                                                     canCreateHere
-                                                        ? `Create appointment ${formatLocalTime(startTime)}-${formatLocalTime(slotEnd)}`
-                                                        : `Unavailable ${formatLocalTime(startTime)}-${formatLocalTime(slotEnd)}`
+                                                        ? `Create staff appointment ${formatLocalTime(startTime)}-${formatLocalTime(slotEnd)}`
+                                                        : `Blocked ${formatLocalTime(startTime)}-${formatLocalTime(slotEnd)}`
                                                 }
                                             >
-                                                <span className="pointer-events-none absolute inset-x-2 top-1 hidden rounded border border-green/30 bg-mint/50 px-2 py-1 text-xs font-black text-forest opacity-0 transition group-hover:opacity-100 md:block">
+                                                <span className="pointer-events-none absolute inset-x-1 top-0.5 z-[7] hidden rounded border border-green/30 bg-mint/80 px-1.5 py-0.5 text-[11px] font-black leading-none text-forest opacity-0 shadow-sm transition group-hover:opacity-100 md:block">
                                                     {formatLocalTime(startTime)} - {formatLocalTime(slotEnd)}
                                                 </span>
                                             </button>
@@ -2077,7 +2146,7 @@ function DayCalendarBoard({
                                     {unavailableRanges.map((range) => (
                                         <div
                                             key={`${item.barber.id}-off-${range.startTime}-${range.endTime}`}
-                                            className="pointer-events-none absolute inset-x-0 z-[3] border-y border-[#c7cec7]/90 opacity-100"
+                                            className="pointer-events-none absolute inset-x-0 z-[1] border-y border-[#c7cec7]/90 opacity-100"
                                             style={{
                                                 ...rangeStyleFromClock(range.startTime, range.endTime, window.start, window.end),
                                                 backgroundColor: "rgba(235, 238, 235, 0.94)",
@@ -2089,7 +2158,7 @@ function DayCalendarBoard({
                                     {blockedOverlays.map((block) => (
                                         <div
                                             key={block.id}
-                                            className="pointer-events-none absolute inset-x-2 z-[4] rounded-md border border-[#a8aaa8] bg-[#e2e4e2]/95 px-3 py-2 text-sm font-black text-charcoal/70 shadow-sm"
+                                            className="pointer-events-none absolute inset-x-2 z-[3] rounded-md border border-[#a8aaa8] bg-[#e2e4e2]/95 px-3 py-2 text-sm font-black text-charcoal/70 shadow-sm"
                                             style={block.style}
                                         >
                                             {block.reason || "Blocked"}
@@ -2162,11 +2231,12 @@ function BookingCard({
 }) {
     const tone = getBookingCardTone(booking);
     const draggable = booking.status === "confirmed" && (user.role !== "barber" || booking.barberId === user.barberId);
-    const height = Math.max(54, Math.ceil(booking.totalDurationMinutes / 15) * SLOT_HEIGHT - 8);
+    const height = Math.max(22, Math.ceil(booking.totalDurationMinutes / 15) * SLOT_HEIGHT - 2);
+    const compact = height < 34;
 
     return (
         <button
-            className={`absolute z-[6] overflow-hidden rounded-md border-l-[5px] px-3 py-2 text-left text-sm shadow-sm transition hover:z-[7] hover:shadow-md ${bookingToneClasses(tone)} ${
+            className={`absolute z-[6] overflow-hidden rounded-md border-l-[3px] px-2 py-1 text-left text-[11px] leading-tight shadow-sm transition hover:z-[7] hover:shadow-md ${bookingToneClasses(tone)} ${
                 pending ? "opacity-60" : ""
             } ${offSchedule ? "ring-2 ring-amber-400" : ""}`}
             style={{
@@ -2187,16 +2257,24 @@ function BookingCard({
             onDragEnd={onDragEnd}
             title={draggable ? "Drag to reschedule" : "Open booking"}
         >
-            <span className="block text-xs font-black">{formatLocalTime(booking.startTime)}</span>
-            <span className="block truncate text-base font-black leading-tight">{booking.customerName}</span>
-            <span className="block truncate text-xs opacity-75">{booking.services.join(", ")}</span>
-            <span className="mt-1 inline-flex rounded-full bg-white/65 px-2 py-0.5 text-[0.68rem] font-black uppercase tracking-[0.08em]">
-                {booking.source === "walk_in" ? "Walk-in" : formatAdminStatus(booking.status)}
+            <span className="block truncate font-black leading-[14px]">
+                {formatLocalTime(booking.startTime)} {booking.customerName}
             </span>
-            {offSchedule && (
-                <span className="ml-1 mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[0.68rem] font-black uppercase tracking-[0.08em] text-amber-900">
-                    Outside hours
-                </span>
+            {!compact && (
+                <>
+                    <span className="block truncate text-[10px] opacity-75">{booking.services.join(", ")}</span>
+                    <span className="mt-0.5 inline-flex rounded-full bg-white/65 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.06em]">
+                        {booking.source === "walk_in" ? "Walk-in" : formatAdminStatus(booking.status)}
+                    </span>
+                    {offSchedule && (
+                        <span className="ml-1 mt-0.5 inline-flex rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.06em] text-amber-900">
+                            Outside hours
+                        </span>
+                    )}
+                </>
+            )}
+            {compact && offSchedule && (
+                <span className="sr-only">Outside hours</span>
             )}
         </button>
     );
@@ -2317,6 +2395,7 @@ function BookingDetailBody({
     compact?: boolean;
 }) {
     const [error, setError] = useState("");
+    const [showEdit, setShowEdit] = useState(false);
     const [showReschedule, setShowReschedule] = useState(false);
     const canMutate = booking.status === "confirmed";
     const canNoShow = canMutate && new Date(booking.startTime).getTime() <= Date.now();
@@ -2388,7 +2467,11 @@ function BookingDetailBody({
                 </div>
             )}
             {canMutate && (
-                <div className="grid gap-2 sm:grid-cols-3">
+                <div className="grid gap-2 sm:grid-cols-4">
+                    <button className="icon-text-button justify-center" onClick={() => setShowEdit((value) => !value)}>
+                        <ClipboardList size={16} />
+                        Edit
+                    </button>
                     <button className="icon-text-button justify-center" onClick={() => setShowReschedule((value) => !value)}>
                         <Clock size={16} />
                         Reschedule
@@ -2403,6 +2486,18 @@ function BookingDetailBody({
                     </button>
                 </div>
             )}
+            {showEdit && options && (
+                <BookingEditForm
+                    booking={booking}
+                    options={options}
+                    user={user}
+                    onDone={async () => {
+                        setShowEdit(false);
+                        await refreshDetail();
+                        await onChanged("Booking updated.");
+                    }}
+                />
+            )}
             {showReschedule && options && (
                 <RescheduleForm
                     booking={booking}
@@ -2416,6 +2511,129 @@ function BookingDetailBody({
                 />
             )}
         </div>
+    );
+}
+
+function BookingEditForm({
+    booking,
+    options,
+    user,
+    onDone,
+}: {
+    booking: AdminBookingDetail;
+    options: AdminCalendarOptions;
+    user: SafeAdminUser;
+    onDone: () => Promise<void>;
+}) {
+    const initialParts = localPartsFromIso(booking.startTime);
+    const [locationId, setLocationId] = useState(booking.locationId);
+    const [barberId, setBarberId] = useState(booking.barberId);
+    const [serviceIds, setServiceIds] = useState<string[]>(booking.serviceIds);
+    const [date, setDate] = useState(initialParts.date);
+    const [time, setTime] = useState(initialParts.time);
+    const [customerName, setCustomerName] = useState(booking.customerName);
+    const [phone, setPhone] = useState(booking.customerPhone ?? "");
+    const [email, setEmail] = useState(booking.customerEmail ?? "");
+    const [customerNotes, setCustomerNotes] = useState(booking.customerNotes ?? "");
+    const [internalNotes, setInternalNotes] = useState(booking.internalNotes ?? "");
+    const [error, setError] = useState("");
+    const [submitting, setSubmitting] = useState(false);
+    const selectableBarbers = getVisibleBarbers(options, user, locationId);
+    const selectedServices = options.services.filter((service) => serviceIds.includes(service.id));
+    const totalDurationMinutes = selectedServices.reduce((total, service) => total + service.durationMinutes, 0);
+    const startTime = localDateTimeToIso(date, time);
+    const endTime = addMinutesToIso(startTime, totalDurationMinutes || booking.totalDurationMinutes);
+    const canSubmit = Boolean(locationId && barberId && serviceIds.length > 0 && customerName.trim());
+
+    useEffect(() => {
+        if (user.role === "barber" && user.barberId) {
+            setBarberId(user.barberId);
+            return;
+        }
+
+        if (!selectableBarbers.some((barber) => barber.id === barberId)) {
+            setBarberId(selectableBarbers[0]?.id ?? "");
+        }
+    }, [barberId, selectableBarbers, user]);
+
+    async function submit(event: FormEvent) {
+        event.preventDefault();
+        if (!canSubmit) {
+            setError("Choose a barber, service, date, time, and customer name first.");
+            return;
+        }
+
+        setSubmitting(true);
+        setError("");
+
+        try {
+            await editAdminBooking(booking.id, {
+                locationId,
+                barberId,
+                startTime,
+                serviceIds,
+                customer: {
+                    name: customerName,
+                    phone,
+                    email,
+                    notes: customerNotes,
+                },
+                internalNotes,
+            });
+            await onDone();
+        } catch (error) {
+            setError(error instanceof Error ? error.message : "Booking update failed.");
+        } finally {
+            setSubmitting(false);
+        }
+    }
+
+    return (
+        <form onSubmit={submit} className="space-y-4 rounded-md border border-forest/10 bg-[#f8fbf8] p-4">
+            {error && <Notice tone="error" message={error} onClear={() => setError("")} />}
+            <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(12rem,1fr))]">
+                <SummaryMetric label="Duration" value={`${totalDurationMinutes || booking.totalDurationMinutes} min`} />
+                <SummaryMetric label="Price" value={formatServiceSelectionPrice(selectedServices)} />
+                <SummaryMetric label="Time" value={`${formatLocalTime(startTime)} - ${formatLocalTime(endTime)}`} />
+            </div>
+            <Field label="Customer name">
+                <input className="input" value={customerName} onChange={(event) => setCustomerName(event.target.value)} required />
+            </Field>
+            <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(13rem,1fr))]">
+                <Field label="Phone">
+                    <input className="input" value={phone} onChange={(event) => setPhone(event.target.value)} />
+                </Field>
+                <Field label="Email">
+                    <input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+                </Field>
+                <Field label="Location">
+                    <LocationSelect value={locationId} options={options.locations} onChange={setLocationId} />
+                </Field>
+                <Field label="Barber">
+                    <BarberSelect value={barberId} options={selectableBarbers} user={user} onChange={setBarberId} />
+                </Field>
+                <Field label="Date">
+                    <input className="input" type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
+                </Field>
+                <Field label="Start time">
+                    <input className="input" type="time" step={900} value={time} onChange={(event) => setTime(event.target.value)} required />
+                </Field>
+            </div>
+            <Field label="Services">
+                <ServicePicker services={options.services} selected={serviceIds} onChange={setServiceIds} />
+            </Field>
+            <div className="grid gap-3 md:grid-cols-2">
+                <Field label="Customer notes">
+                    <textarea className="input min-h-20" value={customerNotes} onChange={(event) => setCustomerNotes(event.target.value)} />
+                </Field>
+                <Field label="Internal notes">
+                    <textarea className="input min-h-20" value={internalNotes} onChange={(event) => setInternalNotes(event.target.value)} />
+                </Field>
+            </div>
+            <button className="primary-button" type="submit" disabled={submitting || !canSubmit}>
+                {submitting ? "Saving" : "Save changes"}
+            </button>
+        </form>
     );
 }
 
@@ -2465,8 +2683,9 @@ function AddAppointmentDrawer({
         Boolean(selectedSlot) &&
         selectedSlot?.barberId === barberId &&
         selectedSlot?.startTime === requestedStartTime;
-    const previewStartTime = exactSlotAvailable ? selectedSlot?.startTime ?? requestedStartTime : requestedStartTime;
+    const previewStartTime = requestedStartTime;
     const previewEndTime = addMinutesToIso(previewStartTime, totalDurationMinutes || 30);
+    const canSubmit = Boolean(locationId && barberId && serviceIds.length > 0 && customerName.trim());
 
     useEffect(() => {
         if (user.role === "barber" && user.barberId) {
@@ -2540,8 +2759,8 @@ function AddAppointmentDrawer({
 
     async function handleSubmit(event: FormEvent) {
         event.preventDefault();
-        if (!selectedSlot || !exactSlotAvailable) {
-            setError("Choose an available time for this barber first.");
+        if (!canSubmit) {
+            setError("Choose a barber, service, date, time, and customer name first.");
             return;
         }
 
@@ -2553,7 +2772,7 @@ function AddAppointmentDrawer({
                 locationId,
                 barberId,
                 serviceIds,
-                startTime: selectedSlot.startTime,
+                startTime: requestedStartTime,
                 customer: {
                     name: customerName,
                     phone: phone.trim() || undefined,
@@ -2646,7 +2865,7 @@ function AddAppointmentDrawer({
                         </div>
                         {!loadingSlots && availability && !exactSlotAvailable && (
                             <p className="rounded-md bg-[#fff7ed] px-3 py-2 text-sm font-bold text-[#9a3412]">
-                                The selected start time is not available for this barber and service length. Pick one of the available times below.
+                                This time is not available online, but staff can book it if it is not blocked and does not overlap another appointment.
                             </p>
                         )}
                         <div className="max-h-80 overflow-y-auto pr-1">
@@ -2674,8 +2893,169 @@ function AddAppointmentDrawer({
                     </Field>
                 </div>
                 <div data-admin-add-drawer-footer className="shrink-0 border-t border-[#d4ddd4] bg-white px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-12px_24px_rgba(16,56,38,0.08)] sm:px-7 sm:py-5">
-                    <button className="primary-button w-full" type="submit" disabled={submitting || !selectedSlot || !exactSlotAvailable}>
+                    <button className="primary-button w-full" type="submit" disabled={submitting || !canSubmit}>
                         {submitting ? "Creating" : bookingSource === "walk_in" ? "Create walk-in" : "Create appointment"}
+                    </button>
+                </div>
+            </form>
+        </aside>
+    );
+}
+
+function EditShiftDrawer({
+    options,
+    schedule,
+    user,
+    barberId,
+    locationId,
+    date,
+    onClose,
+    onSaved,
+}: {
+    options: AdminCalendarOptions;
+    schedule: AdminSchedule;
+    user: SafeAdminUser;
+    barberId: string;
+    locationId: string;
+    date: string;
+    onClose: () => void;
+    onSaved: () => Promise<void>;
+}) {
+    const initialWindows = useMemo(() => {
+        const item = getScheduledCalendarBarbers({
+            options,
+            schedule,
+            user,
+            selectedDate: date,
+            locationId,
+            requestedBarberId: barberId,
+            bookings: [],
+            businessStartTime: "00:00",
+            businessEndTime: "24:00",
+        })[0];
+
+        return item?.workingWindows.map((window) => ({ startTime: window.startTime, endTime: window.endTime })) ?? [];
+    }, [barberId, date, locationId, options, schedule, user]);
+    const [windows, setWindows] = useState<Array<{ startTime: string; endTime: string }>>(initialWindows);
+    const [error, setError] = useState("");
+    const [submitting, setSubmitting] = useState(false);
+    const barber = options.barbers.find((candidate) => candidate.id === barberId);
+    const location = options.locations.find((candidate) => candidate.id === locationId);
+    const canEdit = user.role !== "barber" || user.barberId === barberId;
+    const totalMinutes = windows.reduce((total, window) => total + Math.max(0, clockToMinutes(window.endTime) - clockToMinutes(window.startTime)), 0);
+
+    function updateWindow(index: number, field: "startTime" | "endTime", value: string) {
+        setWindows((current) =>
+            current.map((window, candidateIndex) =>
+                candidateIndex === index
+                    ? {
+                        ...window,
+                        [field]: value,
+                    }
+                    : window,
+            ),
+        );
+    }
+
+    async function submit(event: FormEvent) {
+        event.preventDefault();
+        if (!canEdit) {
+            setError("You can only edit your own shift.");
+            return;
+        }
+
+        setSubmitting(true);
+        setError("");
+
+        try {
+            await replaceAdminDayShift({ barberId, locationId, date, windows });
+            await onSaved();
+        } catch (error) {
+            setError(error instanceof Error ? error.message : "Shift update failed.");
+        } finally {
+            setSubmitting(false);
+        }
+    }
+
+    return (
+        <aside className="fixed inset-0 z-50 flex h-dvh max-h-dvh w-full min-w-0 flex-col overflow-hidden bg-white shadow-2xl xl:static xl:inset-auto xl:z-auto xl:h-[100dvh] xl:max-w-none xl:border-l xl:border-[#cfdacf] xl:shadow-none">
+            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[#cfdacf] px-4 py-3 sm:px-7 sm:py-6 xl:px-5 xl:py-4 2xl:px-6 2xl:py-5">
+                <div className="min-w-0">
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-charcoal/50 sm:text-sm">One-day shift</p>
+                    <h2 className="truncate text-2xl font-black text-forest sm:text-4xl xl:text-3xl 2xl:text-4xl">Edit shift</h2>
+                    <p className="mt-1 truncate text-sm font-bold text-charcoal/55">
+                        {barber?.displayName ?? "Barber"} - {location?.name ?? "Location"} - {date}
+                    </p>
+                </div>
+                <button className="icon-button !min-h-10 !w-10 sm:!min-h-14 sm:!w-14" onClick={onClose} title="Close shift drawer">
+                    <X size={24} />
+                </button>
+            </div>
+            <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-7 sm:py-6 xl:px-5 xl:py-5 2xl:px-6">
+                    {error && <Notice tone="error" message={error} onClear={() => setError("")} />}
+                    <div className="rounded-md border border-[#cddbcc] bg-[#f8fbf8] p-3 sm:p-4">
+                        <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(12rem,1fr))]">
+                            <SummaryMetric label="Windows" value={`${windows.length}`} />
+                            <SummaryMetric label="Shift duration" value={`${Math.floor(totalMinutes / 60)} hr ${totalMinutes % 60} min`} />
+                        </div>
+                    </div>
+                    <div className="space-y-3">
+                        {windows.map((window, index) => (
+                            <div key={index} className="grid items-end gap-3 rounded-md border border-[#d8e1d8] bg-[#f8fbf8] p-3 [grid-template-columns:1fr_1fr_auto]">
+                                <Field label="Start time">
+                                    <input
+                                        className="input"
+                                        type="time"
+                                        step={900}
+                                        value={window.startTime}
+                                        onChange={(event) => updateWindow(index, "startTime", event.target.value)}
+                                        required
+                                    />
+                                </Field>
+                                <Field label="End time">
+                                    <input
+                                        className="input"
+                                        type="time"
+                                        step={900}
+                                        value={window.endTime}
+                                        onChange={(event) => updateWindow(index, "endTime", event.target.value)}
+                                        required
+                                    />
+                                </Field>
+                                <button
+                                    type="button"
+                                    className="icon-button mb-0.5 !min-h-12 !w-12"
+                                    onClick={() => setWindows((current) => current.filter((_, candidateIndex) => candidateIndex !== index))}
+                                    title="Remove shift window"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+                        ))}
+                        {windows.length === 0 && (
+                            <p className="rounded-md border border-dashed border-[#c8d6c8] bg-[#f8fbf8] p-4 text-sm font-bold text-charcoal/55">
+                                No shift windows for this day.
+                            </p>
+                        )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            className="icon-text-button"
+                            onClick={() => setWindows((current) => [...current, { startTime: "10:00", endTime: "19:00" }])}
+                        >
+                            <CalendarPlus size={16} />
+                            Add shift
+                        </button>
+                        <button type="button" className="text-button px-3 py-2" onClick={() => setWindows([])}>
+                            Clear day
+                        </button>
+                    </div>
+                </div>
+                <div className="shrink-0 border-t border-[#d4ddd4] bg-white px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-12px_24px_rgba(16,56,38,0.08)] sm:px-7 sm:py-5">
+                    <button className="primary-button w-full" type="submit" disabled={submitting || !canEdit}>
+                        {submitting ? "Saving" : "Save shift"}
                     </button>
                 </div>
             </form>
@@ -2697,29 +3077,43 @@ function CalendarGrid({
     bookingsByDate,
     view,
     onOpen,
+    onDayOpen,
 }: {
     days: ReturnType<typeof buildWeekDays>;
     bookingsByDate: Record<string, AdminBookingSummary[]>;
     view: Exclude<AdminView, "day" | "list">;
     onOpen: (bookingId: string) => void;
+    onDayOpen: (date: string) => void;
 }) {
     return (
         <section className="grid gap-px overflow-hidden rounded-md border border-forest/10 bg-forest/10 md:grid-cols-7">
             {days.map((day) => (
                 <div
                     key={day.date}
-                    className={`min-h-36 bg-white p-3 ${day.inCurrentMonth ? "" : "opacity-60"}`}
+                    className={`group relative min-h-36 overflow-hidden bg-white p-3 ${day.inCurrentMonth ? "" : "opacity-60"}`}
                 >
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                        <p className="text-sm font-black text-forest">{day.label}</p>
+                    <button
+                        type="button"
+                        className="absolute inset-0 z-0 bg-white transition hover:bg-[#f8fbf8] focus:bg-[#f8fbf8] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-green/35"
+                        onClick={() => onDayOpen(day.date)}
+                        title={`Open ${day.label}`}
+                        aria-label={`Open ${day.label}`}
+                    />
+                    <div className="pointer-events-none relative z-10 mb-2 flex items-center justify-between gap-2">
+                        <span className="rounded-md px-1 py-0.5 text-left text-sm font-black text-forest transition group-hover:bg-[#eef5f1]">
+                            {day.label}
+                        </span>
                         {day.isToday && <span className="rounded-full bg-green px-2 py-0.5 text-xs font-bold text-forest">Today</span>}
                     </div>
-                    <div className={view === "month" ? "space-y-1" : "space-y-2"}>
+                    <div className={`relative z-10 ${view === "month" ? "space-y-1" : "space-y-2"}`}>
                         {(bookingsByDate[day.date] ?? []).map((booking) => (
                             <button
                                 key={booking.id}
                                 className={`w-full rounded-md border-l-4 p-2 text-left text-sm transition hover:shadow-sm ${bookingToneClasses(getBookingCardTone(booking))}`}
-                                onClick={() => onOpen(booking.id)}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    onOpen(booking.id);
+                                }}
                             >
                                 <span className="block font-black">{formatLocalTime(booking.startTime)}</span>
                                 <span className="block truncate">{booking.customerName}</span>
@@ -2916,12 +3310,15 @@ function RescheduleForm({
     user: SafeAdminUser;
     onDone: () => Promise<void>;
 }) {
+    const initialParts = localPartsFromIso(booking.startTime);
     const [locationId, setLocationId] = useState(booking.locationId);
     const [barberId, setBarberId] = useState(booking.barberId);
-    const [date, setDate] = useState(localDateFromIso(booking.startTime));
+    const [date, setDate] = useState(initialParts.date);
+    const [time, setTime] = useState(initialParts.time);
     const [availability, setAvailability] = useState<AdminAvailability | null>(null);
     const [selectedSlot, setSelectedSlot] = useState<AdminSlot | null>(null);
     const [error, setError] = useState("");
+    const startTime = localDateTimeToIso(date, time);
 
     async function loadSlots() {
         setError("");
@@ -2935,16 +3332,12 @@ function RescheduleForm({
 
     async function submit(event: FormEvent) {
         event.preventDefault();
-        if (!selectedSlot) {
-            setError("Choose an available time first.");
-            return;
-        }
 
         try {
             await rescheduleAdminBooking(booking.id, {
                 locationId,
                 barberId,
-                startTime: selectedSlot.startTime,
+                startTime,
             });
             await onDone();
         } catch (error) {
@@ -2952,10 +3345,19 @@ function RescheduleForm({
         }
     }
 
+    function handleSlotSelect(slot: AdminSlot) {
+        setSelectedSlot(slot);
+        setLocationId(slot.locationId);
+        setBarberId(slot.barberId);
+        const parts = localPartsFromIso(slot.startTime);
+        setDate(parts.date);
+        setTime(parts.time);
+    }
+
     return (
         <form onSubmit={submit} className="space-y-4 rounded-md border border-forest/10 bg-[#f3f8f4] p-4">
             {error && <Notice tone="error" message={error} onClear={() => setError("")} />}
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-4">
                 <Field label="Location">
                     <LocationSelect value={locationId} options={options.locations} onChange={setLocationId} />
                 </Field>
@@ -2964,6 +3366,9 @@ function RescheduleForm({
                 </Field>
                 <Field label="Date">
                     <input className="input" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+                </Field>
+                <Field label="Start time">
+                    <input className="input" type="time" step={900} value={time} onChange={(event) => setTime(event.target.value)} />
                 </Field>
             </div>
             <button type="button" className="icon-text-button" onClick={loadSlots}>
@@ -2974,7 +3379,7 @@ function RescheduleForm({
                 availability={availability}
                 selectedSlot={selectedSlot}
                 barbers={options.barbers}
-                onSelect={setSelectedSlot}
+                onSelect={handleSlotSelect}
             />
             <button className="primary-button" type="submit">
                 Reschedule booking
@@ -3342,20 +3747,6 @@ function getVisibleBarbers(
     return barbers;
 }
 
-function dateRangeForView(view: AdminView, date: string) {
-    if (view === "week" || view === "list") {
-        const days = buildWeekDays(date);
-        return { from: days[0]?.date ?? date, to: days[days.length - 1]?.date ?? date };
-    }
-
-    if (view === "month") {
-        const days = buildMonthDays(date);
-        return { from: days[0]?.date ?? date, to: days[days.length - 1]?.date ?? date };
-    }
-
-    return { from: date, to: date };
-}
-
 function formatDateTitle(date: string, view: AdminView) {
     if (view === "month") {
         return new Intl.DateTimeFormat("en-US", {
@@ -3586,9 +3977,8 @@ function blockedAppliesToCell(blockedTime: AdminBlockedTime, barberId: string, l
     return blockedTime.barberId === barberId && (!blockedTime.locationId || blockedTime.locationId === locationId);
 }
 
-function businessWindowForDate(date: string) {
-    const day = parseLocalDate(date).getUTCDay();
-    return day === 0 ? { start: "10:00", end: "17:00" } : { start: "10:00", end: "19:00" };
+function businessWindowForDate(_date: string) {
+    return { start: "00:00", end: "24:00" };
 }
 
 function currentSlotContains(slot: string) {
@@ -3604,17 +3994,18 @@ function nextQuarterClock() {
 }
 
 function defaultAppointmentClockForDate(date: string) {
-    const window = businessWindowForDate(date);
-    const windowStart = clockToMinutes(window.start);
-    const windowEnd = clockToMinutes(window.end);
+    const defaultStart = "10:00";
+    const defaultEnd = "19:00";
+    const windowStart = clockToMinutes(defaultStart);
+    const windowEnd = clockToMinutes(defaultEnd);
 
     if (date !== todayLocalDate()) {
-        return window.start;
+        return defaultStart;
     }
 
     const nextQuarter = clockToMinutes(nextQuarterClock());
     if (nextQuarter < windowStart || nextQuarter >= windowEnd) {
-        return window.start;
+        return defaultStart;
     }
 
     return minutesToClock(nextQuarter);
@@ -3823,7 +4214,7 @@ const barberPhotosBySlug: Record<string, string> = {
     "yogesh-kumar": yogeshThumb,
     "shayan-hussain": shayonPhoto,
     "shayon-hussain": shayonPhoto,
-    fawad: fawadPhoto,
+    josef: josefThumb,
 };
 
 function barberPhotoUrl(barber: Pick<AdminBarberOption, "displayName" | "slug">) {

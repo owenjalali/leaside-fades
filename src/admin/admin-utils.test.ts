@@ -10,6 +10,7 @@ import {
     buildCalendarBoardRows,
     buildCalendarTimeSlots,
     buildCalendarWorkingWindows,
+    buildDateRangeForView,
     buildMonthDays,
     buildWeekDays,
     buildWeeklyScheduleDraft,
@@ -24,12 +25,14 @@ import {
     compactNotificationFailureMessage,
     getBookingCardTone,
     getActiveNotificationFailures,
+    getCalendarInitialScrollTop,
     getScheduledCalendarBarbers,
     formatScheduleWindow,
     getWeeklyCopyTargetDayOptions,
     groupBookingsByLocalDate,
     groupShiftsByBarberAndWeekday,
     mobileAdminCalendarLayoutBudget,
+    navigateCalendarDate,
     notificationFilterMatches,
     seriesHasDashboardData,
     summarizeNotificationHealth,
@@ -119,6 +122,20 @@ describe("Phase 6 admin UI utilities", () => {
         expect(days[days.length - 1]?.date).toBe("2026-05-02");
         expect(days).toHaveLength(35);
         expect(days.filter((day) => day.inCurrentMonth)).toHaveLength(30);
+    });
+
+    test("keeps month fetch ranges separate from the selected month anchor", () => {
+        expect(buildDateRangeForView("month", "2026-05-08")).toEqual({
+            from: "2026-04-26",
+            to: "2026-06-06",
+        });
+        expect(buildMonthDays("2026-05-08").filter((day) => day.inCurrentMonth)).toHaveLength(31);
+    });
+
+    test("navigates month view by calendar month instead of fixed day counts", () => {
+        expect(navigateCalendarDate("month", "2026-05-08", 1)).toBe("2026-06-08");
+        expect(navigateCalendarDate("month", "2026-05-08", -1)).toBe("2026-04-08");
+        expect(navigateCalendarDate("month", "2026-03-31", -1)).toBe("2026-02-28");
     });
 
     test("serializes only active booking filters", () => {
@@ -462,6 +479,11 @@ describe("Phase 7.5 calendar-first UI utilities", () => {
         expect(rows.bookableSlots).not.toContain("19:00");
     });
 
+    test("calculates the default day-board scroll position from the full admin day to 9 AM", () => {
+        expect(getCalendarInitialScrollTop({ dayStartTime: "00:00", targetTime: "09:00", slotHeightPx: 22 })).toBe(792);
+        expect(getCalendarInitialScrollTop({ dayStartTime: "10:00", targetTime: "09:00", slotHeightPx: 22 })).toBe(0);
+    });
+
     test("assigns operational booking card tones by status and walk-in source", () => {
         expect(getBookingCardTone({ ...bookingA, status: "confirmed", source: "public" })).toBe("confirmed");
         expect(getBookingCardTone({ ...bookingA, status: "confirmed", source: "walk_in" })).toBe("walk_in");
@@ -586,16 +608,19 @@ const saturdaySchedule: AdminSchedule = {
 };
 
 describe("Phase 13 admin calendar schedule visibility utilities", () => {
-    test("shows day columns only for staff scheduled at the selected location and date", () => {
-        expect(
-            getScheduledCalendarBarbers({
-                options: calendarOptions,
-                schedule: saturdaySchedule,
-                user: ownerUser,
-                selectedDate: "2026-05-02",
-                locationId: "eglington",
-            }).map((item) => item.barber.displayName),
-        ).toEqual(["Sam To"]);
+    test("shows all active location staff as day columns even when a barber has no shift", () => {
+        const eglintonColumns = getScheduledCalendarBarbers({
+            options: calendarOptions,
+            schedule: saturdaySchedule,
+            user: ownerUser,
+            selectedDate: "2026-05-02",
+            locationId: "eglington",
+        });
+
+        expect(eglintonColumns.map((item) => item.barber.displayName)).toEqual(["Sam To", "Laura Nguyen"]);
+        expect(eglintonColumns.find((item) => item.barber.id === "sam")?.scheduled).toBe(true);
+        expect(eglintonColumns.find((item) => item.barber.id === "laura")?.scheduled).toBe(false);
+        expect(eglintonColumns.find((item) => item.barber.id === "laura")?.workingWindows).toEqual([]);
 
         const millwoodColumns = getScheduledCalendarBarbers({
             options: calendarOptions,

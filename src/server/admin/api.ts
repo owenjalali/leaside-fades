@@ -25,6 +25,7 @@ import {
     cancelAdminBooking,
     createAdminManualBooking,
     createAdminWalkInBooking,
+    editAdminBooking,
     getAdminAvailability,
     getAdminBookingDetail,
     getAdminCalendarOptions,
@@ -45,6 +46,7 @@ import {
     deleteAdminBlockedTime,
     deleteAdminShiftOverride,
     listAdminSchedule,
+    replaceAdminDayShift,
     updateAdminBlockedTime,
     updateAdminShift,
     updateAdminShiftOverride,
@@ -218,6 +220,13 @@ export function registerAdminApiRoutes(app: ExpressLikeApp, dependencies: AdminA
     );
 
     app.post(
+        "/api/admin/bookings/:bookingId/edit",
+        asyncRoute((request, response) =>
+            handleAdminEditBooking(request, response, undefined, dependencies),
+        ),
+    );
+
+    app.post(
         "/api/admin/bookings/:bookingId/reschedule",
         asyncRoute((request, response) =>
             handleAdminRescheduleBooking(request, response, undefined, dependencies),
@@ -270,6 +279,13 @@ export function registerAdminApiRoutes(app: ExpressLikeApp, dependencies: AdminA
         "/api/admin/schedule/shift-overrides/:overrideId/delete",
         asyncRoute((request, response) =>
             handleAdminDeleteShiftOverride(request, response, undefined, dependencies),
+        ),
+    );
+
+    app.post(
+        "/api/admin/schedule/day-shifts",
+        asyncRoute((request, response) =>
+            handleAdminReplaceDayShift(request, response, undefined, dependencies),
         ),
     );
 
@@ -662,6 +678,30 @@ export async function handleAdminNoShowBooking(
     }
 }
 
+export async function handleAdminEditBooking(
+    request: any,
+    response: any,
+    next?: any,
+    dependencies: AdminApiDependencies = {},
+) {
+    try {
+        assertAdminMutationOrigin(request, dependencies);
+        const session = await requireAdminSession(request, response, dependencies);
+        const booking = await editAdminBooking(
+            session.user,
+            request.params?.bookingId,
+            request.body,
+            dependencies.bookingsRepository ?? createDrizzleAdminBookingsRepository(),
+            { now: dependencies.now?.() ?? new Date() },
+        );
+
+        response.set("Cache-Control", "no-store");
+        response.status(200).json({ booking });
+    } catch (error) {
+        sendAdminApiError(error, response, next);
+    }
+}
+
 export async function handleAdminRescheduleBooking(
     request: any,
     response: any,
@@ -843,6 +883,29 @@ export async function handleAdminDeleteShiftOverride(
 
         response.set("Cache-Control", "no-store");
         response.status(200).json(result);
+    } catch (error) {
+        sendAdminApiError(error, response, next);
+    }
+}
+
+export async function handleAdminReplaceDayShift(
+    request: any,
+    response: any,
+    next?: any,
+    dependencies: AdminApiDependencies = {},
+) {
+    try {
+        assertAdminMutationOrigin(request, dependencies);
+        const session = await requireAdminSession(request, response, dependencies);
+        const dayShift = await replaceAdminDayShift(
+            session.user,
+            request.body,
+            dependencies.scheduleRepository ?? createDrizzleAdminScheduleRepository(),
+            { now: dependencies.now?.() ?? new Date() },
+        );
+
+        response.set("Cache-Control", "no-store");
+        response.status(200).json({ dayShift });
     } catch (error) {
         sendAdminApiError(error, response, next);
     }

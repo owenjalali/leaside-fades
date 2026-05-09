@@ -12,7 +12,7 @@ describe("local dev sample shifts", () => {
             effectiveTo: "2026-05-27",
         });
 
-        expect(shifts).toHaveLength(28);
+        expect(shifts).toHaveLength(35);
         expect(shifts).toContainEqual(
             expect.objectContaining({
                 barberSlug: "sam-to",
@@ -29,6 +29,15 @@ describe("local dev sample shifts", () => {
                 dayOfWeek: 0,
                 startTime: "10:00",
                 endTime: "17:00",
+            }),
+        );
+        expect(shifts).toContainEqual(
+            expect.objectContaining({
+                barberSlug: "josef",
+                locationSlug: "eglinton",
+                dayOfWeek: 1,
+                startTime: "11:00",
+                endTime: "19:00",
             }),
         );
     });

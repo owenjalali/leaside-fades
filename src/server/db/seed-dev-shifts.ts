@@ -6,10 +6,41 @@ import { createDatabaseClient } from "./client.ts";
 import { barbers, locations, shifts } from "./schema.ts";
 
 const LOCAL_DEV_SAMPLE_SHIFT_ASSIGNMENTS = [
-    { barberSlug: "sam-to", locationSlug: "eglinton" },
-    { barberSlug: "yogesh-kumar", locationSlug: "millwood" },
-    { barberSlug: "laura-nguyen", locationSlug: "eglinton" },
-    { barberSlug: "shayan-hussain", locationSlug: "millwood" },
+    {
+        barberSlug: "sam-to",
+        locationSlug: "eglinton",
+        startTime: "10:00",
+        weekdayEndTime: "19:00",
+        sundayEndTime: "17:00",
+    },
+    {
+        barberSlug: "yogesh-kumar",
+        locationSlug: "millwood",
+        startTime: "10:00",
+        weekdayEndTime: "19:00",
+        sundayEndTime: "17:00",
+    },
+    {
+        barberSlug: "laura-nguyen",
+        locationSlug: "eglinton",
+        startTime: "10:00",
+        weekdayEndTime: "19:00",
+        sundayEndTime: "17:00",
+    },
+    {
+        barberSlug: "josef",
+        locationSlug: "eglinton",
+        startTime: "11:00",
+        weekdayEndTime: "19:00",
+        sundayEndTime: "19:00",
+    },
+    {
+        barberSlug: "shayan-hussain",
+        locationSlug: "millwood",
+        startTime: "10:00",
+        weekdayEndTime: "19:00",
+        sundayEndTime: "17:00",
+    },
 ] as const;
 
 interface LocalDevSampleShiftWindow {
@@ -47,10 +78,11 @@ export function buildLocalDevSampleShiftSpecs(
 ): LocalDevSampleShiftSpec[] {
     return LOCAL_DEV_SAMPLE_SHIFT_ASSIGNMENTS.flatMap((assignment) =>
         Array.from({ length: 7 }, (_, dayOfWeek) => ({
-            ...assignment,
+            barberSlug: assignment.barberSlug,
+            locationSlug: assignment.locationSlug,
             dayOfWeek,
-            startTime: "10:00",
-            endTime: dayOfWeek === 0 ? "17:00" : "19:00",
+            startTime: assignment.startTime,
+            endTime: dayOfWeek === 0 ? assignment.sundayEndTime : assignment.weekdayEndTime,
             effectiveFrom: window.effectiveFrom,
             effectiveTo: window.effectiveTo,
         })),

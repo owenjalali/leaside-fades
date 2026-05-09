@@ -587,6 +587,50 @@ class InMemoryAdminBookingsRepository
         booking.totalDurationMinutes = input.totalDurationMinutes;
         return booking;
     }
+
+    async updateBookingAppointmentForAdminScope(input: {
+        bookingId: string;
+        barberId?: string;
+        nextBarberId: string;
+        locationId: string;
+        startTime: Date;
+        endTime: Date;
+        totalDurationMinutes: number;
+        customer: CreateBookingRequest["customer"];
+        customerNotes: string | null;
+        internalNotes: string | null;
+        serviceSnapshots: BookingServiceSnapshot[];
+    }) {
+        const booking = this.bookings.find(
+            (candidate) =>
+                candidate.id === input.bookingId &&
+                (!input.barberId || candidate.barberId === input.barberId),
+        );
+        if (!booking) return null;
+        booking.barberId = input.nextBarberId;
+        booking.locationId = input.locationId;
+        booking.startTime = input.startTime;
+        booking.endTime = input.endTime;
+        booking.totalDurationMinutes = input.totalDurationMinutes;
+        booking.customerName = `${input.customer.firstName} ${input.customer.lastName}`.trim();
+        booking.customerEmail = input.customer.email;
+        booking.customerPhone = input.customer.phoneE164;
+        booking.services = input.serviceSnapshots.map((snapshot) => snapshot.serviceName);
+        this.bookingServices = this.bookingServices.filter((snapshot) => snapshot.bookingId !== input.bookingId);
+        this.bookingServices.push(
+            ...input.serviceSnapshots.map((snapshot) => ({ ...snapshot, bookingId: input.bookingId })),
+        );
+
+        return {
+            ...booking,
+            serviceIds: input.serviceSnapshots
+                .map((snapshot) => snapshot.serviceId)
+                .filter((serviceId): serviceId is string => Boolean(serviceId)),
+            serviceDetails: input.serviceSnapshots,
+            customerNotes: input.customerNotes,
+            internalNotes: input.internalNotes,
+        };
+    }
 }
 
 function dashboardActivityFixture(
@@ -1178,6 +1222,50 @@ describe("Phase 6 admin calendar and booking management API", () => {
         expect(optionsResponse.body.services.map((service: { id: string }) => service.id)).toEqual([
             serviceId,
         ]);
+    });
+
+    test("owner can edit booking schedule, services, and customer contact through the admin route", async () => {
+        const { app, bookingsRepository } = await createTestApp();
+        const agent = request.agent(app);
+
+        await agent
+            .post("/api/admin/auth/login")
+            .send({ email: "owner@example.com", password: "correct-password" })
+            .expect(200);
+
+        const response = await agent
+            .post("/api/admin/bookings/booking-a/edit")
+            .send({
+                locationId: eglintonId,
+                barberId: "barber-a",
+                serviceIds: [serviceId],
+                startTime: "2026-04-27T13:00:00.000Z",
+                customer: {
+                    name: "Ada Updated",
+                    phone: "+16475550333",
+                    email: "ada.updated@example.com",
+                    notes: "Prefers quiet appointment.",
+                },
+                internalNotes: "Use imported customer record.",
+            })
+            .expect(200);
+
+        expect(response.body.booking).toMatchObject({
+            id: "booking-a",
+            customerName: "Ada Updated",
+            customerEmail: "ada.updated@example.com",
+            customerPhone: "+16475550333",
+            startTime: "2026-04-27T13:00:00.000Z",
+            totalDurationMinutes: 30,
+            serviceIds: [serviceId],
+            customerNotes: "Prefers quiet appointment.",
+            internalNotes: "Use imported customer record.",
+        });
+        expect(bookingsRepository.bookings[0]).toMatchObject({
+            source: "public",
+            status: "confirmed",
+            customerName: "Ada Updated",
+        });
     });
 
     test("owner dashboard returns appointments and safe notification-center activity", async () => {

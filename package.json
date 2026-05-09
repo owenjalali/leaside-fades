@@ -12,6 +12,7 @@
     "db:seed": "tsx src/server/db/seed.ts",
     "db:seed:dev-owner": "tsx src/server/db/seed-dev-owner.ts",
     "db:seed:dev-shifts": "tsx src/server/db/seed-dev-shifts.ts",
+    "db:seed:josef": "tsx src/server/db/seed-josef.ts",
     "qa:phase5-auth": "tsx src/server/qa/phase5-auth-flow-qa.ts",
     "qa:phase6-admin": "tsx src/server/qa/phase6-admin-flow-qa.ts",
     "qa:phase7-schedule": "tsx src/server/qa/phase7-schedule-flow-qa.ts",

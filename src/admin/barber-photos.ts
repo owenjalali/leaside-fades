@@ -1,8 +1,8 @@
 import lauraThumb from "../assets/barbers/booking-thumbnails/laura-thumb.jpg";
+import josefThumb from "../assets/barbers/booking-thumbnails/josef-thumb.jpg";
 import samThumb from "../assets/barbers/booking-thumbnails/sam-thumb.jpg";
 import shayonThumb from "../assets/barbers/booking-thumbnails/shayon-thumb.jpg";
 import yogeshThumb from "../assets/barbers/booking-thumbnails/yogesh-thumb.jpg";
-import fawadPhoto from "../assets/barbers/fawad.png";
 
 type BarberPhotoInput = {
     displayName: string;
@@ -15,7 +15,7 @@ const barberPhotosBySlug: Record<string, string> = {
     "yogesh-kumar": yogeshThumb,
     "shayan-hussain": shayonThumb,
     "shayon-hussain": shayonThumb,
-    fawad: fawadPhoto,
+    josef: josefThumb,
 };
 
 export function getAdminBarberPhotoUrl(barber: BarberPhotoInput) {
