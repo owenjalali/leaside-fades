@@ -40,6 +40,7 @@ Resolved in repo:
 - Local/dev sample shifts no longer create Yogesh Eglinton availability.
 - Booking confirmation notifications now include customer SMS/email and assigned barber SMS/email when contact exists. Owner/admin booking awareness is handled through the in-app Dashboard Notification Center, not outbound owner/admin email.
 - Notification metadata records link presence only; it does not persist raw management tokens or raw cancel/reschedule URLs.
+- Production password reset and barber invite links now send through Resend, require `APP_URL` in production, and land on usable unauthenticated admin reset/setup screens.
 
 Still external before public cutover:
 - Owner should verify the observed Fresha recurring schedule that has been entered as the initial production roster.
@@ -138,6 +139,8 @@ Run before owner signoff:
 - Customer cancel link
 - Customer reschedule link
 - Admin login
+- Password reset email request and `/admin/reset-password` completion with an approved test admin
+- Barber invite email and `/admin/accept-invite` completion with an approved test barber
 - Barber login
 - Calendar day board
 - Unified Add appointment flow for staff-created manual and walk-in-style appointments
@@ -180,8 +183,9 @@ Smoke steps:
 - `artifacts/` and other untracked files are audited before launch commit.
 - Session cookies are `Secure` in production.
 - Admin mutation Origin/Referer guard uses production `APP_URL`.
+- Password reset and barber invite links fail loudly if production `APP_URL` is missing.
 - Public endpoints expose only safe catalog/availability/booking-management data.
-- Password reset and invite delivery behavior is understood before launch.
+- Password reset and invite delivery use Resend in production and dev console logging outside production.
 - Notification logs are sanitized.
 
 ## Final Success Questions

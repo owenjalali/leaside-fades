@@ -96,6 +96,8 @@ export class CustomerBookingRequestError extends Error {
 }
 
 const DEFAULT_TIME_ZONE = "America/Toronto";
+const ISO_DATE_TIME_WITH_ZONE_PATTERN =
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 export async function getCustomerManagedBooking(
     rawToken: string,
@@ -473,6 +475,11 @@ function asLocalDate(value: unknown, message: string) {
 
 function parseDate(value: unknown, message: string) {
     const raw = asNonEmptyString(value, message);
+
+    if (!ISO_DATE_TIME_WITH_ZONE_PATTERN.test(raw)) {
+        throw new CustomerBookingRequestError(400, message);
+    }
+
     const parsed = new Date(raw);
 
     if (Number.isNaN(parsed.getTime())) {

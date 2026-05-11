@@ -45,7 +45,10 @@ import {
     loginAdmin,
     logoutAdmin,
     markAdminBookingNoShow,
+    requestAdminPasswordReset,
     replaceAdminDayShift,
+    resetAdminPassword,
+    acceptAdminInvite,
     rescheduleAdminBooking,
 } from "./api";
 import SchedulePage from "./SchedulePage";
@@ -134,11 +137,17 @@ export default function AdminApp() {
     }, []);
 
     useEffect(() => {
+        if (isStandaloneAdminAuthPath(path)) {
+            setSessionLoading(false);
+            return;
+        }
+
+        setSessionLoading(true);
         fetchAdminSession()
             .then((session) => setUser(session.user))
             .catch(() => setUser(null))
             .finally(() => setSessionLoading(false));
-    }, []);
+    }, [path]);
 
     useEffect(() => {
         const handleAuthExpired = () => {
@@ -168,6 +177,40 @@ export default function AdminApp() {
     function handleLogin(nextUser: SafeAdminUser) {
         setLoginNotice("");
         setUser(nextUser);
+    }
+
+    function handlePasswordResetComplete() {
+        setLoginNotice("Password updated. Sign in with your new password.");
+        navigate("/admin/login");
+    }
+
+    function handleInviteAccepted() {
+        setLoginNotice("Account set up. Sign in with your new password.");
+        navigate("/admin/login");
+    }
+
+    if (isStandaloneAdminAuthPath(path) && path === "/admin/forgot-password") {
+        return <ForgotPasswordPage onNavigate={navigate} />;
+    }
+
+    if (isStandaloneAdminAuthPath(path) && path === "/admin/reset-password") {
+        return (
+            <ResetPasswordPage
+                token={readUrlToken()}
+                onNavigate={navigate}
+                onPasswordReset={handlePasswordResetComplete}
+            />
+        );
+    }
+
+    if (isStandaloneAdminAuthPath(path) && path === "/admin/accept-invite") {
+        return (
+            <AcceptInvitePage
+                token={readUrlToken()}
+                onNavigate={navigate}
+                onAccepted={handleInviteAccepted}
+            />
+        );
     }
 
     if (sessionLoading) {
@@ -251,9 +294,223 @@ function LoginPage({
                     <button className="primary-button w-full text-lg md:text-xl" type="submit" disabled={submitting}>
                         {submitting ? "Signing in" : "Sign in"}
                     </button>
+                    <button
+                        className="w-full text-sm font-bold text-forest underline-offset-4 hover:underline"
+                        type="button"
+                        onClick={() => onNavigate("/admin/forgot-password")}
+                    >
+                        Forgot password?
+                    </button>
                 </form>
             </section>
         </main>
+    );
+}
+
+export function ForgotPasswordPage({ onNavigate }: { onNavigate: (path: string) => void }) {
+    const [email, setEmail] = useState("");
+    const [message, setMessage] = useState("");
+    const [error, setError] = useState("");
+    const [submitting, setSubmitting] = useState(false);
+
+    async function handleSubmit(event: FormEvent) {
+        event.preventDefault();
+        setSubmitting(true);
+        setError("");
+        setMessage("");
+
+        try {
+            const result = await requestAdminPasswordReset(email);
+            setMessage(result.message);
+        } catch (error) {
+            setError(error instanceof Error ? error.message : "Password reset failed.");
+        } finally {
+            setSubmitting(false);
+        }
+    }
+
+    return (
+        <AdminAuthPage title="Reset password">
+            <form onSubmit={handleSubmit} className="space-y-6 rounded-md border border-forest/10 bg-white p-6 shadow-sm md:p-8">
+                <Field label="Email">
+                    <input
+                        value={email}
+                        onChange={(event) => setEmail(event.target.value)}
+                        className="input"
+                        type="email"
+                        autoComplete="email"
+                        required
+                    />
+                </Field>
+                {message && <p className="rounded-md bg-green/10 px-3 py-2 text-sm font-semibold text-forest">{message}</p>}
+                {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p>}
+                <button className="primary-button w-full text-lg md:text-xl" type="submit" disabled={submitting}>
+                    {submitting ? "Sending" : "Send reset email"}
+                </button>
+                <button
+                    className="w-full text-sm font-bold text-forest underline-offset-4 hover:underline"
+                    type="button"
+                    onClick={() => onNavigate("/admin/login")}
+                >
+                    Back to sign in
+                </button>
+            </form>
+        </AdminAuthPage>
+    );
+}
+
+export function ResetPasswordPage({
+    token,
+    onNavigate,
+    onPasswordReset,
+}: {
+    token: string;
+    onNavigate: (path: string) => void;
+    onPasswordReset: () => void;
+}) {
+    const [password, setPassword] = useState("");
+    const [error, setError] = useState("");
+    const [submitting, setSubmitting] = useState(false);
+
+    async function handleSubmit(event: FormEvent) {
+        event.preventDefault();
+        setSubmitting(true);
+        setError("");
+
+        try {
+            await resetAdminPassword(token, password);
+            onPasswordReset();
+        } catch (error) {
+            setError(error instanceof Error ? error.message : "Password reset failed.");
+        } finally {
+            setSubmitting(false);
+        }
+    }
+
+    return (
+        <AdminAuthPage title="Set new password">
+            <form onSubmit={handleSubmit} className="space-y-6 rounded-md border border-forest/10 bg-white p-6 shadow-sm md:p-8">
+                {!token && (
+                    <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+                        Password reset link is invalid or expired.
+                    </p>
+                )}
+                <input className="hidden" type="text" name="username" autoComplete="username" tabIndex={-1} aria-hidden="true" />
+                <Field label="New password">
+                    <input
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        className="input"
+                        type="password"
+                        autoComplete="new-password"
+                        minLength={8}
+                        required
+                    />
+                </Field>
+                {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p>}
+                <button className="primary-button w-full text-lg md:text-xl" type="submit" disabled={submitting || !token}>
+                    {submitting ? "Saving" : "Save password"}
+                </button>
+                <button
+                    className="w-full text-sm font-bold text-forest underline-offset-4 hover:underline"
+                    type="button"
+                    onClick={() => onNavigate("/admin/login")}
+                >
+                    Back to sign in
+                </button>
+            </form>
+        </AdminAuthPage>
+    );
+}
+
+export function AcceptInvitePage({
+    token,
+    onNavigate,
+    onAccepted,
+}: {
+    token: string;
+    onNavigate: (path: string) => void;
+    onAccepted: () => void;
+}) {
+    const [password, setPassword] = useState("");
+    const [error, setError] = useState("");
+    const [submitting, setSubmitting] = useState(false);
+
+    async function handleSubmit(event: FormEvent) {
+        event.preventDefault();
+        setSubmitting(true);
+        setError("");
+
+        try {
+            await acceptAdminInvite(token, password);
+            onAccepted();
+        } catch (error) {
+            setError(error instanceof Error ? error.message : "Account setup failed.");
+        } finally {
+            setSubmitting(false);
+        }
+    }
+
+    return (
+        <AdminAuthPage title="Set up account">
+            <form onSubmit={handleSubmit} className="space-y-6 rounded-md border border-forest/10 bg-white p-6 shadow-sm md:p-8">
+                {!token && (
+                    <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+                        Invite link is invalid or expired.
+                    </p>
+                )}
+                <input className="hidden" type="text" name="username" autoComplete="username" tabIndex={-1} aria-hidden="true" />
+                <Field label="Password">
+                    <input
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        className="input"
+                        type="password"
+                        autoComplete="new-password"
+                        minLength={8}
+                        required
+                    />
+                </Field>
+                {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p>}
+                <button className="primary-button w-full text-lg md:text-xl" type="submit" disabled={submitting || !token}>
+                    {submitting ? "Saving" : "Create account"}
+                </button>
+                <button
+                    className="w-full text-sm font-bold text-forest underline-offset-4 hover:underline"
+                    type="button"
+                    onClick={() => onNavigate("/admin/login")}
+                >
+                    Back to sign in
+                </button>
+            </form>
+        </AdminAuthPage>
+    );
+}
+
+function AdminAuthPage({ title, children }: { title: string; children: ReactNode }) {
+    return (
+        <main className="min-h-screen bg-cream text-charcoal">
+            <section className="mx-auto flex min-h-screen w-full max-w-[min(92vw,34rem)] flex-col justify-center px-6 py-12">
+                <div className="mb-8 md:mb-10">
+                    <p className="text-base font-semibold uppercase tracking-[0.22em] text-green md:text-lg">Leaside Fades</p>
+                    <h1 className="mt-2 text-5xl font-black leading-tight text-forest md:text-6xl">{title}</h1>
+                </div>
+                {children}
+            </section>
+        </main>
+    );
+}
+
+function readUrlToken() {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("token")?.trim() ?? "";
+}
+
+export function isStandaloneAdminAuthPath(path: string) {
+    return (
+        path === "/admin/forgot-password" ||
+        path === "/admin/reset-password" ||
+        path === "/admin/accept-invite"
     );
 }
 

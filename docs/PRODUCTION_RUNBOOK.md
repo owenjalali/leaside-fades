@@ -18,6 +18,7 @@ Current production target:
 - Confirm `APP_URL=https://leasidefades.com`.
 - Confirm `SITE_BOOKING_URL=https://leasidefades.com/book`.
 - Confirm `NOTIFICATION_DELIVERY_MODE=live` only after Twilio and Resend are verified.
+- Confirm password reset and barber invite emails are allowed from the configured Resend sender/domain.
 - Confirm no `DEV_OWNER_*` values are configured on production.
 - Audit untracked artifacts, Fresha scratch files, cookies, screenshots, exports, and private customer data before the launch commit.
 
@@ -86,12 +87,14 @@ npm run server
 - `https://leasidefades.com`
 - `https://leasidefades.com/book`
 - `https://leasidefades.com/admin/login`
+- `https://leasidefades.com/admin/forgot-password`
 
 Verify:
 - HTTPS is active.
 - Static assets load.
 - Public booking catalog loads.
 - Admin login page loads.
+- Password reset and invite setup pages load without requiring an active admin session.
 - Google Places reviews do not expose server errors.
 - Google Maps, Instagram, and Facebook links point to the approved destinations.
 
@@ -105,6 +108,8 @@ Before exposing `/book` publicly:
 - Confirm business hours and location details.
 - Enter approved closures or blocked time.
 - Confirm owner/admin login account/email and login path.
+- Confirm owner/admin password reset email delivery through Resend.
+- Confirm barber invite email delivery through Resend before onboarding staff.
 - Enter staff phone/email contacts only from owner-approved data.
 
 Do not seed local/dev sample shifts in production.

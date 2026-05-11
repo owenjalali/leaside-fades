@@ -8,6 +8,8 @@ import { formatPriceSummary } from "./repository.ts";
 
 const DEFAULT_TIME_ZONE = "America/Toronto";
 const EMPTY_AVAILABILITY_MESSAGE = "No available times for this date. Try another date or barber.";
+const ISO_DATE_TIME_WITH_ZONE_PATTERN =
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 export interface PublicAvailabilityLookupRequest {
     locationId: string;
@@ -237,6 +239,11 @@ function asStringArray(value: unknown, message: string) {
 
 function parseStartTime(value: unknown) {
     const raw = asNonEmptyString(value, "A valid appointment start time is required.");
+
+    if (!ISO_DATE_TIME_WITH_ZONE_PATTERN.test(raw)) {
+        throw new PublicBookingRequestError("A valid appointment start time is required.");
+    }
+
     const date = new Date(raw);
 
     if (Number.isNaN(date.getTime())) {

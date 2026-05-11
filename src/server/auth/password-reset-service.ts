@@ -80,6 +80,7 @@ export async function requestPasswordReset(
         now.getTime() + (options.tokenDurationMs ?? DEFAULT_RESET_TOKEN_DURATION_MS),
     );
     const resetToken = generatePasswordResetToken();
+    const resetUrl = buildPasswordResetUrl(resetToken, options.appUrl);
 
     await repository.createPasswordResetToken({
         userId: user.id,
@@ -89,7 +90,7 @@ export async function requestPasswordReset(
 
     await delivery.sendPasswordResetLink({
         email: user.email,
-        resetUrl: buildPasswordResetUrl(resetToken, options.appUrl),
+        resetUrl,
         expiresAt,
     });
 
@@ -148,10 +149,20 @@ function normalizeEmail(email: unknown) {
 }
 
 function buildPasswordResetUrl(token: string, appUrl?: string) {
-    const baseUrl = (appUrl || process.env.APP_URL || "http://localhost:3000").trim();
+    const baseUrl = resolveAppUrl(appUrl, "password reset");
     const resetUrl = new URL("/admin/reset-password", `${baseUrl.replace(/\/+$/, "")}/`);
     resetUrl.searchParams.set("token", token);
     return resetUrl.toString();
+}
+
+function resolveAppUrl(appUrl: string | undefined, purpose: string) {
+    const resolved = (appUrl || process.env.APP_URL || "").trim();
+
+    if (!resolved && process.env.NODE_ENV === "production") {
+        throw new AuthError(500, `APP_URL is required for ${purpose} links in production.`);
+    }
+
+    return resolved || "http://localhost:3000";
 }
 
 function invalidOrExpiredResetTokenError() {

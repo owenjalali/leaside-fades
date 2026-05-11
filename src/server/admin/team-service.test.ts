@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { verifyPassword } from "../auth/password.ts";
 import { hashUserInviteToken } from "../auth/invite-tokens.ts";
@@ -165,6 +165,10 @@ function tokenFromInviteUrl(inviteUrl: string) {
 }
 
 describe("Phase 5C team onboarding service", () => {
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
     test("owner creates a linked pending barber user and hashed invite token for Eglinton", async () => {
         const repository = new InMemoryTeamRepository();
         const delivery = new InMemoryTeamInviteDelivery();
@@ -217,6 +221,32 @@ describe("Phase 5C team onboarding service", () => {
             expiresAt: new Date("2026-05-04T15:00:00.000Z"),
         });
     });
+
+    test("production barber onboarding fails loudly when APP_URL is missing", async () => {
+        vi.stubEnv("NODE_ENV", "production");
+        vi.stubEnv("APP_URL", "");
+        const repository = new InMemoryTeamRepository();
+        const delivery = new InMemoryTeamInviteDelivery();
+
+        await expect(
+            createBarberOnboarding(
+                ownerUser,
+                {
+                    displayName: "New Barber",
+                    email: "new.barber@example.com",
+                    locationIds: [eglintonId],
+                },
+                repository,
+                delivery,
+                { now },
+            ),
+        ).rejects.toMatchObject({
+            status: 500,
+            message: "APP_URL is required for barber invite links in production.",
+        });
+        expect(delivery.deliveries).toHaveLength(0);
+    });
+
 
     test("admin can assign a barber to Millwood or both locations", async () => {
         const repository = new InMemoryTeamRepository();

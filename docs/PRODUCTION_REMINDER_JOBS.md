@@ -12,7 +12,7 @@ Before enabling a production scheduler, configure live delivery secrets in the p
 npm run notifications:check-live-config
 ```
 
-The preflight exits nonzero if `DATABASE_URL`, `NOTIFICATION_DELIVERY_MODE=live`, or any Twilio/Resend live-delivery variable is missing.
+The preflight exits nonzero if `DATABASE_URL`, `APP_URL`, `NOTIFICATION_DELIVERY_MODE=live`, or any Twilio/Resend live-delivery variable is missing.
 
 ## Phase Timing
 
@@ -60,6 +60,7 @@ Hosted production setup:
 
 Required production notification variables:
 - `DATABASE_URL`
+- `APP_URL`
 - `NOTIFICATION_DELIVERY_MODE=live`
 - `REMINDER_JOB_LOOKBACK_MINUTES=60`
 - `REMINDER_JOB_LOOKAHEAD_MINUTES=15`

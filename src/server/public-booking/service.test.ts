@@ -240,6 +240,32 @@ describe("Phase 4 public booking service", () => {
         expect(repository.bookings).toHaveLength(1);
     });
 
+    test("rejects date-only appointment start times before calling the booking service", async () => {
+        const repository = new InMemoryBookingRepository();
+
+        await expect(
+            createPublicBooking(
+                {
+                    locationId,
+                    serviceIds: [serviceId],
+                    startTime: "2026-05-04",
+                    customer: {
+                        firstName: "Ada",
+                        lastName: "Lovelace",
+                        phone: "647-555-0199",
+                        email: "ada@example.com",
+                    },
+                },
+                repository,
+            ),
+        ).rejects.toMatchObject({
+            name: "PublicBookingRequestError",
+            status: 400,
+            message: "A valid appointment start time is required.",
+        } satisfies Partial<PublicBookingRequestError>);
+        expect(repository.bookings).toHaveLength(0);
+    });
+
     test("rejects missing customer details before calling the booking service", async () => {
         await expect(
             createPublicBooking(

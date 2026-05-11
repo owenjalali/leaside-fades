@@ -49,7 +49,10 @@ Current launch-prep note:
 
 - [ ] Production owner/admin login account/email is confirmed.
 - [ ] Temporary `owner@leasidefades.com` password is handed off and rotated.
+- [ ] Password reset email arrives through Resend and opens `/admin/reset-password`.
 - [ ] Staff invite/onboarding plan is confirmed.
+- [ ] Barber invite email arrives through Resend and opens `/admin/accept-invite`.
+- [ ] Reset and invite links use the production `https://leasidefades.com` origin.
 - [ ] Barber login behavior is approved.
 - [ ] Staff who need appointment notifications have approved phone/email contacts entered.
 - [ ] Missing staff contact info is accepted as a launch readiness issue only if the owner explicitly approves.

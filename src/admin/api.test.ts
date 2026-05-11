@@ -3,8 +3,11 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
     ADMIN_AUTH_EXPIRED_EVENT,
     AdminApiError,
+    acceptAdminInvite,
     fetchAdminCalendarOptions,
     fetchAdminSession,
+    requestAdminPasswordReset,
+    resetAdminPassword,
     loginAdmin,
 } from "./api";
 
@@ -74,6 +77,47 @@ describe("admin api client", () => {
             status: 401,
         });
 
+        expect(dispatchEvent).not.toHaveBeenCalled();
+    });
+
+    test("calls account recovery endpoints without triggering active-workspace expiry", async () => {
+        const dispatchEvent = vi.fn();
+        const fetchMock = vi.fn(async () => jsonResponse(200, { message: "ok", user: { id: "user-1" } }));
+
+        vi.stubGlobal("fetch", fetchMock);
+        vi.stubGlobal("window", { dispatchEvent });
+
+        await requestAdminPasswordReset("owner@example.com");
+        await resetAdminPassword("reset-token", "new-password");
+        await acceptAdminInvite("invite-token", "setup-password");
+
+        expect(fetchMock).toHaveBeenNthCalledWith(
+            1,
+            "/api/admin/auth/forgot-password",
+            expect.objectContaining({
+                method: "POST",
+                credentials: "same-origin",
+                body: JSON.stringify({ email: "owner@example.com" }),
+            }),
+        );
+        expect(fetchMock).toHaveBeenNthCalledWith(
+            2,
+            "/api/admin/auth/reset-password",
+            expect.objectContaining({
+                method: "POST",
+                credentials: "same-origin",
+                body: JSON.stringify({ token: "reset-token", password: "new-password" }),
+            }),
+        );
+        expect(fetchMock).toHaveBeenNthCalledWith(
+            3,
+            "/api/admin/auth/accept-invite",
+            expect.objectContaining({
+                method: "POST",
+                credentials: "same-origin",
+                body: JSON.stringify({ token: "invite-token", password: "setup-password" }),
+            }),
+        );
         expect(dispatchEvent).not.toHaveBeenCalled();
     });
 });

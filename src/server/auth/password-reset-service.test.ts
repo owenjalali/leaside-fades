@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { hashPassword, verifyPassword } from "./password.ts";
 import { hashPasswordResetToken } from "./reset-tokens.ts";
@@ -111,6 +111,10 @@ function tokenFromResetUrl(resetUrl: string) {
 }
 
 describe("Phase 5B password reset service", () => {
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
     test("forgot-password always returns a generic response and does not deliver for unknown email", async () => {
         const repository = await repositoryWithOwner();
         const delivery = new InMemoryPasswordResetDelivery();
@@ -157,6 +161,27 @@ describe("Phase 5B password reset service", () => {
             expiresAt: new Date("2026-04-27T15:45:00.000Z"),
         });
     });
+
+    test("production forgot-password fails loudly when APP_URL is missing", async () => {
+        vi.stubEnv("NODE_ENV", "production");
+        vi.stubEnv("APP_URL", "");
+        const repository = await repositoryWithOwner();
+        const delivery = new InMemoryPasswordResetDelivery();
+
+        await expect(
+            requestPasswordReset(
+                { email: "owner@example.com" },
+                repository,
+                delivery,
+                { now },
+            ),
+        ).rejects.toMatchObject({
+            status: 500,
+            message: "APP_URL is required for password reset links in production.",
+        });
+        expect(delivery.deliveries).toHaveLength(0);
+    });
+
 
     test("reset rejects invalid, used, expired, and short-password requests", async () => {
         const repository = await repositoryWithOwner();

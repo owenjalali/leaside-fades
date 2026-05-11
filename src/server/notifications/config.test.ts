@@ -16,7 +16,6 @@ describe("notification runtime configuration", () => {
                 NODE_ENV: "production",
                 NOTIFICATION_DELIVERY_MODE: "live",
                 DATABASE_URL: "postgres://example",
-                APP_URL: "https://leasidefades.example",
                 TWILIO_ACCOUNT_SID: "",
                 TWILIO_AUTH_TOKEN: "",
                 TWILIO_FROM_NUMBER: "",
@@ -28,6 +27,7 @@ describe("notification runtime configuration", () => {
 
         expect(result.ok).toBe(false);
         expect(result.issues.map((issue) => issue.key)).toEqual([
+            "APP_URL",
             "TWILIO_ACCOUNT_SID",
             "TWILIO_AUTH_TOKEN",
             "TWILIO_FROM_NUMBER",
@@ -41,6 +41,7 @@ describe("notification runtime configuration", () => {
             {
                 NODE_ENV: "production",
                 DATABASE_URL: "postgres://example",
+                APP_URL: "https://leasidefades.example",
                 TWILIO_ACCOUNT_SID: "AC123",
                 TWILIO_AUTH_TOKEN: "secret",
                 TWILIO_FROM_NUMBER: "+16475550199",

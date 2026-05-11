@@ -640,3 +640,11 @@ Add Josef to the launch barber roster as an Eglinton-only barber, replace the ol
 
 Reason:
 The owner explicitly added Josef for Eglinton and wants clients to book with him immediately. Because public availability is location and shift driven, the data sync must update the catalog, service capabilities, location assignment, and recurring shifts while preserving official business-hour clipping and the existing Yogesh launch override.
+
+### 2026-05-11 - Use Resend For Production Account Recovery And Barber Invites
+
+Decision:
+Password reset and barber invite/setup links send through Resend in production, while non-production environments keep console-logged dev delivery. Production link builders require `APP_URL`; missing production `APP_URL` fails loudly instead of falling back to localhost. The public booking and customer reschedule APIs now require fully qualified ISO timestamps with a timezone for appointment `startTime`.
+
+Reason:
+The owner and staff need real account recovery and onboarding before launch. Silent success without an email would strand users, and localhost fallback links are unsafe in production. Strict timestamp input avoids date-only timezone drift in future non-browser callers.

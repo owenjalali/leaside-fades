@@ -17,7 +17,7 @@ export interface ValidateNotificationRuntimeConfigOptions {
     requireLiveDelivery?: boolean;
 }
 
-const COMMON_REMINDER_JOB_ENV_KEYS = ["DATABASE_URL"];
+const COMMON_REMINDER_JOB_ENV_KEYS = ["DATABASE_URL", "APP_URL"];
 const LIVE_NOTIFICATION_ENV_KEYS = [
     "TWILIO_ACCOUNT_SID",
     "TWILIO_AUTH_TOKEN",

@@ -55,6 +55,27 @@ export function loginAdmin(email: string, password: string) {
     });
 }
 
+export function requestAdminPasswordReset(email: string) {
+    return requestJson<{ message: string }>("/api/admin/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+    });
+}
+
+export function resetAdminPassword(token: string, password: string) {
+    return requestJson<AdminSessionResponse>("/api/admin/auth/reset-password", {
+        method: "POST",
+        body: JSON.stringify({ token, password }),
+    });
+}
+
+export function acceptAdminInvite(token: string, password: string) {
+    return requestJson<AdminSessionResponse>("/api/admin/auth/accept-invite", {
+        method: "POST",
+        body: JSON.stringify({ token, password }),
+    });
+}
+
 export async function logoutAdmin() {
     await fetch("/api/admin/auth/logout", { method: "POST", credentials: "same-origin" });
 }
@@ -233,7 +254,13 @@ export function deleteAdminBlockedTime(blockedTimeId: string) {
 }
 
 function shouldNotifyAuthExpired(url: string) {
-    return !url.includes("/api/admin/auth/login") && !url.includes("/api/admin/auth/session");
+    return (
+        !url.includes("/api/admin/auth/login") &&
+        !url.includes("/api/admin/auth/session") &&
+        !url.includes("/api/admin/auth/forgot-password") &&
+        !url.includes("/api/admin/auth/reset-password") &&
+        !url.includes("/api/admin/auth/accept-invite")
+    );
 }
 
 function notifyAdminAuthExpired(message: string) {

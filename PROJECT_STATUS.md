@@ -128,8 +128,9 @@ Do not seed local/dev sample shifts in production. Production currently uses the
 - Phase 5A chose custom session auth. Existing `users` rows without `password_hash` cannot log in until bootstrapped, reset, or invited.
 - Admin sessions use a 30-day sliding inactivity window and HTTP-only `SameSite=Lax` cookies with `Secure` enabled in production.
 - Phase 5B password reset links expire after 45 minutes, use opaque random tokens, and persist only SHA-256 token hashes.
-- Password reset delivery is dev-mode logging until an approved email provider integration is added.
+- Password reset delivery uses Resend in production and dev-mode logging outside production.
 - Phase 5C barber invites expire after seven days, use opaque random tokens, and persist only SHA-256 token hashes.
+- Barber invite delivery uses Resend in production and dev-mode logging outside production.
 - Phase 5C remains API-first. Minimal admin team UI was not built.
 - `npm run qa:phase5-auth` is local/dev-only, refuses non-local database URLs, and captures reset/invite links only from dev delivery logs during QA.
 - Phase 6 uses the existing custom session auth gate for `/admin/*` and `/api/admin/*`.
@@ -193,8 +194,7 @@ Do not seed local/dev sample shifts in production. Production currently uses the
 Not blocking Phase 11 completion:
 - Real phone/email details for each barber.
 - Initial featured service selections.
-- Production password reset email delivery wiring before launch.
-- Production barber invite email delivery wiring before launch.
+- Owner-facing password reset and barber invite email smoke before final signoff.
 - Live production checks for Google Places, social links, and reminder scheduler run history are still Phase 12 launch-prep work. Controlled live SMS/email smoke has passed with approved test contacts.
 - Phase 13 is optional Fresha migration/import tooling and is not required for the website booking link.
 - Owner verification of the seeded observed recurring barber schedules before full public cutover.
@@ -959,7 +959,7 @@ Phase 6 hardening verification:
 - Use opaque random admin session tokens in HTTP-only cookies and store only SHA-256 token hashes in PostgreSQL.
 - Add a guarded local/dev-only owner bootstrap script for QA instead of public signup or hardcoded production credentials.
 - Use hashed, single-use password reset tokens with 45-minute expiry and session revocation after successful reset.
-- Use dev-mode password reset link logging until Resend/email delivery is explicitly integrated.
+- Use Resend for production password reset and barber invite emails, while retaining dev-mode link logging outside production.
 - Use owner/admin-managed barber onboarding with a separate `user_invite_tokens` table for account setup tokens.
 - Keep Phase 5C API-first and do not build a full staff management UI.
 - Add a narrow npm override for `@esbuild-kit/core-utils` nested `esbuild` so the current stable `drizzle-kit` can remain in place without audit findings.
@@ -998,4 +998,4 @@ Phase 6 hardening verification:
 
 ## Latest Session Summary
 
-Phase 12/13 launch cutover implementation is in progress. The admin calendar now separates public availability from staff scheduling authority: public/customer-token flows keep strict business-hours, shifts, 30-minute notice, and 30-day-window rules, while authenticated staff can create, reschedule, drag, and edit appointments in any visible 15-minute full-day admin slot, including grey off-shift time, with no-overlap and blocked-time checks preserved. The day board shows active barbers assigned to the selected location, default-scrolls to 9:00 AM in a non-compressed scrollable grid, exposes booking edit fields for customer contact/notes/services/schedule, and provides a calendar-header `Edit shift` action backed by same-day shift override diffing. Josef has been added as an Eglinton-only launch barber with 11:00 AM-7:00 PM shifts, public booking shows him at Eglinton only, the launch staff sync actively enforces Josef Eglinton-only and Yogesh Millwood-only, and production staff/catalog data has been synced to 5 barbers and 37 services. Full Vitest is green at 32 files and 248 tests, production build/typecheck passes, and local Playwright verifies Josef booking visibility plus admin month navigation/date-cell/day-board hover behavior. Remaining launch items are operational: scheduler history monitoring, owner password handoff/rotation, owner verification of shifts/services/staff contacts, and final owner signoff.
+Phase 12/13 launch cutover implementation is in progress. The admin calendar separates public availability from staff scheduling authority while preserving no-overlap and blocked-time checks. Josef has been added as an Eglinton-only launch barber, and production staff/catalog data has been synced to 5 barbers and 37 services. Account recovery and staff onboarding now have production Resend delivery, production-only `APP_URL` enforcement, and usable `/admin/forgot-password`, `/admin/reset-password`, and `/admin/accept-invite` screens. Public booking and customer reschedule requests now reject date-only appointment start times before scheduling validation. Verification for the account-recovery hardening passed: targeted account/booking tests (38 tests), full `npm run test` (35 files, 259 tests), `npm run build`, `npm run notifications:check-live-config` with complete production-style fake env values, `npm run qa:phase5-auth`, `npm run qa:phase9-notifications`, and `git diff --check`. Vercel production has encrypted `APP_URL`, `RESEND_API_KEY`, `EMAIL_FROM`, and `NOTIFICATION_DELIVERY_MODE` entries; the CLI can confirm the keys exist but cannot expose sensitive values for a local full preflight. Remaining launch items are owner-facing operations: owner password handoff/rotation, owner verification of shifts/services/staff contacts, live owner-approved reset/invite smoke, and final owner signoff.

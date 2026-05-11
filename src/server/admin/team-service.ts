@@ -140,6 +140,7 @@ export async function createBarberOnboarding(
     const now = options.now ?? new Date();
     const expiresAt = new Date(now.getTime() + (options.inviteDurationMs ?? DEFAULT_INVITE_DURATION_MS));
     const inviteToken = generateUserInviteToken();
+    const inviteUrl = buildInviteUrl(inviteToken, options.appUrl);
     const created = await repository.createBarberWithInvite({
         barber: {
             slug: slugify(displayName),
@@ -161,7 +162,7 @@ export async function createBarberOnboarding(
 
     await delivery.sendBarberInvite({
         email,
-        inviteUrl: buildInviteUrl(inviteToken, options.appUrl),
+        inviteUrl,
         expiresAt,
     });
 
@@ -288,10 +289,20 @@ function slugify(value: string) {
 }
 
 function buildInviteUrl(token: string, appUrl?: string) {
-    const baseUrl = (appUrl || process.env.APP_URL || "http://localhost:3000").trim();
+    const baseUrl = resolveAppUrl(appUrl);
     const inviteUrl = new URL("/admin/accept-invite", `${baseUrl.replace(/\/+$/, "")}/`);
     inviteUrl.searchParams.set("token", token);
     return inviteUrl.toString();
+}
+
+function resolveAppUrl(appUrl: string | undefined) {
+    const resolved = (appUrl || process.env.APP_URL || "").trim();
+
+    if (!resolved && process.env.NODE_ENV === "production") {
+        throw new TeamAccessError(500, "APP_URL is required for barber invite links in production.");
+    }
+
+    return resolved || "http://localhost:3000";
 }
 
 function invalidInviteError() {

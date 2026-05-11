@@ -133,9 +133,9 @@ Responsibilities:
 
 Public booking routes under `/book` and `/api/booking/*` remain unauthenticated.
 
-Phase 5B password reset delivery is dev-mode server logging until an approved Resend/email integration is added.
+Phase 12 wires Phase 5B password reset delivery to Resend in production. Non-production environments keep dev console logging. Production reset links require `APP_URL` and route to `/admin/reset-password`.
 
-Phase 5C barber invite delivery is also dev-mode server logging until an approved Resend/email integration is added.
+Phase 12 wires Phase 5C barber invite delivery to Resend in production. Non-production environments keep dev console logging. Production invite links require `APP_URL` and route to `/admin/accept-invite`.
 
 ## Data Model Summary
 

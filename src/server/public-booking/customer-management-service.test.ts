@@ -361,6 +361,27 @@ describe("Phase 8 customer booking management service", () => {
         });
     });
 
+    test("reschedule rejects date-only appointment start times", async () => {
+        const repository = new InMemoryCustomerManagementRepository();
+
+        await expect(
+            rescheduleCustomerManagedBooking(
+                rescheduleToken,
+                {
+                    locationId,
+                    barberId,
+                    startTime: "2026-05-04",
+                },
+                repository,
+                { now },
+            ),
+        ).rejects.toMatchObject({
+            status: 400,
+            message: "A valid appointment start time is required.",
+        });
+        expect(repository.bookings[0].startTime).toEqual(utc(10));
+    });
+
     test("customer mutation still succeeds when notification delivery fails after mutation", async () => {
         const repository = new InMemoryCustomerManagementRepository();
 
