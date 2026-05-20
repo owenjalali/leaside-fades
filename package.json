@@ -24,6 +24,8 @@
     "qa:production-smoke": "tsx src/server/qa/production-smoke.ts",
     "qa:production-read-stress": "tsx src/server/qa/production-read-stress.ts",
     "qa:production-reminder-scheduler": "tsx src/server/qa/production-reminder-scheduler-check.ts",
+    "qa:cron-job-org-reminder": "tsx src/server/qa/cron-job-org-reminder-check.ts",
+    "ops:cron-job-org-reminder-repair": "tsx src/server/qa/cron-job-org-reminder-check.ts --apply",
     "notifications:check-live-config": "tsx src/server/notifications/check-live-config.ts",
     "notifications:send-reminders": "tsx src/server/notifications/send-reminders.ts",
     "fresha:import:dry-run": "tsx src/server/import/fresha-import.ts --mode=dry-run",

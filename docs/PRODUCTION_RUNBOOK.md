@@ -191,6 +191,18 @@ After migration `0006_phase_12_scheduler_job_runs` is applied, real reminder job
 
 If the scheduler log gate shows repeated `401` responses, cron-job.org is reaching production but is not sending the current `Authorization: Bearer <CRON_SECRET>` header. Edit the cron-job.org job, update the custom Authorization header from the current Vercel Production `CRON_SECRET`, save/re-enable the job, run a manual test, and rerun `npm run qa:production-reminder-scheduler`.
 
+The same cron-job.org configuration can be verified and repaired through the API from a local shell that has the cron-job.org API key and current Vercel Production `CRON_SECRET`:
+
+```powershell
+$env:CRON_JOB_ORG_API_KEY = "<cron-job.org API key>"
+$env:CRON_SECRET = "<current Vercel Production CRON_SECRET>"
+npm run qa:cron-job-org-reminder
+npm run ops:cron-job-org-reminder-repair
+npm run qa:cron-job-org-reminder
+```
+
+After the cron-job.org check is clean, wait for or trigger one real cron run and rerun `npm run qa:production-reminder-scheduler`.
+
 Enable scheduler only after booking and notification smoke tests pass.
 
 Recommended cadence:

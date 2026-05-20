@@ -104,6 +104,23 @@ cron-job.org setup:
 - The job is enabled and calls `https://www.leasidefades.com/api/jobs/send-reminders` to avoid the apex-domain redirect.
 - The previous launch schedule was every five minutes (`*/5 * * * *`) in `America/Toronto`. On the current quota-limited database plan, change this to every 30 minutes or rely on the HTTP endpoint's 30-minute guard until the database plan is upgraded.
 - The job sends a custom header named `Authorization` with value `Bearer <CRON_SECRET>`.
+- The job can be inspected with the cron-job.org API without storing secrets in git:
+
+```powershell
+$env:CRON_JOB_ORG_API_KEY = "<cron-job.org API key>"
+$env:CRON_SECRET = "<current Vercel Production CRON_SECRET>"
+npm run qa:cron-job-org-reminder
+```
+
+- If the check reports a disabled job, wrong URL, stale/missing Authorization header, or wrong cadence, repair job `7551064` from the same shell:
+
+```powershell
+$env:CRON_JOB_ORG_API_KEY = "<cron-job.org API key>"
+$env:CRON_SECRET = "<current Vercel Production CRON_SECRET>"
+npm run ops:cron-job-org-reminder-repair
+```
+
+- The repair command enables the job, sets the URL to `https://www.leasidefades.com/api/jobs/send-reminders`, sets GET, stores `Authorization: Bearer <CRON_SECRET>`, saves responses, and changes the schedule to every 30 minutes. The command does not print the secret.
 - The 10:20 PM America/Toronto run on May 1, 2026 succeeded with `200 OK` after switching from the apex domain to `www`. A prior 10:15 PM run failed with `307 Temporary Redirect` and can be ignored as setup history.
 - If `CRON_SECRET` is rotated in Vercel, update the cron-job.org header value at the same time and redeploy production so the serverless function receives the new value.
 - Do not create a second scheduler for the same production environment unless this job is disabled first.

@@ -384,6 +384,7 @@
 - [x] Current incident production read stress passes after Neon quota/plan restoration
 - [x] Secured reminder endpoint has an authenticated dry-run path for verifying cron secret/cadence without sending live reminders
 - [x] Repeatable production reminder scheduler log gate exists for confirming a real post-restart `200`
+- [x] Repeatable cron-job.org configuration check/repair runner exists as `npm run qa:cron-job-org-reminder` and `npm run ops:cron-job-org-reminder-repair`
 - [x] Reminder job runs record durable success/failure heartbeat rows for dashboard monitoring
 - [x] `/admin/dashboard` Notification health surfaces reminder scheduler healthy/stale/failing/unknown state
 - [x] Production migration `0006_phase_12_scheduler_job_runs` applied before relying on dashboard heartbeat history
