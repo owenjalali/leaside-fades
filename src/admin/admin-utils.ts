@@ -215,6 +215,7 @@ export function summarizeNotificationHealth(health: AdminDashboardNotificationHe
         `${health.deliverySuccessRate}% delivery success`,
         `${health.failedActiveCount} active ${health.failedActiveCount === 1 ? "issue" : "issues"}`,
         `${health.reminderQueueCount} reminders queued`,
+        `Scheduler ${health.reminderScheduler.state}`,
     ];
 }
 

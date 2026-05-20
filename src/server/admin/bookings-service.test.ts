@@ -26,6 +26,7 @@ import {
     type AdminBookingsRepository,
     type AdminCalendarOptionsRepository,
     type AdminDashboardActivityRecord,
+    type AdminSchedulerJobRunSummary,
 } from "./bookings-service.ts";
 import type { BookingLifecycleNotificationDispatcher } from "../notifications/index.ts";
 
@@ -253,6 +254,7 @@ class InMemoryPhase6Repository
     bookingServices: Array<BookingServiceSnapshot & { bookingId: string }> = [];
     availabilityData: AvailabilityData = baseAvailability();
     activityRecords: AdminDashboardActivityRecord[] | null = null;
+    schedulerJobRunSummary: AdminSchedulerJobRunSummary | null = null;
     listCalls: any[] = [];
     transactionCount = 0;
 
@@ -314,6 +316,10 @@ class InMemoryPhase6Repository
                 attemptCount: booking.status === "no_show" ? 0 : 1,
                 lastAttemptAt: booking.status === "no_show" ? null : booking.startTime,
             }));
+    }
+
+    async getSchedulerJobRunSummary() {
+        return this.schedulerJobRunSummary;
     }
 
     async getBookingByIdForAdminScope(scope: { bookingId: string; barberId?: string }) {
@@ -594,6 +600,26 @@ function dashboardActivityFixture(
         lastAttemptAt: new Date("2026-05-03T13:55:00.000Z"),
         ...overrides,
     };
+}
+
+function schedulerJobRunFixture(overrides: Partial<NonNullable<AdminSchedulerJobRunSummary["latest"]>> = {}) {
+    const finishedAt = overrides.finishedAt ?? new Date("2026-05-20T17:00:00.000Z");
+    const startedAt = overrides.startedAt ?? new Date(finishedAt.getTime() - 150);
+
+    return {
+        id: "scheduler-run",
+        jobName: "booking_reminders",
+        trigger: "http",
+        status: "success",
+        startedAt,
+        finishedAt,
+        durationMs: finishedAt.getTime() - startedAt.getTime(),
+        result: { scanned: 0, totalAttempts: 0, sent: 0, failed: 0, skipped: 0, duplicate: 0 },
+        errorMessage: null,
+        createdAt: finishedAt,
+        updatedAt: finishedAt,
+        ...overrides,
+    } as NonNullable<AdminSchedulerJobRunSummary["latest"]>;
 }
 
 function snapshotWithPrice(priceCents: number): BookingServiceSnapshot {
@@ -1038,6 +1064,84 @@ describe("Phase 6 admin calendar and booking management service", () => {
             deliverySuccessRate: 50,
         });
         expect(dashboard.notificationHealth.reminderQueueCount).toBeGreaterThan(0);
+    });
+
+    test("dashboard reports reminder scheduler heartbeat state", async () => {
+        const repository = new InMemoryPhase6Repository();
+        const currentTime = new Date("2026-05-20T17:30:00.000Z");
+        const successRun = schedulerJobRunFixture({
+            id: "scheduler-success",
+            status: "success",
+            finishedAt: new Date("2026-05-20T17:05:00.000Z"),
+            result: { scanned: 1, sent: 0, failed: 0 },
+        });
+        repository.schedulerJobRunSummary = {
+            latest: successRun,
+            latestSuccess: successRun,
+            latestFailure: null,
+        };
+
+        const healthyDashboard = await getAdminDashboard(
+            { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+            repository,
+            { now: currentTime, reminderSchedulerStaleAfterMinutes: 90 },
+        );
+
+        expect(healthyDashboard.notificationHealth.reminderScheduler).toMatchObject({
+            state: "healthy",
+            latestStatus: "success",
+            minutesSinceLastSuccess: 25,
+            latestResult: { scanned: 1, sent: 0, failed: 0 },
+        });
+
+        repository.schedulerJobRunSummary = {
+            latest: schedulerJobRunFixture({
+                id: "scheduler-stale",
+                status: "success",
+                finishedAt: new Date("2026-05-20T15:00:00.000Z"),
+            }),
+            latestSuccess: schedulerJobRunFixture({
+                id: "scheduler-stale",
+                status: "success",
+                finishedAt: new Date("2026-05-20T15:00:00.000Z"),
+            }),
+            latestFailure: null,
+        };
+
+        const staleDashboard = await getAdminDashboard(
+            { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+            repository,
+            { now: currentTime, reminderSchedulerStaleAfterMinutes: 90 },
+        );
+
+        expect(staleDashboard.notificationHealth.reminderScheduler).toMatchObject({
+            state: "stale",
+            minutesSinceLastSuccess: 150,
+        });
+
+        const failureRun = schedulerJobRunFixture({
+            id: "scheduler-failure",
+            status: "failure",
+            finishedAt: new Date("2026-05-20T17:20:00.000Z"),
+            errorMessage: "Unauthorized",
+        });
+        repository.schedulerJobRunSummary = {
+            latest: failureRun,
+            latestSuccess: successRun,
+            latestFailure: failureRun,
+        };
+
+        const failingDashboard = await getAdminDashboard(
+            { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+            repository,
+            { now: currentTime, reminderSchedulerStaleAfterMinutes: 90 },
+        );
+
+        expect(failingDashboard.notificationHealth.reminderScheduler).toMatchObject({
+            state: "failing",
+            latestStatus: "failure",
+            errorMessage: "Unauthorized",
+        });
     });
 
     test("dashboard classifies failed notification activity as active only while still actionable", async () => {

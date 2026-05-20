@@ -179,6 +179,8 @@ npm run qa:production-reminder-scheduler
 
 This checks Vercel production logs for at least one `200` response from `/api/jobs/send-reminders`. Set `PRODUCTION_REMINDER_LOG_SINCE=<ISO timestamp>` when validating a specific cron-job.org restart window.
 
+After migration `0006_phase_12_scheduler_job_runs` is applied, real reminder job runs also write heartbeat rows. Check `/admin/dashboard` Notification health after a successful cron-job.org restart; the reminder scheduler should move from unknown/stale/failing to running after the next real authorized run.
+
 Enable scheduler only after booking and notification smoke tests pass.
 
 Recommended cadence:

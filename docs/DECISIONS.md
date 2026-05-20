@@ -664,3 +664,11 @@ Decision:
 
 Reason:
 After a cron secret rotation or cron-job.org restart, the operator needs to verify that production accepts the scheduler header without accidentally sending live reminders or waking the database reminder workload outside the intended cadence.
+
+### 2026-05-20 - Track Reminder Scheduler Heartbeat In The App
+
+Decision:
+Create `scheduler_job_runs` for reminder scheduler success/failure heartbeat rows and surface the latest reminder scheduler state inside `/admin/dashboard` Notification health. Authenticated dry-runs and off-cadence HTTP skips do not write heartbeat rows; only real reminder job runs do.
+
+Reason:
+cron-job.org can be disabled or misconfigured independently of the booking application. Vercel logs can prove that externally, but owners need an in-app signal when the reminder scheduler is stale or failing. Recording only real job runs prevents a successful dry-run from hiding a reminder delivery outage.

@@ -17,6 +17,7 @@ import {
     customers,
     locations,
     notifications,
+    schedulerJobRuns,
     serviceCategories,
     services,
 } from "../db/schema.ts";
@@ -32,6 +33,8 @@ import type {
     AdminDashboardActivityRecord,
     AdminDashboardActivityScope,
     AdminDashboardBookingScope,
+    AdminSchedulerJobRunRecord,
+    AdminSchedulerJobRunStatus,
 } from "./bookings-service.ts";
 
 type DatabaseExecutor = ReturnType<typeof createDatabaseClient>["db"] | Record<string, unknown>;
@@ -297,6 +300,28 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
             .slice(0, scope.limit);
     }
 
+    async getSchedulerJobRunSummary(input: { jobName: string }) {
+        try {
+            const [latest, latestSuccess, latestFailure] = await Promise.all([
+                this.getLatestSchedulerJobRun(input.jobName),
+                this.getLatestSchedulerJobRun(input.jobName, "success"),
+                this.getLatestSchedulerJobRun(input.jobName, "failure"),
+            ]);
+
+            return {
+                latest,
+                latestSuccess,
+                latestFailure,
+            };
+        } catch (error) {
+            if (isMissingSchedulerJobRunsTable(error)) {
+                return null;
+            }
+
+            throw error;
+        }
+    }
+
     async getBookingByIdForAdminScope(scope: { bookingId: string; barberId?: string }) {
         const db = this.database as ReturnType<typeof createDatabaseClient>["db"];
         const [booking] = await db
@@ -359,6 +384,35 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
             customerNotes: booking.customerNotes,
             internalNotes: booking.internalNotes,
         } satisfies AdminBookingDetailRecord;
+    }
+
+    private async getLatestSchedulerJobRun(jobName: string, status?: AdminSchedulerJobRunStatus) {
+        const db = this.database as ReturnType<typeof createDatabaseClient>["db"];
+        const [row] = await db
+            .select({
+                id: schedulerJobRuns.id,
+                jobName: schedulerJobRuns.jobName,
+                trigger: schedulerJobRuns.trigger,
+                status: schedulerJobRuns.status,
+                startedAt: schedulerJobRuns.startedAt,
+                finishedAt: schedulerJobRuns.finishedAt,
+                durationMs: schedulerJobRuns.durationMs,
+                result: schedulerJobRuns.result,
+                errorMessage: schedulerJobRuns.errorMessage,
+                createdAt: schedulerJobRuns.createdAt,
+                updatedAt: schedulerJobRuns.updatedAt,
+            })
+            .from(schedulerJobRuns)
+            .where(
+                compactAnd(
+                    eq(schedulerJobRuns.jobName, jobName),
+                    status ? eq(schedulerJobRuns.status, status) : undefined,
+                ),
+            )
+            .orderBy(desc(schedulerJobRuns.startedAt))
+            .limit(1);
+
+        return row ? mapSchedulerJobRun(row) : null;
     }
 
     async listCalendarOptions(): Promise<AdminCalendarOptions>;
@@ -755,6 +809,43 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
 
 function compactAnd(...conditions: Array<SQL | undefined>) {
     return and(...conditions.filter(Boolean) as SQL[]);
+}
+
+function mapSchedulerJobRun(row: {
+    id: string;
+    jobName: string;
+    trigger: string;
+    status: string;
+    startedAt: Date;
+    finishedAt: Date;
+    durationMs: number;
+    result: Record<string, unknown> | null;
+    errorMessage: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+}): AdminSchedulerJobRunRecord {
+    return {
+        id: row.id,
+        jobName: row.jobName,
+        trigger: row.trigger,
+        status: row.status as AdminSchedulerJobRunStatus,
+        startedAt: row.startedAt,
+        finishedAt: row.finishedAt,
+        durationMs: row.durationMs,
+        result: row.result,
+        errorMessage: row.errorMessage,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+    };
+}
+
+function isMissingSchedulerJobRunsTable(error: unknown) {
+    const maybeError = error as { code?: string; message?: string };
+
+    return (
+        maybeError.code === "42P01" ||
+        /relation .*scheduler_job_runs.* does not exist/i.test(maybeError.message ?? "")
+    );
 }
 
 function safeRecipientLabel(row: {

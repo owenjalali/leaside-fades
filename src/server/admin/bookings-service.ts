@@ -17,6 +17,7 @@ import {
     type NotificationEventType,
     type NotificationRecipientType,
 } from "../notifications/index.ts";
+import { BOOKING_REMINDER_JOB_NAME } from "../jobs/scheduler-runs.ts";
 
 export type AdminBookingStatus = "confirmed" | "cancelled" | "completed" | "no_show";
 export type AdminBookingSource = "public" | "manual" | "walk_in" | "imported";
@@ -191,6 +192,45 @@ export interface AdminDashboardNotificationHealth {
     failedHistoricalCount: number;
     deliverySuccessRate: number;
     reminderQueueCount: number;
+    reminderScheduler: AdminReminderSchedulerStatus;
+}
+
+export type AdminSchedulerJobRunStatus = "success" | "failure";
+export type AdminReminderSchedulerState = "healthy" | "stale" | "failing" | "unknown";
+
+export interface AdminSchedulerJobRunRecord {
+    id: string;
+    jobName: string;
+    trigger: string;
+    status: AdminSchedulerJobRunStatus;
+    startedAt: Date;
+    finishedAt: Date;
+    durationMs: number;
+    result: Record<string, unknown> | null;
+    errorMessage: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export interface AdminSchedulerJobRunSummary {
+    latest: AdminSchedulerJobRunRecord | null;
+    latestSuccess: AdminSchedulerJobRunRecord | null;
+    latestFailure: AdminSchedulerJobRunRecord | null;
+}
+
+export interface AdminReminderSchedulerStatus {
+    state: AdminReminderSchedulerState;
+    latestRunAt: Date | null;
+    latestStatus: AdminSchedulerJobRunStatus | null;
+    lastSuccessAt: Date | null;
+    lastFailureAt: Date | null;
+    minutesSinceLastSuccess: number | null;
+    staleAfterMinutes: number;
+    trigger: string | null;
+    durationMs: number | null;
+    errorMessage: string | null;
+    latestResult: Record<string, unknown> | null;
+    message: string;
 }
 
 export interface AdminDashboardSnapshot {
@@ -288,6 +328,7 @@ export type AdminAvailabilityRepository = Pick<BookingRepository, "loadAvailabil
 export interface AdminDashboardRepository {
     listDashboardBookingsForAdminScope(scope: AdminDashboardBookingScope): Promise<AdminBookingRecord[]>;
     listDashboardActivityForAdminScope(scope: AdminDashboardActivityScope): Promise<AdminDashboardActivityRecord[]>;
+    getSchedulerJobRunSummary?(input: { jobName: string }): Promise<AdminSchedulerJobRunSummary | null>;
 }
 
 export interface AdminBookingManagementRepository
@@ -392,6 +433,7 @@ const RESCHEDULE_SERVICE_CHANGE_FIELDS = new Set([
 ]);
 const RESCHEDULE_SERVICE_CHANGE_MESSAGE =
     "Service changes are not supported during reschedule. Cancel and recreate the booking to change services.";
+const DEFAULT_REMINDER_SCHEDULER_STALE_AFTER_MINUTES = 90;
 
 export async function listAdminBookings(
     user: SafeAdminUser,
@@ -441,7 +483,11 @@ export async function getAdminCalendarOptions(
 export async function getAdminDashboard(
     user: SafeAdminUser,
     repository: AdminDashboardRepository,
-    options: { now?: Date; notificationDeliveryMode?: NotificationDeliveryMode } = {},
+    options: {
+        now?: Date;
+        notificationDeliveryMode?: NotificationDeliveryMode;
+        reminderSchedulerStaleAfterMinutes?: number;
+    } = {},
 ): Promise<AdminDashboardSnapshot> {
     const now = options.now ?? new Date();
     const actorScope = buildActorScope(user);
@@ -453,7 +499,14 @@ export async function getAdminDashboard(
     const upcomingEnd = localDateTimeToUtc(addLocalDays(today, 8), "00:00", DEFAULT_TIME_ZONE);
     const upcomingChartEnd = localDateTimeToUtc(addLocalDays(today, 7), "00:00", DEFAULT_TIME_ZONE);
 
-    const [todayBookings, upcomingBookings, valueBookings, upcomingStatusBookings, activity] = await Promise.all([
+    const [
+        todayBookings,
+        upcomingBookings,
+        valueBookings,
+        upcomingStatusBookings,
+        activity,
+        reminderSchedulerRuns,
+    ] = await Promise.all([
         repository.listDashboardBookingsForAdminScope({
             ...actorScope,
             status: "confirmed",
@@ -484,9 +537,17 @@ export async function getAdminDashboard(
             ...actorScope,
             limit: 50,
         }),
+        repository.getSchedulerJobRunSummary
+            ? repository.getSchedulerJobRunSummary({ jobName: BOOKING_REMINDER_JOB_NAME })
+            : Promise.resolve(null),
     ]);
     const classifiedActivity = classifyDashboardActivityFailures(activity, now);
     const upcomingReminders = buildUpcomingReminderPreviews(upcomingBookings, now);
+    const reminderScheduler = buildReminderSchedulerStatus(
+        reminderSchedulerRuns,
+        now,
+        options.reminderSchedulerStaleAfterMinutes,
+    );
 
     return {
         generatedAt: now,
@@ -503,7 +564,7 @@ export async function getAdminDashboard(
             upcomingStatusBookings,
             buildLocalDateSeries(today, 7),
         ),
-        notificationHealth: buildNotificationHealth(classifiedActivity, upcomingReminders),
+        notificationHealth: buildNotificationHealth(classifiedActivity, upcomingReminders, reminderScheduler),
     };
 }
 
@@ -1317,6 +1378,7 @@ function buildUpcomingAppointmentAnalytics(
 function buildNotificationHealth(
     activity: AdminDashboardActivityRecord[],
     upcomingReminders: AdminUpcomingReminderPreview[],
+    reminderScheduler: AdminReminderSchedulerStatus,
 ): AdminDashboardNotificationHealth {
     const sentCount = activity.filter((item) => item.status === "sent").length;
     const scheduledCount = activity.filter((item) => item.status === "pending" || Boolean(item.scheduledFor)).length;
@@ -1333,6 +1395,94 @@ function buildNotificationHealth(
         failedHistoricalCount,
         deliverySuccessRate: deliveryDenominator > 0 ? Math.round((sentCount / deliveryDenominator) * 100) : 100,
         reminderQueueCount: upcomingReminders.length,
+        reminderScheduler,
+    };
+}
+
+function buildReminderSchedulerStatus(
+    summary: AdminSchedulerJobRunSummary | null | undefined,
+    now: Date,
+    staleAfterMinutes = DEFAULT_REMINDER_SCHEDULER_STALE_AFTER_MINUTES,
+): AdminReminderSchedulerStatus {
+    const latest = summary?.latest ?? null;
+    const latestSuccess = summary?.latestSuccess ?? null;
+    const latestFailure = summary?.latestFailure ?? null;
+    const effectiveStaleAfterMinutes = Math.max(15, Math.floor(staleAfterMinutes));
+
+    if (!latest) {
+        return {
+            state: "unknown",
+            latestRunAt: null,
+            latestStatus: null,
+            lastSuccessAt: null,
+            lastFailureAt: latestFailure?.finishedAt ?? null,
+            minutesSinceLastSuccess: null,
+            staleAfterMinutes: effectiveStaleAfterMinutes,
+            trigger: null,
+            durationMs: null,
+            errorMessage: null,
+            latestResult: null,
+            message: "No reminder scheduler heartbeat has been recorded yet.",
+        };
+    }
+
+    const latestRunAt = latest.finishedAt;
+    const lastSuccessAt = latestSuccess?.finishedAt ?? null;
+    const lastFailureAt = latestFailure?.finishedAt ?? null;
+    const minutesSinceLastSuccess = lastSuccessAt
+        ? Math.max(0, Math.floor((now.getTime() - lastSuccessAt.getTime()) / 60_000))
+        : null;
+
+    if (latest.status === "failure") {
+        return {
+            state: "failing",
+            latestRunAt,
+            latestStatus: latest.status,
+            lastSuccessAt,
+            lastFailureAt,
+            minutesSinceLastSuccess,
+            staleAfterMinutes: effectiveStaleAfterMinutes,
+            trigger: latest.trigger,
+            durationMs: latest.durationMs,
+            errorMessage: latest.errorMessage,
+            latestResult: latest.result,
+            message: "Latest reminder scheduler run failed.",
+        };
+    }
+
+    if (minutesSinceLastSuccess === null || minutesSinceLastSuccess > effectiveStaleAfterMinutes) {
+        return {
+            state: "stale",
+            latestRunAt,
+            latestStatus: latest.status,
+            lastSuccessAt,
+            lastFailureAt,
+            minutesSinceLastSuccess,
+            staleAfterMinutes: effectiveStaleAfterMinutes,
+            trigger: latest.trigger,
+            durationMs: latest.durationMs,
+            errorMessage: latest.errorMessage,
+            latestResult: latest.result,
+            message:
+                minutesSinceLastSuccess === null
+                    ? "No successful reminder scheduler run has been recorded."
+                    : `No successful reminder scheduler run in ${minutesSinceLastSuccess} minutes.`,
+        };
+    }
+
+    return {
+        state: "healthy",
+        latestRunAt,
+        latestStatus: latest.status,
+        lastSuccessAt,
+        lastFailureAt,
+        minutesSinceLastSuccess,
+        staleAfterMinutes: effectiveStaleAfterMinutes,
+        trigger: latest.trigger,
+        durationMs: latest.durationMs,
+        errorMessage: latest.errorMessage,
+        latestResult: latest.result,
+        message: `Last successful reminder scheduler run ${minutesSinceLastSuccess} minutes ago.`,
     };
 }
 

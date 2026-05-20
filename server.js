@@ -410,7 +410,7 @@ app.get(
     }
 
     const reminderJob = await loadReminderJob();
-    const result = await reminderJob.runConfiguredBookingReminderJob();
+    const result = await reminderJob.runConfiguredBookingReminderJob(process.env, { trigger: "http" });
     return res.json({ ok: true, result });
   }),
 );

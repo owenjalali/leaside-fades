@@ -283,6 +283,24 @@ export interface AdminDashboardNotificationHealth {
     failedHistoricalCount: number;
     deliverySuccessRate: number;
     reminderQueueCount: number;
+    reminderScheduler: AdminReminderSchedulerStatus;
+}
+
+export type AdminReminderSchedulerState = "healthy" | "stale" | "failing" | "unknown";
+
+export interface AdminReminderSchedulerStatus {
+    state: AdminReminderSchedulerState;
+    latestRunAt: string | null;
+    latestStatus: "success" | "failure" | null;
+    lastSuccessAt: string | null;
+    lastFailureAt: string | null;
+    minutesSinceLastSuccess: number | null;
+    staleAfterMinutes: number;
+    trigger: string | null;
+    durationMs: number | null;
+    errorMessage: string | null;
+    latestResult: Record<string, unknown> | null;
+    message: string;
 }
 
 export interface AdminDashboardSnapshot {

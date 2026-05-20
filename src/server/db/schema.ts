@@ -495,6 +495,29 @@ export const notifications = pgTable(
     ],
 );
 
+export const schedulerJobRuns = pgTable(
+    "scheduler_job_runs",
+    {
+        id: idColumn(),
+        jobName: varchar("job_name", { length: 120 }).notNull(),
+        trigger: varchar("trigger", { length: 40 }).notNull().default("unknown"),
+        status: varchar("status", { length: 32 }).notNull(),
+        startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+        finishedAt: timestamp("finished_at", { withTimezone: true }).notNull(),
+        durationMs: integer("duration_ms").notNull(),
+        result: jsonb("result").$type<Record<string, unknown> | null>(),
+        errorMessage: text("error_message"),
+        createdAt: createdAtColumn(),
+        updatedAt: updatedAtColumn(),
+    },
+    (table) => [
+        index("scheduler_job_runs_job_started_idx").on(table.jobName, table.startedAt),
+        index("scheduler_job_runs_job_status_started_idx").on(table.jobName, table.status, table.startedAt),
+        check("scheduler_job_runs_status_check", sql`${table.status} in ('success', 'failure')`),
+        check("scheduler_job_runs_duration_check", sql`${table.durationMs} >= 0`),
+    ],
+);
+
 export const locationsRelations = relations(locations, ({ many }) => ({
     businessHours: many(businessHours),
     barberLocations: many(barberLocations),

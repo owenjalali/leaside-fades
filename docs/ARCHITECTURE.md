@@ -103,6 +103,8 @@ Phase 12 closes the launch-critical booking visibility gap. New booking confirma
 
 Phase 13 extends the same booking notification path to staff-created walk-ins when customer contact exists and upgrades the Dashboard Notification Center with delivery mode, channel/status filters, upcoming reminder previews, failed rows, and provider/error details.
 
+Phase 12/13 incident hardening adds `scheduler_job_runs` as a lightweight operational heartbeat for reminder jobs. Real reminder scheduler runs record success/failure, trigger, duration, result counts, and error details. `/admin/dashboard` reads the latest reminder heartbeat and classifies it as healthy, stale, failing, or unknown in Notification health.
+
 ### Permissions Service
 
 Responsible for enforcing owner/admin vs barber permissions.
@@ -154,6 +156,7 @@ Core tables planned for Phase 1:
 - `booking_services`
 - `blocked_times`
 - `notifications`
+- `scheduler_job_runs`
 - `users`
 - `user_sessions`
 - `password_reset_tokens`

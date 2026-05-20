@@ -3,7 +3,7 @@ import "dotenv/config";
 import { runConfiguredBookingReminderJob } from "./reminder-job-runner.ts";
 
 async function main() {
-    const result = await runConfiguredBookingReminderJob();
+    const result = await runConfiguredBookingReminderJob(process.env, { trigger: "cli" });
 
     console.log(
         [

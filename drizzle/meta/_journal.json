@@ -43,6 +43,13 @@
       "when": 1777484575228,
       "tag": "0005_phase_9_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1779295604289,
+      "tag": "0006_phase_12_scheduler_job_runs",
+      "breakpoints": true
     }
   ]
 }

@@ -1851,6 +1851,24 @@ function NotificationHealthPanel({
                     <DashboardMetricTile label="Skipped" value={`${health.skippedCount}`} detail="missing contact" />
                 </div>
                 <div className="rounded-md border border-[#e1e8e1] bg-[#fbfdfb] p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <h3 className="text-base font-black text-forest">Reminder scheduler</h3>
+                        <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.1em] ${reminderSchedulerTone(health.reminderScheduler.state)}`}>
+                            {reminderSchedulerLabel(health.reminderScheduler.state)}
+                        </span>
+                    </div>
+                    <p className="mt-2 text-sm font-bold text-charcoal/65">{health.reminderScheduler.message}</p>
+                    <div className="mt-3 grid gap-2 text-xs font-bold text-charcoal/50 sm:grid-cols-2">
+                        <span>Last success: {formatNullableDashboardDateTime(health.reminderScheduler.lastSuccessAt)}</span>
+                        <span>Last run: {formatNullableDashboardDateTime(health.reminderScheduler.latestRunAt)}</span>
+                    </div>
+                    {health.reminderScheduler.errorMessage ? (
+                        <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
+                            {health.reminderScheduler.errorMessage}
+                        </p>
+                    ) : null}
+                </div>
+                <div className="rounded-md border border-[#e1e8e1] bg-[#fbfdfb] p-3">
                     <div className="flex items-center justify-between gap-3">
                         <h3 className="text-base font-black text-forest">Reminder queue</h3>
                         <span className="text-sm font-black text-charcoal/45">{upcomingReminders.length} scheduled</span>
@@ -4450,6 +4468,24 @@ function deliveryModeTone(mode: AdminDashboardSnapshot["notificationDeliveryMode
     if (mode === "live") return "bg-green/20 text-forest";
     if (mode === "dev") return "bg-amber-100 text-amber-800";
     return "bg-[#eef5f1] text-charcoal/65";
+}
+
+function reminderSchedulerTone(state: AdminDashboardSnapshot["notificationHealth"]["reminderScheduler"]["state"]) {
+    if (state === "healthy") return "bg-green/20 text-forest";
+    if (state === "failing") return "bg-red-100 text-red-800";
+    if (state === "stale") return "bg-amber-100 text-amber-800";
+    return "bg-[#eef5f1] text-charcoal/65";
+}
+
+function reminderSchedulerLabel(state: AdminDashboardSnapshot["notificationHealth"]["reminderScheduler"]["state"]) {
+    if (state === "healthy") return "Running";
+    if (state === "failing") return "Failed";
+    if (state === "stale") return "Stale";
+    return "Unknown";
+}
+
+function formatNullableDashboardDateTime(value: string | null) {
+    return value ? formatLocalDateTime(value) : "Not recorded";
 }
 
 function activityStatusLabel(item: AdminDashboardActivity) {

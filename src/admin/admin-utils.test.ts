@@ -205,8 +205,22 @@ describe("Phase 6 admin UI utilities", () => {
                 failedHistoricalCount: 4,
                 deliverySuccessRate: 90,
                 reminderQueueCount: 11,
+                reminderScheduler: {
+                    state: "healthy",
+                    latestRunAt: "2026-05-20T16:30:00.000Z",
+                    latestStatus: "success",
+                    lastSuccessAt: "2026-05-20T16:30:00.000Z",
+                    lastFailureAt: null,
+                    minutesSinceLastSuccess: 12,
+                    staleAfterMinutes: 90,
+                    trigger: "http",
+                    durationMs: 141,
+                    errorMessage: null,
+                    latestResult: { scanned: 0 },
+                    message: "Last successful reminder scheduler run 12 minutes ago.",
+                },
             }),
-        ).toEqual(["90% delivery success", "2 active issues", "11 reminders queued"]);
+        ).toEqual(["90% delivery success", "2 active issues", "11 reminders queued", "Scheduler healthy"]);
     });
 });
 
