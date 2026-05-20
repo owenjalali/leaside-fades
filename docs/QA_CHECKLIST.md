@@ -381,6 +381,7 @@
 - [x] Production database plan/quota restored to Neon Launch after compute quota exhaustion incident
 - [x] Current incident production smoke passes after Neon quota/plan restoration
 - [x] Secured reminder endpoint has an authenticated dry-run path for verifying cron secret/cadence without sending live reminders
+- [x] Repeatable production reminder scheduler log gate exists for confirming a real post-restart `200`
 - [ ] Untracked artifacts audited before launch commit
 - [ ] Owner-approved recurring shifts entered before exposing `/book`
 - [x] Observed Fresha launch recurring shifts entered as initial production schedule pending owner verification

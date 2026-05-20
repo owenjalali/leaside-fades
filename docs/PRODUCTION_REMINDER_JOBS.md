@@ -107,6 +107,7 @@ cron-job.org setup:
 - The 10:20 PM America/Toronto run on May 1, 2026 succeeded with `200 OK` after switching from the apex domain to `www`. A prior 10:15 PM run failed with `307 Temporary Redirect` and can be ignored as setup history.
 - If `CRON_SECRET` is rotated in Vercel, update the cron-job.org header value at the same time and redeploy production so the serverless function receives the new value.
 - Do not create a second scheduler for the same production environment unless this job is disabled first.
+- After restarting cron-job.org, run `npm run qa:production-reminder-scheduler` to confirm Vercel logs contain at least one `200` for `/api/jobs/send-reminders` in the selected window. Use `PRODUCTION_REMINDER_LOG_SINCE=<ISO timestamp>` to narrow the check to the restart window.
 
 Linux cron example:
 

@@ -171,6 +171,14 @@ curl -H "Authorization: Bearer <CRON_SECRET>" "https://www.leasidefades.com/api/
 
 Use the dry-run call to verify the Vercel `CRON_SECRET` and reminder cadence after secret rotation or cron-job.org edits. It does not run the live reminder job.
 
+Production scheduler log gate:
+
+```sh
+npm run qa:production-reminder-scheduler
+```
+
+This checks Vercel production logs for at least one `200` response from `/api/jobs/send-reminders`. Set `PRODUCTION_REMINDER_LOG_SINCE=<ISO timestamp>` when validating a specific cron-job.org restart window.
+
 Enable scheduler only after booking and notification smoke tests pass.
 
 Recommended cadence:
