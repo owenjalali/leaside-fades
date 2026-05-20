@@ -55,6 +55,28 @@ describe("application health", () => {
         expect(healthHttpStatus(result)).toBe(503);
     });
 
+    test("times out slow database readiness checks and still closes the pool", async () => {
+        const pool = {
+            query: vi.fn(() => new Promise(() => undefined)),
+            end: vi.fn(async () => undefined),
+        };
+
+        const result = await checkApplicationHealth({
+            env: { DATABASE_URL: "postgres://example" },
+            createClient: () => ({ pool }),
+            now: () => new Date("2026-05-20T15:00:00.000Z"),
+            timeoutMs: 1,
+        });
+
+        expect(result.checks.database).toEqual({
+            ok: false,
+            status: "unavailable",
+            message: "Database is unavailable.",
+        });
+        expect(pool.end).toHaveBeenCalledTimes(1);
+        expect(healthHttpStatus(result)).toBe(503);
+    });
+
     test("reports unhealthy when DATABASE_URL is missing", async () => {
         const result = await checkApplicationHealth({
             env: {},

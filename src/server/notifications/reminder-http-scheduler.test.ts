@@ -10,6 +10,13 @@ describe("reminder HTTP scheduler guard", () => {
         expect(reminderHttpIntervalFromEnv({})).toBe(30);
     });
 
+    test("ignores unsupported or malformed cadence values", () => {
+        expect(reminderHttpIntervalFromEnv({ REMINDER_HTTP_MIN_INTERVAL_MINUTES: "0" })).toBe(30);
+        expect(reminderHttpIntervalFromEnv({ REMINDER_HTTP_MIN_INTERVAL_MINUTES: "7" })).toBe(30);
+        expect(reminderHttpIntervalFromEnv({ REMINDER_HTTP_MIN_INTERVAL_MINUTES: "30.5" })).toBe(30);
+        expect(reminderHttpIntervalFromEnv({ REMINDER_HTTP_MIN_INTERVAL_MINUTES: "not-a-number" })).toBe(30);
+    });
+
     test("allows paid environments to opt back into every cron invocation", () => {
         expect(reminderHttpIntervalFromEnv({ REMINDER_HTTP_MIN_INTERVAL_MINUTES: "5" })).toBe(5);
     });

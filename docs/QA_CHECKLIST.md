@@ -334,6 +334,7 @@
 - [x] Secured reminder endpoint added at `/api/jobs/send-reminders`
 - [x] `/api/health` checks PostgreSQL readiness so DB quota/connection failures are not hidden behind a false-green process health response
 - [x] `/api/jobs/send-reminders` skips off-boundary HTTP cron hits before opening PostgreSQL connections when `REMINDER_HTTP_MIN_INTERVAL_MINUTES` is above 5
+- [x] Repeatable non-mutating production smoke runner exists as `npm run qa:production-smoke`
 - [x] Vercel production deployment created for `leasidefades.com`
 - [x] Local/dev-only seed and QA runner production guards documented
 - [x] Local HTTP smoke test against `node server.js` validates public booking, admin visibility, customer cancel, customer reschedule, and notification rows
@@ -377,7 +378,8 @@
 - [x] Controlled live email smoke test sent only to approved test email
 - [ ] Reminder job manually tested against a safe controlled fixture or staging database
 - [x] Production reminder scheduler enabled through cron-job.org and first successful `200 OK` run observed
-- [ ] Production database plan/quota confirmed high enough for the selected reminder cadence
+- [x] Production database plan/quota restored to Neon Launch after compute quota exhaustion incident
+- [x] Current incident production smoke passes after Neon quota/plan restoration
 - [ ] Untracked artifacts audited before launch commit
 - [ ] Owner-approved recurring shifts entered before exposing `/book`
 - [x] Observed Fresha launch recurring shifts entered as initial production schedule pending owner verification

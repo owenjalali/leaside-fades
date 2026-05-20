@@ -21,6 +21,7 @@
     "qa:phase9-notifications": "tsx src/server/qa/phase9-notifications-flow-qa.ts",
     "qa:phase10-reminders": "tsx src/server/qa/phase10-reminders-flow-qa.ts",
     "qa:phase12-dashboard-fixture": "tsx src/server/qa/phase12-dashboard-fixture.ts",
+    "qa:production-smoke": "tsx src/server/qa/production-smoke.ts",
     "notifications:check-live-config": "tsx src/server/notifications/check-live-config.ts",
     "notifications:send-reminders": "tsx src/server/notifications/send-reminders.ts",
     "fresha:import:dry-run": "tsx src/server/import/fresha-import.ts --mode=dry-run",

@@ -100,6 +100,14 @@ Verify:
 - Google Places reviews do not expose server errors.
 - Google Maps, Instagram, and Facebook links point to the approved destinations.
 
+Repeatable non-mutating smoke:
+
+```sh
+npm run qa:production-smoke
+```
+
+The production smoke runner checks that `/book` loads, `/api/health` proves PostgreSQL readiness, `/api/booking/catalog` returns the launch catalog, invalid admin login returns `401` instead of `500`, protected admin routes stay protected, and the reminder endpoint rejects unauthenticated calls before database work.
+
 ## Data Setup
 
 Before exposing `/book` publicly:
