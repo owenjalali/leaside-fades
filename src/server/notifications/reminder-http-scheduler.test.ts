@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
     getReminderHttpScheduleDecision,
+    reminderHttpBoundaryGraceMinutesFromEnv,
     reminderHttpIntervalFromEnv,
 } from "./reminder-http-scheduler.ts";
 
@@ -21,6 +22,13 @@ describe("reminder HTTP scheduler guard", () => {
         expect(reminderHttpIntervalFromEnv({ REMINDER_HTTP_MIN_INTERVAL_MINUTES: "5" })).toBe(5);
     });
 
+    test("defaults to a small post-boundary grace window for delayed schedulers", () => {
+        expect(reminderHttpBoundaryGraceMinutesFromEnv({}, 30)).toBe(2);
+        expect(reminderHttpBoundaryGraceMinutesFromEnv({ REMINDER_HTTP_BOUNDARY_GRACE_MINUTES: "0" }, 30)).toBe(0);
+        expect(reminderHttpBoundaryGraceMinutesFromEnv({ REMINDER_HTTP_BOUNDARY_GRACE_MINUTES: "not-a-number" }, 30)).toBe(2);
+        expect(reminderHttpBoundaryGraceMinutesFromEnv({ REMINDER_HTTP_BOUNDARY_GRACE_MINUTES: "10" }, 30)).toBe(5);
+    });
+
     test("runs on the configured minute boundary", () => {
         expect(
             getReminderHttpScheduleDecision({
@@ -30,6 +38,20 @@ describe("reminder HTTP scheduler guard", () => {
         ).toEqual({
             shouldRun: true,
             intervalMinutes: 30,
+            boundaryGraceMinutes: 2,
+        });
+    });
+
+    test("runs shortly after the configured minute boundary when a scheduler is delayed", () => {
+        expect(
+            getReminderHttpScheduleDecision({
+                now: new Date("2026-05-20T15:31:12.000Z"),
+                intervalMinutes: 30,
+            }),
+        ).toEqual({
+            shouldRun: true,
+            intervalMinutes: 30,
+            boundaryGraceMinutes: 2,
         });
     });
 
@@ -42,6 +64,7 @@ describe("reminder HTTP scheduler guard", () => {
         ).toEqual({
             shouldRun: false,
             intervalMinutes: 30,
+            boundaryGraceMinutes: 2,
             reason: "outside_scheduled_boundary",
             nextRunAt: "2026-05-20T16:00:00.000Z",
         });

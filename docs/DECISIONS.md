@@ -672,3 +672,11 @@ Create `scheduler_job_runs` for reminder scheduler success/failure heartbeat row
 
 Reason:
 cron-job.org can be disabled or misconfigured independently of the booking application. Vercel logs can prove that externally, but owners need an in-app signal when the reminder scheduler is stale or failing. Recording only real job runs prevents a successful dry-run from hiding a reminder delivery outage.
+
+### 2026-05-20 - Add GitHub Actions As The Free Production Reminder Scheduler Path
+
+Decision:
+Add `.github/workflows/send-reminders.yml` as a free scheduler path for production reminders while cron-job.org cannot be repaired without its API key. The workflow runs at UTC minute `0` and `30`, uses repository secret `LEASIDE_REMINDER_CRON_SECRET`, and fails if production returns a skipped or non-2xx response. The HTTP reminder guard now allows a small post-boundary grace window so delayed scheduled runners can still execute the intended 30-minute job without opening the database on unrelated off-boundary calls.
+
+Reason:
+The database outage was caused by exhausted Neon compute quota, so the scheduler should stay on a 30-minute database cadence. cron-job.org is still reaching production with stale credentials and cannot be repaired from this machine without its API key. GitHub Actions gives a no-extra-cost scheduler under the existing GitHub account, while the durable heartbeat gate still proves a real reminder run before recovery is marked complete.

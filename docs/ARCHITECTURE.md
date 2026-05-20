@@ -105,6 +105,8 @@ Phase 13 extends the same booking notification path to staff-created walk-ins wh
 
 Phase 12/13 incident hardening adds `scheduler_job_runs` as a lightweight operational heartbeat for reminder jobs. Real reminder scheduler runs record success/failure, trigger, duration, result counts, and error details. `/admin/dashboard` reads the latest reminder heartbeat and classifies it as healthy, stale, failing, or unknown in Notification health.
 
+The production HTTP reminder endpoint is scheduler-agnostic: cron-job.org, GitHub Actions, or Vercel Cron may call the same secured route when configured with the current `CRON_SECRET`. On quota-limited database plans, the route keeps a 30-minute database cadence and allows only a short post-boundary grace window for delayed schedulers before skipping without opening PostgreSQL.
+
 ### Permissions Service
 
 Responsible for enforcing owner/admin vs barber permissions.

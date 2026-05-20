@@ -48,6 +48,7 @@ describe("secured reminder HTTP route", () => {
             dryRun: true,
             schedule: {
                 intervalMinutes: 30,
+                boundaryGraceMinutes: 2,
             },
         });
         expect(response.body.schedule).toHaveProperty("shouldRun");

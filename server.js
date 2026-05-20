@@ -378,8 +378,11 @@ app.get(
     }
 
     const scheduler = await loadReminderHttpScheduler();
+    const intervalMinutes = scheduler.reminderHttpIntervalFromEnv(process.env);
+    const boundaryGraceMinutes = scheduler.reminderHttpBoundaryGraceMinutesFromEnv(process.env, intervalMinutes);
     const scheduleDecision = scheduler.getReminderHttpScheduleDecision({
-      intervalMinutes: scheduler.reminderHttpIntervalFromEnv(process.env),
+      intervalMinutes,
+      boundaryGraceMinutes,
     });
 
     if (req.query.dryRun === "1" || req.query.dryRun === "true") {
@@ -390,6 +393,7 @@ app.get(
         schedule: {
           shouldRun: scheduleDecision.shouldRun,
           intervalMinutes: scheduleDecision.intervalMinutes,
+          boundaryGraceMinutes: scheduleDecision.boundaryGraceMinutes,
           reason: scheduleDecision.reason,
           nextRunAt: scheduleDecision.nextRunAt,
         },
@@ -404,6 +408,7 @@ app.get(
         reason: scheduleDecision.reason,
         schedule: {
           intervalMinutes: scheduleDecision.intervalMinutes,
+          boundaryGraceMinutes: scheduleDecision.boundaryGraceMinutes,
           nextRunAt: scheduleDecision.nextRunAt,
         },
       });
