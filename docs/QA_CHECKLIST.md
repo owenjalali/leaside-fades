@@ -384,7 +384,7 @@
 - [x] Repeatable production reminder scheduler log gate exists for confirming a real post-restart `200`
 - [x] Reminder job runs record durable success/failure heartbeat rows for dashboard monitoring
 - [x] `/admin/dashboard` Notification health surfaces reminder scheduler healthy/stale/failing/unknown state
-- [ ] Production migration `0006_phase_12_scheduler_job_runs` applied before relying on dashboard heartbeat history
+- [x] Production migration `0006_phase_12_scheduler_job_runs` applied before relying on dashboard heartbeat history
 - [ ] Untracked artifacts audited before launch commit
 - [ ] Owner-approved recurring shifts entered before exposing `/book`
 - [x] Observed Fresha launch recurring shifts entered as initial production schedule pending owner verification
