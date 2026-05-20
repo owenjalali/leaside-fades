@@ -3,6 +3,7 @@ import {
     BOOKING_REMINDER_JOB_NAME,
     createDrizzleSchedulerJobRunRepository,
     runTrackedSchedulerJob,
+    type SchedulerJobRunSummary,
     type SchedulerJobRunRepository,
 } from "../jobs/scheduler-runs.ts";
 import { assertNotificationRuntimeConfig } from "./config.ts";
@@ -39,6 +40,20 @@ export async function runConfiguredBookingReminderJob(
                     providers: createNotificationProviders(),
                     ...reminderJobWindowFromEnv(env),
                 }),
+        });
+    } finally {
+        await pool.end();
+    }
+}
+
+export async function getConfiguredBookingReminderJobSummary(
+    env: NodeJS.ProcessEnv = process.env,
+): Promise<SchedulerJobRunSummary | null> {
+    const { db, pool } = createDatabaseClient(env.DATABASE_URL);
+
+    try {
+        return await createDrizzleSchedulerJobRunRepository(db).getJobRunSummary({
+            jobName: BOOKING_REMINDER_JOB_NAME,
         });
     } finally {
         await pool.end();

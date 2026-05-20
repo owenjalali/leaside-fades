@@ -55,6 +55,54 @@ describe("reminder HTTP scheduler guard", () => {
         });
     });
 
+    test("runs off-boundary when the last successful heartbeat is stale", () => {
+        expect(
+            getReminderHttpScheduleDecision({
+                now: new Date("2026-05-20T20:34:12.000Z"),
+                intervalMinutes: 30,
+                lastSuccessAt: new Date("2026-05-20T18:30:24.875Z"),
+            }),
+        ).toEqual({
+            shouldRun: true,
+            intervalMinutes: 30,
+            boundaryGraceMinutes: 2,
+            lastSuccessAt: "2026-05-20T18:30:24.875Z",
+            minutesSinceLastSuccess: 123,
+        });
+    });
+
+    test("skips off-boundary when a recent successful heartbeat already satisfies the cadence", () => {
+        expect(
+            getReminderHttpScheduleDecision({
+                now: new Date("2026-05-20T20:34:12.000Z"),
+                intervalMinutes: 30,
+                lastSuccessAt: new Date("2026-05-20T20:30:24.875Z"),
+            }),
+        ).toEqual({
+            shouldRun: false,
+            intervalMinutes: 30,
+            boundaryGraceMinutes: 2,
+            reason: "recent_success",
+            nextRunAt: "2026-05-20T21:00:24.875Z",
+            lastSuccessAt: "2026-05-20T20:30:24.875Z",
+            minutesSinceLastSuccess: 3,
+        });
+    });
+
+    test("can establish the first live heartbeat when no previous success exists", () => {
+        expect(
+            getReminderHttpScheduleDecision({
+                now: new Date("2026-05-20T20:34:12.000Z"),
+                intervalMinutes: 30,
+                runWhenNoSuccess: true,
+            }),
+        ).toEqual({
+            shouldRun: true,
+            intervalMinutes: 30,
+            boundaryGraceMinutes: 2,
+        });
+    });
+
     test("skips off-boundary cron calls before opening a database connection", () => {
         expect(
             getReminderHttpScheduleDecision({

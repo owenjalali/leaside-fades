@@ -333,7 +333,7 @@
 - [x] Vercel routing config added for `/book`, `/booking`, and `/admin`
 - [x] Secured reminder endpoint added at `/api/jobs/send-reminders`
 - [x] `/api/health` checks PostgreSQL readiness so DB quota/connection failures are not hidden behind a false-green process health response
-- [x] `/api/jobs/send-reminders` skips off-boundary HTTP cron hits before opening PostgreSQL connections when `REMINDER_HTTP_MIN_INTERVAL_MINUTES` is above 5
+- [x] `/api/jobs/send-reminders` uses durable reminder heartbeat state to preserve the configured cadence even when external schedulers start late
 - [x] Repeatable non-mutating production smoke runner exists as `npm run qa:production-smoke`
 - [x] Repeatable bounded production read stress runner exists as `npm run qa:production-read-stress`
 - [x] Vercel production deployment created for `leasidefades.com`
@@ -395,6 +395,7 @@
 - [x] GitHub Actions production reminder scheduler workflow exists for the free 30-minute scheduler path
 - [x] GitHub Actions repository secret `LEASIDE_REMINDER_CRON_SECRET` configured with the current production `CRON_SECRET`
 - [x] GitHub Actions reminder scheduler produces an authorized real run and durable success heartbeat
+- [x] GitHub Actions delayed scheduled runs are handled by heartbeat-based cadence instead of failing on off-boundary skips
 - [ ] Current cron-job.org restart produces an authorized `200` reminder run after updating the job Authorization header
 - [ ] Current cron-job.org restart produces a real `scheduler_job_runs` success heartbeat after updating the job Authorization header
 - [ ] Untracked artifacts audited before launch commit

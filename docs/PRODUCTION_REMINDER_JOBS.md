@@ -65,7 +65,7 @@ Required production notification variables:
 - `REMINDER_JOB_LOOKBACK_MINUTES=60`
 - `REMINDER_JOB_LOOKAHEAD_MINUTES=15`
 - `REMINDER_HTTP_MIN_INTERVAL_MINUTES=30` on quota-limited database plans
-- `REMINDER_HTTP_BOUNDARY_GRACE_MINUTES=2` to tolerate short scheduler delays after the 30-minute boundary
+- `REMINDER_HTTP_BOUNDARY_GRACE_MINUTES=2` for authenticated dry-run boundary reporting
 - `CRON_SECRET`
 - `TWILIO_ACCOUNT_SID`
 - `TWILIO_AUTH_TOKEN`
@@ -76,7 +76,7 @@ Required production notification variables:
 Recommended schedule:
 - Run every 30 minutes on quota-limited/serverless database plans.
 - Run every 5 minutes only after the database plan has enough compute quota for continuous production reminder wakeups.
-- Keep the default 60-minute lookback and 15-minute lookahead so a short scheduler outage does not miss due reminders.
+- Keep the default 60-minute lookback and 15-minute lookahead so a short scheduler delay does not miss due reminders.
 - Capture stdout/stderr in host logs.
 - Do not run multiple authorized scheduler definitions for the same environment.
 
@@ -85,7 +85,7 @@ Vercel setup:
 - Set `CRON_SECRET` in Vercel production. Vercel sends it as `Authorization: Bearer <CRON_SECRET>` when invoking cron.
 - The endpoint returns `503` if `CRON_SECRET` is missing and `401` if the header does not match, so reminders cannot be triggered publicly.
 - To verify the production cron secret without sending reminders or opening a database reminder job, call `GET /api/jobs/send-reminders?dryRun=1` with the same `Authorization: Bearer <CRON_SECRET>` header. A healthy dry-run response returns `200`, `dryRun: true`, and the current cadence decision.
-- The endpoint checks `REMINDER_HTTP_MIN_INTERVAL_MINUTES` before opening a database connection. The default is 30 minutes, with a two-minute post-boundary grace window for delayed external schedulers. Off-boundary cron requests return `ok: true` with `skipped: true` and do not run the reminder DB job.
+- The endpoint checks `REMINDER_HTTP_MIN_INTERVAL_MINUTES` and the latest durable success heartbeat before running the live reminder job. The default is 30 minutes. Delayed authorized scheduler calls run when the last successful heartbeat is stale; duplicate calls skip with `reason: "recent_success"` when a recent success already satisfies the cadence.
 - Vercel Hobby projects are limited to daily cron jobs. The recommended five-minute schedule requires Vercel Pro or an external scheduler.
 - On a Vercel Pro project, add this to `vercel.json` before redeploying:
 
@@ -102,10 +102,10 @@ Vercel setup:
 
 GitHub Actions setup:
 - `.github/workflows/send-reminders.yml` is available as a free production scheduler path while cron-job.org cannot be repaired from the local machine.
-- The workflow runs on the default branch at UTC minute `0` and `30` and can also be run manually through `workflow_dispatch`.
+- The workflow runs on the default branch at UTC minute `13` and `43` and can also be run manually through `workflow_dispatch`.
 - It calls `https://www.leasidefades.com/api/jobs/send-reminders` with `Authorization: Bearer <LEASIDE_REMINDER_CRON_SECRET>`.
 - Store the same current production `CRON_SECRET` in the repository secret `LEASIDE_REMINDER_CRON_SECRET`. Do not commit the value.
-- The workflow fails if production returns a non-2xx response or reports `skipped: true`, so a delayed/off-boundary call does not look like a successful reminder run.
+- The workflow fails if production returns a non-2xx response. A `recent_success` skip exits cleanly because it means another real run already satisfied the cadence.
 - If cron-job.org is later repaired with the current secret, disable either cron-job.org or the GitHub Actions schedule so only one authorized production scheduler remains.
 
 cron-job.org setup:

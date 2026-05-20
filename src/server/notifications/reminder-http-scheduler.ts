@@ -2,8 +2,10 @@ export interface ReminderHttpScheduleDecision {
     shouldRun: boolean;
     intervalMinutes: number;
     boundaryGraceMinutes: number;
-    reason?: "outside_scheduled_boundary";
+    reason?: "outside_scheduled_boundary" | "recent_success";
     nextRunAt?: string;
+    lastSuccessAt?: string;
+    minutesSinceLastSuccess?: number;
 }
 
 const DEFAULT_HTTP_INTERVAL_MINUTES = 30;
@@ -40,12 +42,43 @@ export function getReminderHttpScheduleDecision(input: {
     now?: Date;
     intervalMinutes: number;
     boundaryGraceMinutes?: number;
+    lastSuccessAt?: Date | null;
+    runWhenNoSuccess?: boolean;
 }): ReminderHttpScheduleDecision {
     const now = input.now ?? new Date();
     const intervalMinutes = input.intervalMinutes;
     const boundaryGraceMinutes = normalizeBoundaryGraceMinutes(input.boundaryGraceMinutes, intervalMinutes);
+    const lastSuccessAt = input.lastSuccessAt ?? null;
 
     if (intervalMinutes <= 5) {
+        return { shouldRun: true, intervalMinutes, boundaryGraceMinutes };
+    }
+
+    if (lastSuccessAt) {
+        const minutesSinceLastSuccess = Math.max(0, Math.floor((now.getTime() - lastSuccessAt.getTime()) / 60_000));
+
+        if (minutesSinceLastSuccess >= intervalMinutes) {
+            return {
+                shouldRun: true,
+                intervalMinutes,
+                boundaryGraceMinutes,
+                lastSuccessAt: lastSuccessAt.toISOString(),
+                minutesSinceLastSuccess,
+            };
+        }
+
+        return {
+            shouldRun: false,
+            intervalMinutes,
+            boundaryGraceMinutes,
+            reason: "recent_success",
+            nextRunAt: new Date(lastSuccessAt.getTime() + intervalMinutes * 60_000).toISOString(),
+            lastSuccessAt: lastSuccessAt.toISOString(),
+            minutesSinceLastSuccess,
+        };
+    }
+
+    if (input.runWhenNoSuccess) {
         return { shouldRun: true, intervalMinutes, boundaryGraceMinutes };
     }
 

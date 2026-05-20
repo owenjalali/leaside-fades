@@ -191,10 +191,10 @@ This checks Vercel production logs for at least one `200` response from `/api/jo
 After migration `0006_phase_12_scheduler_job_runs` is applied, real reminder job runs also write heartbeat rows. Check `/admin/dashboard` Notification health after a successful scheduler restart; the reminder scheduler should move from unknown/stale/failing to running after the next real authorized run.
 
 GitHub Actions scheduler:
-- `.github/workflows/send-reminders.yml` runs on `master` at UTC minute `0` and `30`.
+- `.github/workflows/send-reminders.yml` runs on `master` at UTC minute `13` and `43`.
 - Store the current production `CRON_SECRET` as repository secret `LEASIDE_REMINDER_CRON_SECRET`.
 - The workflow can be manually dispatched with `gh workflow run send-reminders.yml --ref master`.
-- The workflow fails if the endpoint returns non-2xx or `skipped: true`.
+- The workflow fails if the endpoint returns non-2xx. A `recent_success` skip is clean because the durable heartbeat already satisfies the cadence.
 - If cron-job.org is repaired later, disable either cron-job.org or the GitHub Actions schedule before both are authorized against production.
 
 If the scheduler log gate shows repeated `401` responses, cron-job.org is reaching production but is not sending the current `Authorization: Bearer <CRON_SECRET>` header. Edit the cron-job.org job, update the custom Authorization header from the current Vercel Production `CRON_SECRET`, save/re-enable the job, run a manual test, and rerun `npm run qa:production-reminder-scheduler`.
@@ -244,8 +244,8 @@ Recommended cadence:
 - Every 5 minutes only after the production database plan has enough compute quota for continuous reminder wakeups.
 - Default lookback: 60 minutes.
 - Default lookahead: 15 minutes.
-- `REMINDER_HTTP_MIN_INTERVAL_MINUTES` defaults the secured HTTP endpoint to a 30-minute database cadence, with a two-minute post-boundary grace window for delayed schedulers.
-- An overly frequent external cron is skipped before opening a database connection when it lands outside the allowed boundary window.
+- `REMINDER_HTTP_MIN_INTERVAL_MINUTES` defaults the secured HTTP endpoint to a 30-minute database cadence using the durable success heartbeat.
+- A delayed authorized scheduler run executes when the last successful heartbeat is stale; a duplicate authorized scheduler run skips with `recent_success`.
 - Capture stdout/stderr in host logs.
 - Do not configure multiple authorized production reminder schedulers for the same database.
 

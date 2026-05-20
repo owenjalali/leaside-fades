@@ -2,7 +2,7 @@ name: Send production reminders
 
 on:
   schedule:
-    - cron: "0,30 * * * *"
+    - cron: "13,43 * * * *"
   workflow_dispatch:
 
 permissions: {}
@@ -51,4 +51,4 @@ jobs:
             exit 1
           fi
 
-          node -e "const fs = require('fs'); const body = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (body.skipped) { console.error('Reminder endpoint skipped instead of running: ' + (body.reason || 'unknown reason')); process.exit(1); } if (!body.ok) { console.error('Reminder endpoint did not report ok=true.'); process.exit(1); }" "${response_file}"
+          node -e "const fs = require('fs'); const body = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (!body.ok) { console.error('Reminder endpoint did not report ok=true.'); process.exit(1); } if (body.skipped) { if (body.reason === 'recent_success') { console.log('Reminder endpoint skipped because a recent successful heartbeat already satisfies the cadence.'); process.exit(0); } console.error('Reminder endpoint skipped instead of running: ' + (body.reason || 'unknown reason')); process.exit(1); }" "${response_file}"

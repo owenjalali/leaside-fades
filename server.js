@@ -400,21 +400,31 @@ app.get(
       });
     }
 
-    if (!scheduleDecision.shouldRun) {
+    const reminderJob = await loadReminderJob();
+    const schedulerSummary = await reminderJob.getConfiguredBookingReminderJobSummary(process.env);
+    const liveScheduleDecision = scheduler.getReminderHttpScheduleDecision({
+      intervalMinutes,
+      boundaryGraceMinutes,
+      lastSuccessAt: schedulerSummary?.latestSuccess?.finishedAt ?? null,
+      runWhenNoSuccess: true,
+    });
+
+    if (!liveScheduleDecision.shouldRun) {
       res.set("Cache-Control", "no-store");
       return res.json({
         ok: true,
         skipped: true,
-        reason: scheduleDecision.reason,
+        reason: liveScheduleDecision.reason,
         schedule: {
-          intervalMinutes: scheduleDecision.intervalMinutes,
-          boundaryGraceMinutes: scheduleDecision.boundaryGraceMinutes,
-          nextRunAt: scheduleDecision.nextRunAt,
+          intervalMinutes: liveScheduleDecision.intervalMinutes,
+          boundaryGraceMinutes: liveScheduleDecision.boundaryGraceMinutes,
+          nextRunAt: liveScheduleDecision.nextRunAt,
+          lastSuccessAt: liveScheduleDecision.lastSuccessAt,
+          minutesSinceLastSuccess: liveScheduleDecision.minutesSinceLastSuccess,
         },
       });
     }
 
-    const reminderJob = await loadReminderJob();
     const result = await reminderJob.runConfiguredBookingReminderJob(process.env, { trigger: "http" });
     return res.json({ ok: true, result });
   }),
