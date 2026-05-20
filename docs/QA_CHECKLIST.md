@@ -335,6 +335,7 @@
 - [x] `/api/health` checks PostgreSQL readiness so DB quota/connection failures are not hidden behind a false-green process health response
 - [x] `/api/jobs/send-reminders` skips off-boundary HTTP cron hits before opening PostgreSQL connections when `REMINDER_HTTP_MIN_INTERVAL_MINUTES` is above 5
 - [x] Repeatable non-mutating production smoke runner exists as `npm run qa:production-smoke`
+- [x] Repeatable bounded production read stress runner exists as `npm run qa:production-read-stress`
 - [x] Vercel production deployment created for `leasidefades.com`
 - [x] Local/dev-only seed and QA runner production guards documented
 - [x] Local HTTP smoke test against `node server.js` validates public booking, admin visibility, customer cancel, customer reschedule, and notification rows
@@ -380,11 +381,13 @@
 - [x] Production reminder scheduler enabled through cron-job.org and first successful `200 OK` run observed
 - [x] Production database plan/quota restored to Neon Launch after compute quota exhaustion incident
 - [x] Current incident production smoke passes after Neon quota/plan restoration
+- [x] Current incident production read stress passes after Neon quota/plan restoration
 - [x] Secured reminder endpoint has an authenticated dry-run path for verifying cron secret/cadence without sending live reminders
 - [x] Repeatable production reminder scheduler log gate exists for confirming a real post-restart `200`
 - [x] Reminder job runs record durable success/failure heartbeat rows for dashboard monitoring
 - [x] `/admin/dashboard` Notification health surfaces reminder scheduler healthy/stale/failing/unknown state
 - [x] Production migration `0006_phase_12_scheduler_job_runs` applied before relying on dashboard heartbeat history
+- [ ] Current cron-job.org restart produces an authorized `200` reminder run after updating the job Authorization header
 - [ ] Untracked artifacts audited before launch commit
 - [ ] Owner-approved recurring shifts entered before exposing `/book`
 - [x] Observed Fresha launch recurring shifts entered as initial production schedule pending owner verification

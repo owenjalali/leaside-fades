@@ -108,6 +108,14 @@ npm run qa:production-smoke
 
 The production smoke runner checks that `/book` loads, `/api/health` proves PostgreSQL readiness, `/api/booking/catalog` returns the launch catalog, invalid admin login returns `401` instead of `500`, protected admin routes stay protected, and the reminder endpoint rejects unauthenticated calls before database work.
 
+Repeatable bounded read stress:
+
+```sh
+npm run qa:production-read-stress
+```
+
+The production read stress runner is non-mutating. By default it makes 32 requests at concurrency 4 against `/book`, `/api/health`, `/api/booking/catalog`, `/api/booking/availability`, and an invalid admin login attempt. It fails on dependency errors, unexpected statuses, invalid response shapes, request timeouts, or p95 latency above the configured guard. Optional authenticated admin read checks can be enabled with `PRODUCTION_STRESS_ADMIN_EMAIL` and `PRODUCTION_STRESS_ADMIN_PASSWORD`; do not store those values in git or shell history.
+
 ## Data Setup
 
 Before exposing `/book` publicly:
@@ -180,6 +188,8 @@ npm run qa:production-reminder-scheduler
 This checks Vercel production logs for at least one `200` response from `/api/jobs/send-reminders`. Set `PRODUCTION_REMINDER_LOG_SINCE=<ISO timestamp>` when validating a specific cron-job.org restart window.
 
 After migration `0006_phase_12_scheduler_job_runs` is applied, real reminder job runs also write heartbeat rows. Check `/admin/dashboard` Notification health after a successful cron-job.org restart; the reminder scheduler should move from unknown/stale/failing to running after the next real authorized run.
+
+If the scheduler log gate shows repeated `401` responses, cron-job.org is reaching production but is not sending the current `Authorization: Bearer <CRON_SECRET>` header. Edit the cron-job.org job, update the custom Authorization header from the current Vercel Production `CRON_SECRET`, save/re-enable the job, run a manual test, and rerun `npm run qa:production-reminder-scheduler`.
 
 Enable scheduler only after booking and notification smoke tests pass.
 
