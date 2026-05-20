@@ -385,12 +385,15 @@
 - [x] Production `CRON_SECRET` rotated and verified through authenticated reminder dry-run after redeploy
 - [x] Secured reminder endpoint has an authenticated dry-run path for verifying cron secret/cadence without sending live reminders
 - [x] Repeatable production reminder scheduler log gate exists for confirming a real post-restart `200`
+- [x] Production reminder scheduler gate requires durable heartbeat evidence so dry-runs/skips cannot falsely pass recovery
+- [x] Repeatable production reminder heartbeat gate exists as `npm run qa:production-reminder-heartbeat`
 - [x] Repeatable cron-job.org configuration check/repair runner exists as `npm run qa:cron-job-org-reminder` and `npm run ops:cron-job-org-reminder-repair`
 - [x] cron-job.org repair runner verifies the supplied `CRON_SECRET` against production dry-run before patching the external scheduler
 - [x] Reminder job runs record durable success/failure heartbeat rows for dashboard monitoring
 - [x] `/admin/dashboard` Notification health surfaces reminder scheduler healthy/stale/failing/unknown state
 - [x] Production migration `0006_phase_12_scheduler_job_runs` applied before relying on dashboard heartbeat history
 - [ ] Current cron-job.org restart produces an authorized `200` reminder run after updating the job Authorization header
+- [ ] Current cron-job.org restart produces a real `scheduler_job_runs` success heartbeat after updating the job Authorization header
 - [ ] Untracked artifacts audited before launch commit
 - [ ] Owner-approved recurring shifts entered before exposing `/book`
 - [x] Observed Fresha launch recurring shifts entered as initial production schedule pending owner verification

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+    hasRecoveredReminderScheduler,
     hasSuccessfulReminderRun,
     parseVercelJsonLogLines,
     summarizeReminderLogs,
@@ -54,5 +55,33 @@ describe("production reminder scheduler log check", () => {
 
         expect(summary.statusCounts).toEqual({ 401: 1 });
         expect(hasSuccessfulReminderRun(summary)).toBe(false);
+    });
+
+    test("requires durable heartbeat evidence when a 200 may be a dry-run or skipped request", () => {
+        const summary = summarizeReminderLogs([
+            {
+                timestamp: 1779294937673,
+                requestPath: "/api/jobs/send-reminders",
+                responseStatusCode: 200,
+            },
+        ]);
+
+        expect(hasSuccessfulReminderRun(summary)).toBe(true);
+        expect(hasRecoveredReminderScheduler(summary, { requireHeartbeat: true, heartbeatStatus: null })).toBe(false);
+        expect(
+            hasRecoveredReminderScheduler(summary, {
+                requireHeartbeat: true,
+                heartbeatStatus: {
+                    ok: true,
+                    state: "healthy",
+                    message: "Last successful reminder scheduler heartbeat 0 minutes ago.",
+                    latestRunAt: "2026-05-20T17:45:00.000Z",
+                    latestStatus: "success",
+                    lastSuccessAt: "2026-05-20T17:45:00.000Z",
+                    lastFailureAt: null,
+                    minutesSinceLastSuccess: 0,
+                },
+            }),
+        ).toBe(true);
     });
 });

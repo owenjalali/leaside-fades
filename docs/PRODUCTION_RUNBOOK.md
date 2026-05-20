@@ -209,7 +209,15 @@ $env:CRON_SECRET = (Select-String -Path .env.production.local -Pattern '^CRON_SE
 
 The repair command verifies the supplied `CRON_SECRET` against the production dry-run endpoint before changing cron-job.org. If Vercel env pull returns `CRON_SECRET=""` or another value that production rejects with `401`, do not use it; rotate or retrieve the actual production secret first.
 
-After the cron-job.org check is clean, wait for or trigger one real cron run and rerun `npm run qa:production-reminder-scheduler`.
+After the cron-job.org check is clean, wait for or trigger one real cron run and rerun `npm run qa:production-reminder-scheduler`. This gate requires both Vercel log evidence and a durable reminder success heartbeat, so an authenticated dry-run or off-cadence skip cannot accidentally mark scheduler recovery complete.
+
+Then verify the durable in-app heartbeat. Use a `since` value from just before the cron-job.org restart so old history cannot pass the gate:
+
+```powershell
+$env:PRODUCTION_REMINDER_HEARTBEAT_SINCE = "<restart ISO timestamp>"
+npm run qa:production-reminder-heartbeat
+Remove-Item Env:PRODUCTION_REMINDER_HEARTBEAT_SINCE
+```
 
 Enable scheduler only after booking and notification smoke tests pass.
 

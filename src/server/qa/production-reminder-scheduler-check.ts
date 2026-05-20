@@ -1,5 +1,16 @@
 import { spawnSync } from "node:child_process";
 
+import dotenv from "dotenv";
+
+import {
+    BOOKING_REMINDER_JOB_NAME,
+    createDrizzleSchedulerJobRunRepository,
+} from "../jobs/scheduler-runs.ts";
+import {
+    classifyReminderHeartbeat,
+    type ReminderHeartbeatStatus,
+} from "./production-reminder-heartbeat.ts";
+
 interface ReminderLogEntry {
     timestamp?: number;
     requestPath?: string;
@@ -17,6 +28,7 @@ export interface ReminderLogSummary {
 
 const DEFAULT_LOOKBACK_HOURS = 24;
 const REMINDER_PATH = "/api/jobs/send-reminders";
+const DEFAULT_HEARTBEAT_ENV_FILE = ".env.production.local";
 
 export function parseVercelJsonLogLines(output: string): ReminderLogEntry[] {
     const entries: ReminderLogEntry[] = [];
@@ -67,9 +79,21 @@ export function hasSuccessfulReminderRun(summary: ReminderLogSummary) {
     return (summary.statusCounts[200] ?? 0) > 0;
 }
 
-function main() {
+export function hasRecoveredReminderScheduler(
+    summary: ReminderLogSummary,
+    options: { requireHeartbeat?: boolean; heartbeatStatus?: ReminderHeartbeatStatus | null } = {},
+) {
+    if (!hasSuccessfulReminderRun(summary)) {
+        return false;
+    }
+
+    return options.requireHeartbeat ? options.heartbeatStatus?.ok === true : true;
+}
+
+async function main() {
     const since = process.env.PRODUCTION_REMINDER_LOG_SINCE || defaultSince();
     const requireSuccess = process.env.PRODUCTION_REMINDER_REQUIRE_SUCCESS !== "0";
+    const requireHeartbeat = process.env.PRODUCTION_REMINDER_REQUIRE_HEARTBEAT !== "0";
     assertSafeCliValue(since, "PRODUCTION_REMINDER_LOG_SINCE");
 
     const args = [
@@ -112,9 +136,37 @@ function main() {
         console.log(`[production-reminder-scheduler] latestDeploymentId=${summary.latestDeploymentId}`);
     }
 
-    if (requireSuccess && !hasSuccessfulReminderRun(summary)) {
-        throw new Error("No successful 200 reminder scheduler run was found in the selected Vercel log window.");
+    let heartbeatStatus: ReminderHeartbeatStatus | null = null;
+
+    if (requireSuccess && hasSuccessfulReminderRun(summary) && requireHeartbeat) {
+        heartbeatStatus = await loadHeartbeatStatus(since);
+        console.log(`[production-reminder-scheduler] heartbeatState=${heartbeatStatus.state}`);
+        console.log(`[production-reminder-scheduler] heartbeatMessage=${heartbeatStatus.message}`);
+        console.log(`[production-reminder-scheduler] heartbeatLastSuccessAt=${heartbeatStatus.lastSuccessAt ?? "<none>"}`);
     }
+
+    if (requireSuccess && !hasRecoveredReminderScheduler(summary, { requireHeartbeat, heartbeatStatus })) {
+        throw new Error(
+            requireHeartbeat
+                ? "No recovered reminder scheduler run was found with both a Vercel 200 log and a durable success heartbeat."
+                : "No successful 200 reminder scheduler run was found in the selected Vercel log window.",
+        );
+    }
+}
+
+async function loadHeartbeatStatus(logSince: string) {
+    const envFile = process.env.PRODUCTION_REMINDER_HEARTBEAT_ENV_FILE || DEFAULT_HEARTBEAT_ENV_FILE;
+    dotenv.config({ path: envFile, override: false, quiet: true });
+
+    const repository = createDrizzleSchedulerJobRunRepository();
+    const summary = await repository.getJobRunSummary({ jobName: BOOKING_REMINDER_JOB_NAME });
+    const since = process.env.PRODUCTION_REMINDER_HEARTBEAT_SINCE || logSince;
+
+    return classifyReminderHeartbeat(summary, {
+        now: new Date(),
+        staleAfterMinutes: parsePositiveInteger(process.env.PRODUCTION_REMINDER_HEARTBEAT_STALE_AFTER_MINUTES, 90),
+        since: new Date(since),
+    });
 }
 
 function defaultSince() {
@@ -148,6 +200,14 @@ function assertSafeCliValue(value: string, label: string) {
     }
 }
 
+function parsePositiveInteger(value: string | undefined, fallback: number) {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 if (process.argv[1]?.endsWith("production-reminder-scheduler-check.ts")) {
-    main();
+    main().catch((error) => {
+        console.error(error);
+        process.exit(1);
+    });
 }
