@@ -394,7 +394,7 @@
 - [x] Production migration `0006_phase_12_scheduler_job_runs` applied before relying on dashboard heartbeat history
 - [x] GitHub Actions production reminder scheduler workflow exists for the free 30-minute scheduler path
 - [x] GitHub Actions repository secret `LEASIDE_REMINDER_CRON_SECRET` configured with the current production `CRON_SECRET`
-- [ ] GitHub Actions reminder scheduler produces an authorized real run and durable success heartbeat
+- [x] GitHub Actions reminder scheduler produces an authorized real run and durable success heartbeat
 - [ ] Current cron-job.org restart produces an authorized `200` reminder run after updating the job Authorization header
 - [ ] Current cron-job.org restart produces a real `scheduler_job_runs` success heartbeat after updating the job Authorization header
 - [ ] Untracked artifacts audited before launch commit

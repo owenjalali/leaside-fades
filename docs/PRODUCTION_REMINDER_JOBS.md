@@ -141,6 +141,7 @@ $env:CRON_SECRET = (Select-String -Path .env.production.local -Pattern '^CRON_SE
 - If `CRON_SECRET` is rotated in Vercel, update the cron-job.org header value at the same time and redeploy production so the serverless function receives the new value.
 - Do not create a second scheduler for the same production environment unless this job is disabled first.
 - After restarting cron-job.org, run `npm run qa:production-reminder-scheduler` to confirm the selected window contains both a Vercel `200` for `/api/jobs/send-reminders` and a durable `scheduler_job_runs` success heartbeat. Use `PRODUCTION_REMINDER_LOG_SINCE=<ISO timestamp>` to narrow the check to the restart window. A dry-run or off-cadence skip can create a Vercel `200`, so the scheduler gate requires the heartbeat by default.
+- If the production deploy was created from the Vercel CLI and project-level logs omit the latest request, set `PRODUCTION_REMINDER_LOG_TARGET=<deployment-domain>` to read logs from the concrete deployment URL.
 - You can also run `npm run qa:production-reminder-heartbeat` directly with `PRODUCTION_REMINDER_HEARTBEAT_SINCE=<restart ISO timestamp>` to inspect the heartbeat alone. Dry-runs, unauthorized `401`s, and off-cadence HTTP skips do not write this heartbeat.
 
 Linux cron example:

@@ -219,6 +219,16 @@ The repair command verifies the supplied `CRON_SECRET` against the production dr
 
 After the scheduler check is clean, wait for or trigger one real run and rerun `npm run qa:production-reminder-scheduler`. This gate requires both Vercel log evidence and a durable reminder success heartbeat, so an authenticated dry-run or off-cadence skip cannot accidentally mark scheduler recovery complete.
 
+If the deploy came from the Vercel CLI and project-level production logs omit the latest request, target the concrete deployment domain:
+
+```powershell
+$env:PRODUCTION_REMINDER_LOG_SINCE = "<restart ISO timestamp>"
+$env:PRODUCTION_REMINDER_LOG_TARGET = "<deployment-domain>"
+npm run qa:production-reminder-scheduler
+Remove-Item Env:PRODUCTION_REMINDER_LOG_SINCE
+Remove-Item Env:PRODUCTION_REMINDER_LOG_TARGET
+```
+
 Then verify the durable in-app heartbeat. Use a `since` value from just before the cron-job.org restart so old history cannot pass the gate:
 
 ```powershell

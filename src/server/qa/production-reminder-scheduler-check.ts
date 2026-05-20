@@ -92,23 +92,15 @@ export function hasRecoveredReminderScheduler(
 
 async function main() {
     const since = process.env.PRODUCTION_REMINDER_LOG_SINCE || defaultSince();
+    const logTarget = process.env.PRODUCTION_REMINDER_LOG_TARGET;
     const requireSuccess = process.env.PRODUCTION_REMINDER_REQUIRE_SUCCESS !== "0";
     const requireHeartbeat = process.env.PRODUCTION_REMINDER_REQUIRE_HEARTBEAT !== "0";
     assertSafeCliValue(since, "PRODUCTION_REMINDER_LOG_SINCE");
+    if (logTarget) {
+        assertSafeCliValue(logTarget, "PRODUCTION_REMINDER_LOG_TARGET");
+    }
 
-    const args = [
-        "logs",
-        "--environment",
-        "production",
-        "--since",
-        since,
-        "--query",
-        "send-reminders",
-        "--limit",
-        "100",
-        "--json",
-        "--no-follow",
-    ];
+    const args = buildVercelLogArgs({ since, target: logTarget });
 
     const result = runVercel(args);
 
@@ -125,6 +117,9 @@ async function main() {
 
     const summary = summarizeReminderLogs(parseVercelJsonLogLines(output));
     console.log(`[production-reminder-scheduler] since=${since}`);
+    if (logTarget) {
+        console.log(`[production-reminder-scheduler] logTarget=${logTarget}`);
+    }
     console.log(`[production-reminder-scheduler] totalReminderRequests=${summary.totalReminderRequests}`);
     console.log(`[production-reminder-scheduler] statusCounts=${JSON.stringify(summary.statusCounts)}`);
 
@@ -152,6 +147,29 @@ async function main() {
                 : "No successful 200 reminder scheduler run was found in the selected Vercel log window.",
         );
     }
+}
+
+export function buildVercelLogArgs(input: { since: string; target?: string }) {
+    const args = ["logs"];
+
+    if (input.target) {
+        args.push(input.target);
+    } else {
+        args.push("--environment", "production");
+    }
+
+    args.push(
+        "--since",
+        input.since,
+        "--query",
+        "send-reminders",
+        "--limit",
+        "100",
+        "--json",
+        "--no-follow",
+    );
+
+    return args;
 }
 
 async function loadHeartbeatStatus(logSince: string) {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+    buildVercelLogArgs,
     hasRecoveredReminderScheduler,
     hasSuccessfulReminderRun,
     parseVercelJsonLogLines,
@@ -83,5 +84,25 @@ describe("production reminder scheduler log check", () => {
                 },
             }),
         ).toBe(true);
+    });
+
+    test("can target a specific Vercel deployment when project-level logs omit CLI deployments", () => {
+        expect(
+            buildVercelLogArgs({
+                since: "2026-05-20T18:25:00.000Z",
+                target: "leaside-fades-3efvguugx-owenjalalis-projects.vercel.app",
+            }),
+        ).toEqual([
+            "logs",
+            "leaside-fades-3efvguugx-owenjalalis-projects.vercel.app",
+            "--since",
+            "2026-05-20T18:25:00.000Z",
+            "--query",
+            "send-reminders",
+            "--limit",
+            "100",
+            "--json",
+            "--no-follow",
+        ]);
     });
 });
