@@ -6,6 +6,7 @@ import {
     evaluateJob,
     readConfig,
     summarizeHistory,
+    verifyProductionReminderSecret,
     type CronJobOrgConfig,
     type CronJobOrgJob,
 } from "./cron-job-org-reminder-check.ts";
@@ -40,6 +41,20 @@ describe("cron-job.org reminder check", () => {
             expectedSecret: "current-secret",
             apply: true,
         });
+    });
+
+    test("normalizes quoted or empty pulled Vercel cron secrets", () => {
+        expect(
+            readConfig({
+                CRON_SECRET: '"current-secret"',
+            }).expectedSecret,
+        ).toBe("current-secret");
+
+        expect(
+            readConfig({
+                CRON_SECRET: '""',
+            }).expectedSecret,
+        ).toBeUndefined();
     });
 
     test("builds the recommended every-30-minutes cron-job.org schedule", () => {
@@ -114,6 +129,28 @@ describe("cron-job.org reminder check", () => {
                 },
             },
         });
+    });
+
+    test("verifies the supplied secret against the production dry-run endpoint", async () => {
+        const seen: { url?: string; authorization?: string } = {};
+        const fetcher: typeof fetch = async (input, init) => {
+            seen.url = input.toString();
+            seen.authorization = new Headers(init?.headers).get("authorization") ?? undefined;
+            return Response.json({ ok: true, dryRun: true }, { status: 200 });
+        };
+
+        await verifyProductionReminderSecret(baseConfig, fetcher);
+
+        expect(seen.url).toBe("https://www.leasidefades.com/api/jobs/send-reminders?dryRun=1");
+        expect(seen.authorization).toBe("Bearer current-secret");
+    });
+
+    test("rejects secrets that production does not accept before cron-job.org repair", async () => {
+        const fetcher: typeof fetch = async () => Response.json({ error: "Unauthorized" }, { status: 401 });
+
+        await expect(verifyProductionReminderSecret(baseConfig, fetcher)).rejects.toThrow(
+            "Production reminder dry-run rejected the supplied CRON_SECRET with HTTP 401",
+        );
     });
 
     test("summarizes execution history with HTTP status counts", () => {

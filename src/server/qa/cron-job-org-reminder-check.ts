@@ -94,7 +94,7 @@ export function readConfig(
             env.CRON_JOB_ORG_REMINDER_CADENCE_MINUTES,
             DEFAULT_CADENCE_MINUTES,
         ),
-        expectedSecret: nonEmpty(
+        expectedSecret: normalizeSecret(
             env.CRON_JOB_ORG_REMINDER_SECRET || env.CRON_SECRET || env.PRODUCTION_SMOKE_CRON_SECRET,
         ),
         apply: args.includes("--apply") || env.CRON_JOB_ORG_APPLY === "1",
@@ -126,6 +126,9 @@ export async function run(config: CronJobOrgConfig) {
     if (!config.expectedSecret) {
         throw new Error("CRON_SECRET or CRON_JOB_ORG_REMINDER_SECRET is required when running with --apply.");
     }
+
+    await verifyProductionReminderSecret(config);
+    logStep("Production reminder endpoint accepted the supplied CRON_SECRET in dry-run mode.");
 
     logStep("Applying cron-job.org reminder job repair patch.");
     await patchJob(config, buildRepairPatch(config));
@@ -226,6 +229,41 @@ export function buildRepairPatch(config: CronJobOrgConfig) {
             },
         },
     };
+}
+
+export async function verifyProductionReminderSecret(config: CronJobOrgConfig, fetcher: typeof fetch = fetch) {
+    if (!config.expectedSecret) {
+        throw new Error("CRON_SECRET or CRON_JOB_ORG_REMINDER_SECRET is required for production dry-run verification.");
+    }
+
+    const url = new URL(config.expectedUrl);
+    url.searchParams.set("dryRun", "1");
+
+    const response = await fetcher(url, {
+        headers: {
+            authorization: `Bearer ${config.expectedSecret}`,
+        },
+    });
+    const bodyText = await response.text();
+    let body: unknown = {};
+
+    if (bodyText) {
+        try {
+            body = JSON.parse(bodyText);
+        } catch {
+            body = { raw: bodyText.slice(0, 500) };
+        }
+    }
+
+    if (response.status !== 200) {
+        throw new Error(
+            `Production reminder dry-run rejected the supplied CRON_SECRET with HTTP ${response.status}. Body: ${bodyText.slice(0, 500)}`,
+        );
+    }
+
+    if (!isRecord(body) || body.ok !== true || body.dryRun !== true) {
+        throw new Error("Production reminder dry-run did not return the expected ok dryRun response.");
+    }
 }
 
 export function buildEveryNMinutesSchedule(cadenceMinutes: number): CronJobOrgSchedule {
@@ -330,6 +368,10 @@ function assertHistoryItem(value: unknown): CronJobOrgHistoryItem {
     return value && typeof value === "object" && !Array.isArray(value) ? (value as CronJobOrgHistoryItem) : {};
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
 function scheduleMatchesCadence(schedule: CronJobOrgSchedule | undefined, cadenceMinutes: number) {
     if (!schedule) {
         return false;
@@ -397,6 +439,20 @@ function parsePositiveInteger(value: string | undefined, fallback: number) {
 
 function normalizeUrl(value: string) {
     return value.replace(/\/+$/, "");
+}
+
+function normalizeSecret(value: string | undefined) {
+    const trimmed = value?.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+
+    const unquoted =
+        (trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))
+            ? trimmed.slice(1, -1).trim()
+            : trimmed;
+
+    return unquoted ? unquoted : undefined;
 }
 
 function nonEmpty(value: string | undefined) {
