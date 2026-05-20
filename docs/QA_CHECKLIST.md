@@ -380,6 +380,7 @@
 - [x] Production reminder scheduler enabled through cron-job.org and first successful `200 OK` run observed
 - [x] Production database plan/quota restored to Neon Launch after compute quota exhaustion incident
 - [x] Current incident production smoke passes after Neon quota/plan restoration
+- [x] Secured reminder endpoint has an authenticated dry-run path for verifying cron secret/cadence without sending live reminders
 - [ ] Untracked artifacts audited before launch commit
 - [ ] Owner-approved recurring shifts entered before exposing `/book`
 - [x] Observed Fresha launch recurring shifts entered as initial production schedule pending owner verification

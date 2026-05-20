@@ -382,6 +382,20 @@ app.get(
       intervalMinutes: scheduler.reminderHttpIntervalFromEnv(process.env),
     });
 
+    if (req.query.dryRun === "1" || req.query.dryRun === "true") {
+      res.set("Cache-Control", "no-store");
+      return res.json({
+        ok: true,
+        dryRun: true,
+        schedule: {
+          shouldRun: scheduleDecision.shouldRun,
+          intervalMinutes: scheduleDecision.intervalMinutes,
+          reason: scheduleDecision.reason,
+          nextRunAt: scheduleDecision.nextRunAt,
+        },
+      });
+    }
+
     if (!scheduleDecision.shouldRun) {
       res.set("Cache-Control", "no-store");
       return res.json({

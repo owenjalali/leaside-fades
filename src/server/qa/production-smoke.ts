@@ -19,6 +19,7 @@ async function main() {
     await assertInvalidAdminLoginFailsCleanly(baseUrl);
     await assertAdminRouteRequiresAuth(baseUrl);
     await assertReminderEndpointRequiresAuth(baseUrl);
+    await assertReminderEndpointAuthenticatedDryRun(baseUrl);
 
     console.log("Production smoke passed.");
 }
@@ -88,6 +89,32 @@ async function assertReminderEndpointRequiresAuth(baseUrl: string) {
     const response = await readJson(`${baseUrl}/api/jobs/send-reminders`);
     assert.equal(response.status, 401, failureMessage("/api/jobs/send-reminders", response));
     logStep("Reminder job endpoint rejects unauthenticated calls before DB work.");
+}
+
+async function assertReminderEndpointAuthenticatedDryRun(baseUrl: string) {
+    const cronSecret = process.env.PRODUCTION_SMOKE_CRON_SECRET;
+
+    if (!cronSecret) {
+        logStep("Authenticated reminder dry-run skipped; PRODUCTION_SMOKE_CRON_SECRET is not set.");
+        return;
+    }
+
+    const response = await readJson(`${baseUrl}/api/jobs/send-reminders?dryRun=1`, {
+        headers: {
+            authorization: `Bearer ${cronSecret}`,
+        },
+    });
+    assert.equal(response.status, 200, failureMessage("/api/jobs/send-reminders?dryRun=1", response));
+    assertRecord(response.body, "/api/jobs/send-reminders?dryRun=1 body");
+    assert.equal(response.body.ok, true, "Authenticated reminder dry-run must report ok.");
+    assert.equal(response.body.dryRun, true, "Authenticated reminder dry-run must not run the live reminder job.");
+    assertRecord(response.body.schedule, "/api/jobs/send-reminders?dryRun=1 schedule");
+    assert.equal(
+        typeof response.body.schedule.intervalMinutes,
+        "number",
+        "Authenticated reminder dry-run must report the configured cadence.",
+    );
+    logStep("Reminder job endpoint accepts the production cron secret in dry-run mode.");
 }
 
 async function readJson(url: string, init?: RequestInit): Promise<JsonResult> {

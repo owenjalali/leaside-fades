@@ -656,3 +656,11 @@ Decision:
 
 Reason:
 Production showed static health as green while DB-backed catalog/login/admin paths failed because the Vercel Neon database reported compute time quota exhaustion. A shallow health check hid the real outage, and a five-minute external reminder cron can keep a serverless database awake often enough to burn quota on constrained plans.
+
+### 2026-05-20 - Add Authenticated Reminder Dry-Run Verification
+
+Decision:
+`GET /api/jobs/send-reminders?dryRun=1` uses the same `Authorization: Bearer <CRON_SECRET>` gate and cadence logic as the live reminder endpoint, but returns the schedule decision without importing or running the reminder job.
+
+Reason:
+After a cron secret rotation or cron-job.org restart, the operator needs to verify that production accepts the scheduler header without accidentally sending live reminders or waking the database reminder workload outside the intended cadence.

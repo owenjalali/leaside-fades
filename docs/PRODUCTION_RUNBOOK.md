@@ -163,6 +163,14 @@ Manual run:
 npm run notifications:send-reminders
 ```
 
+Production HTTP auth dry-run:
+
+```sh
+curl -H "Authorization: Bearer <CRON_SECRET>" "https://www.leasidefades.com/api/jobs/send-reminders?dryRun=1"
+```
+
+Use the dry-run call to verify the Vercel `CRON_SECRET` and reminder cadence after secret rotation or cron-job.org edits. It does not run the live reminder job.
+
 Enable scheduler only after booking and notification smoke tests pass.
 
 Recommended cadence:

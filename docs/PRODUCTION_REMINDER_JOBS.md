@@ -83,6 +83,7 @@ Vercel setup:
 - The secured endpoint is `GET /api/jobs/send-reminders`.
 - Set `CRON_SECRET` in Vercel production. Vercel sends it as `Authorization: Bearer <CRON_SECRET>` when invoking cron.
 - The endpoint returns `503` if `CRON_SECRET` is missing and `401` if the header does not match, so reminders cannot be triggered publicly.
+- To verify the production cron secret without sending reminders or opening a database reminder job, call `GET /api/jobs/send-reminders?dryRun=1` with the same `Authorization: Bearer <CRON_SECRET>` header. A healthy dry-run response returns `200`, `dryRun: true`, and the current cadence decision.
 - The endpoint checks `REMINDER_HTTP_MIN_INTERVAL_MINUTES` before opening a database connection. The default is 30 minutes; off-boundary cron requests return `ok: true` with `skipped: true` and do not run the reminder DB job.
 - Vercel Hobby projects are limited to daily cron jobs. The recommended five-minute schedule requires Vercel Pro or an external scheduler.
 - On a Vercel Pro project, add this to `vercel.json` before redeploying:
@@ -127,3 +128,4 @@ Operational notes:
 - Failed provider rows are retryable on later job runs.
 - Sent, skipped, and in-flight pending rows remain idempotent and do not resend.
 - Cancelled, completed, no-show, walk-in, imported, and stale-rescheduled bookings are re-checked and skipped before delivery.
+- After restarting cron-job.org, verify at least one real `200` response in cron-job.org history for the non-dry-run URL, then check Vercel logs for no new 500/503 reminder route failures.
