@@ -382,6 +382,7 @@
 - [x] Production database plan/quota restored to Neon Launch after compute quota exhaustion incident
 - [x] Current incident production smoke passes after Neon quota/plan restoration
 - [x] Current incident production read stress passes after Neon quota/plan restoration
+- [x] Production `CRON_SECRET` rotated and verified through authenticated reminder dry-run after redeploy
 - [x] Secured reminder endpoint has an authenticated dry-run path for verifying cron secret/cadence without sending live reminders
 - [x] Repeatable production reminder scheduler log gate exists for confirming a real post-restart `200`
 - [x] Repeatable cron-job.org configuration check/repair runner exists as `npm run qa:cron-job-org-reminder` and `npm run ops:cron-job-org-reminder-repair`

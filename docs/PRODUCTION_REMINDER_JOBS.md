@@ -120,6 +120,12 @@ $env:CRON_SECRET = "<current Vercel Production CRON_SECRET>"
 npm run ops:cron-job-org-reminder-repair
 ```
 
+- If this machine has just rotated the Vercel secret, the ignored `.env.production.local` file contains the current local ops copy. Load it without printing the secret:
+
+```powershell
+$env:CRON_SECRET = (Select-String -Path .env.production.local -Pattern '^CRON_SECRET=' | Select-Object -First 1).Line -replace '^CRON_SECRET=', ''
+```
+
 - The repair command first verifies the supplied secret against `https://www.leasidefades.com/api/jobs/send-reminders?dryRun=1`. If production rejects the secret, the command stops before patching cron-job.org. If the dry-run passes, it enables the job, sets the URL to `https://www.leasidefades.com/api/jobs/send-reminders`, sets GET, stores `Authorization: Bearer <CRON_SECRET>`, saves responses, and changes the schedule to every 30 minutes. The command does not print the secret.
 - Vercel encrypted secret values may pull locally as an empty quoted value. Do not use a pulled empty `CRON_SECRET`; create or retrieve a real current production secret first, then verify it with the dry-run path.
 - The 10:20 PM America/Toronto run on May 1, 2026 succeeded with `200 OK` after switching from the apex domain to `www`. A prior 10:15 PM run failed with `307 Temporary Redirect` and can be ignored as setup history.

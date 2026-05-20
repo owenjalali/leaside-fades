@@ -201,6 +201,12 @@ npm run ops:cron-job-org-reminder-repair
 npm run qa:cron-job-org-reminder
 ```
 
+If this machine has just rotated the Vercel secret, load the current ignored local ops copy without printing it:
+
+```powershell
+$env:CRON_SECRET = (Select-String -Path .env.production.local -Pattern '^CRON_SECRET=' | Select-Object -First 1).Line -replace '^CRON_SECRET=', ''
+```
+
 The repair command verifies the supplied `CRON_SECRET` against the production dry-run endpoint before changing cron-job.org. If Vercel env pull returns `CRON_SECRET=""` or another value that production rejects with `401`, do not use it; rotate or retrieve the actual production secret first.
 
 After the cron-job.org check is clean, wait for or trigger one real cron run and rerun `npm run qa:production-reminder-scheduler`.
