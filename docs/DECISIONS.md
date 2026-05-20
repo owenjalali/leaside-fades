@@ -648,3 +648,11 @@ Password reset and barber invite/setup links send through Resend in production, 
 
 Reason:
 The owner and staff need real account recovery and onboarding before launch. Silent success without an email would strand users, and localhost fallback links are unsafe in production. Strict timestamp input avoids date-only timezone drift in future non-browser callers.
+
+### 2026-05-20 - Treat Database Readiness And Compute Quota As Launch-Critical
+
+Decision:
+`/api/health` now performs a PostgreSQL readiness query and returns 503 when the database is unavailable. The secured HTTP reminder endpoint also defaults to a 30-minute database cadence through `REMINDER_HTTP_MIN_INTERVAL_MINUTES`, skipping off-boundary cron requests before opening a database connection. Five-minute reminder cadence is allowed only when the production database plan can sustain the compute wakeups.
+
+Reason:
+Production showed static health as green while DB-backed catalog/login/admin paths failed because the Vercel Neon database reported compute time quota exhaustion. A shallow health check hid the real outage, and a five-minute external reminder cron can keep a serverless database awake often enough to burn quota on constrained plans.

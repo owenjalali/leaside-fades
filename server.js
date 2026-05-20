@@ -16,6 +16,8 @@ const port = Number(process.env.PORT || 3000);
 let publicBookingApiPromise;
 let adminApiPromise;
 let reminderJobPromise;
+let applicationHealthPromise;
+let reminderHttpSchedulerPromise;
 
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const API_TIMEOUT_MS = 5000;
@@ -68,6 +70,16 @@ function loadAdminApi() {
 function loadReminderJob() {
   reminderJobPromise ??= import("./src/server/notifications/reminder-job-runner.ts");
   return reminderJobPromise;
+}
+
+function loadApplicationHealth() {
+  applicationHealthPromise ??= import("./src/server/health.ts");
+  return applicationHealthPromise;
+}
+
+function loadReminderHttpScheduler() {
+  reminderHttpSchedulerPromise ??= import("./src/server/notifications/reminder-http-scheduler.ts");
+  return reminderHttpSchedulerPromise;
 }
 
 function asyncRoute(handler) {
@@ -363,6 +375,24 @@ app.get(
 
     if (req.get("authorization") !== `Bearer ${cronSecret}`) {
       return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const scheduler = await loadReminderHttpScheduler();
+    const scheduleDecision = scheduler.getReminderHttpScheduleDecision({
+      intervalMinutes: scheduler.reminderHttpIntervalFromEnv(process.env),
+    });
+
+    if (!scheduleDecision.shouldRun) {
+      res.set("Cache-Control", "no-store");
+      return res.json({
+        ok: true,
+        skipped: true,
+        reason: scheduleDecision.reason,
+        schedule: {
+          intervalMinutes: scheduleDecision.intervalMinutes,
+          nextRunAt: scheduleDecision.nextRunAt,
+        },
+      });
     }
 
     const reminderJob = await loadReminderJob();
@@ -715,9 +745,15 @@ app.post(
   }),
 );
 
-app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, timestamp: Date.now() });
-});
+app.get(
+  "/api/health",
+  asyncRoute(async (_req, res) => {
+    const health = await loadApplicationHealth();
+    const result = await health.checkApplicationHealth();
+    res.set("Cache-Control", "no-store");
+    res.status(health.healthHttpStatus(result)).json(result);
+  }),
+);
 
 app.get(/^\/booking(?:\/.*)?$/, asyncRoute(sendReactBookingApp));
 

@@ -64,6 +64,7 @@ Required production notification variables:
 - `NOTIFICATION_DELIVERY_MODE=live`
 - `REMINDER_JOB_LOOKBACK_MINUTES=60`
 - `REMINDER_JOB_LOOKAHEAD_MINUTES=15`
+- `REMINDER_HTTP_MIN_INTERVAL_MINUTES=30` on quota-limited database plans
 - `CRON_SECRET`
 - `TWILIO_ACCOUNT_SID`
 - `TWILIO_AUTH_TOKEN`
@@ -72,7 +73,8 @@ Required production notification variables:
 - `EMAIL_FROM`
 
 Recommended schedule:
-- Run every 5 minutes.
+- Run every 30 minutes on quota-limited/serverless database plans.
+- Run every 5 minutes only after the database plan has enough compute quota for continuous production reminder wakeups.
 - Keep the default 60-minute lookback and 15-minute lookahead so a short scheduler outage does not miss due reminders.
 - Capture stdout/stderr in host logs.
 - Do not run multiple scheduler definitions for the same environment.
@@ -81,6 +83,7 @@ Vercel setup:
 - The secured endpoint is `GET /api/jobs/send-reminders`.
 - Set `CRON_SECRET` in Vercel production. Vercel sends it as `Authorization: Bearer <CRON_SECRET>` when invoking cron.
 - The endpoint returns `503` if `CRON_SECRET` is missing and `401` if the header does not match, so reminders cannot be triggered publicly.
+- The endpoint checks `REMINDER_HTTP_MIN_INTERVAL_MINUTES` before opening a database connection. The default is 30 minutes; off-boundary cron requests return `ok: true` with `skipped: true` and do not run the reminder DB job.
 - Vercel Hobby projects are limited to daily cron jobs. The recommended five-minute schedule requires Vercel Pro or an external scheduler.
 - On a Vercel Pro project, add this to `vercel.json` before redeploying:
 
@@ -98,7 +101,7 @@ Vercel setup:
 cron-job.org setup:
 - Production currently uses cron-job.org job `7551064`, titled `Leaside Fades reminders`.
 - The job is enabled and calls `https://www.leasidefades.com/api/jobs/send-reminders` to avoid the apex-domain redirect.
-- The schedule is every five minutes (`*/5 * * * *`) in `America/Toronto`.
+- The previous launch schedule was every five minutes (`*/5 * * * *`) in `America/Toronto`. On the current quota-limited database plan, change this to every 30 minutes or rely on the HTTP endpoint's 30-minute guard until the database plan is upgraded.
 - The job sends a custom header named `Authorization` with value `Bearer <CRON_SECRET>`.
 - The 10:20 PM America/Toronto run on May 1, 2026 succeeded with `200 OK` after switching from the apex domain to `www`. A prior 10:15 PM run failed with `307 Temporary Redirect` and can be ignored as setup history.
 - If `CRON_SECRET` is rotated in Vercel, update the cron-job.org header value at the same time and redeploy production so the serverless function receives the new value.

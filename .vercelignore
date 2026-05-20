@@ -2,6 +2,7 @@
 .env.*
 .git
 .playwright-mcp
+.superpowers
 .vercel
 node_modules
 output

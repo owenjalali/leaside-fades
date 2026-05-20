@@ -31,6 +31,7 @@ Current production target:
 - `NOTIFICATION_DELIVERY_MODE`
 - `REMINDER_JOB_LOOKBACK_MINUTES`
 - `REMINDER_JOB_LOOKAHEAD_MINUTES`
+- `REMINDER_HTTP_MIN_INTERVAL_MINUTES`
 - `TWILIO_ACCOUNT_SID`
 - `TWILIO_AUTH_TOKEN`
 - `TWILIO_FROM_NUMBER`
@@ -92,6 +93,7 @@ npm run server
 Verify:
 - HTTPS is active.
 - Static assets load.
+- `/api/health` returns 200 only when the critical PostgreSQL dependency answers a database readiness query. A 503 means the booking/admin system is not online even if the static site still loads.
 - Public booking catalog loads.
 - Admin login page loads.
 - Password reset and invite setup pages load without requiring an active admin session.
@@ -156,9 +158,11 @@ npm run notifications:send-reminders
 Enable scheduler only after booking and notification smoke tests pass.
 
 Recommended cadence:
-- Every 5 minutes.
+- Every 30 minutes on quota-limited/serverless database plans.
+- Every 5 minutes only after the production database plan has enough compute quota for continuous reminder wakeups.
 - Default lookback: 60 minutes.
 - Default lookahead: 15 minutes.
+- `REMINDER_HTTP_MIN_INTERVAL_MINUTES` defaults the secured HTTP endpoint to a 30-minute database cadence, so an overly frequent external cron can be skipped before opening a database connection.
 - Capture stdout/stderr in host logs.
 - Do not configure multiple production reminder schedulers for the same database.
 
@@ -171,6 +175,7 @@ Before cutover, confirm where these are visible:
 - Twilio delivery errors
 - Resend delivery errors
 - database connection errors
+- database quota/compute exhaustion errors
 - uncaught Express errors
 
 Notification provider failures should be visible in the `notifications` table and host logs.
@@ -188,6 +193,7 @@ Only after owner signoff:
 If launch smoke tests fail or production behavior is unsafe:
 - Restore public website booking links to the previous Fresha booking URL.
 - Stop the production reminder scheduler.
+- If PostgreSQL reports compute quota exhaustion, upgrade/restore the database plan or quota before expecting booking/admin recovery; redeploying the app alone will not restore DB-backed routes.
 - Leave the production database intact unless a restore is explicitly required.
 - Preserve DB backup, host logs, and notification rows for debugging.
 - If a migration rollback is required, restore from the pre-cutover database checkpoint rather than hand-mutating schema.

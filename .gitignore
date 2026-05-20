@@ -18,6 +18,7 @@ npm-debug.log*
 
 # Browser automation scratch files
 .playwright-mcp/
+.superpowers/
 artifacts/
 output/
 
