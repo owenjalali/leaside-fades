@@ -195,7 +195,7 @@ GitHub Actions scheduler:
 - Store the current production `CRON_SECRET` as repository secret `LEASIDE_REMINDER_CRON_SECRET`.
 - The workflow can be manually dispatched with `gh workflow run send-reminders.yml --ref master`.
 - The workflow fails if the endpoint returns non-2xx. A `recent_success` skip is clean because the durable heartbeat already satisfies the cadence.
-- If cron-job.org is repaired later, disable either cron-job.org or the GitHub Actions schedule before both are authorized against production.
+- cron-job.org is the primary scheduler. GitHub Actions may remain enabled as a backup/manual path because the reminder endpoint uses the durable heartbeat to avoid duplicate reminder sends.
 
 If the scheduler log gate shows repeated `401` responses, cron-job.org is reaching production but is not sending the current `Authorization: Bearer <CRON_SECRET>` header. Edit the cron-job.org job, update the custom Authorization header from the current Vercel Production `CRON_SECRET`, save/re-enable the job, run a manual test, and rerun `npm run qa:production-reminder-scheduler`.
 

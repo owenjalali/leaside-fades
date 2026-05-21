@@ -396,8 +396,8 @@
 - [x] GitHub Actions repository secret `LEASIDE_REMINDER_CRON_SECRET` configured with the current production `CRON_SECRET`
 - [x] GitHub Actions reminder scheduler produces an authorized real run and durable success heartbeat
 - [x] GitHub Actions delayed scheduled runs are handled by heartbeat-based cadence instead of failing on off-boundary skips
-- [ ] Current cron-job.org restart produces an authorized `200` reminder run after updating the job Authorization header
-- [ ] Current cron-job.org restart produces a real `scheduler_job_runs` success heartbeat after updating the job Authorization header
+- [x] Current cron-job.org restart produces an authorized `200` reminder request after scheduler secret alignment
+- [x] Current scheduler recovery produces a real durable `scheduler_job_runs` success heartbeat after scheduler secret alignment
 - [ ] Untracked artifacts audited before launch commit
 - [ ] Owner-approved recurring shifts entered before exposing `/book`
 - [x] Observed Fresha launch recurring shifts entered as initial production schedule pending owner verification

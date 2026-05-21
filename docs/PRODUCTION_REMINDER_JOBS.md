@@ -101,17 +101,17 @@ Vercel setup:
 ```
 
 GitHub Actions setup:
-- `.github/workflows/send-reminders.yml` is available as a free production scheduler path while cron-job.org cannot be repaired from the local machine.
+- `.github/workflows/send-reminders.yml` is available as a free backup/manual production scheduler path.
 - The workflow runs on the default branch at UTC minute `13` and `43` and can also be run manually through `workflow_dispatch`.
 - It calls `https://www.leasidefades.com/api/jobs/send-reminders` with `Authorization: Bearer <LEASIDE_REMINDER_CRON_SECRET>`.
 - Store the same current production `CRON_SECRET` in the repository secret `LEASIDE_REMINDER_CRON_SECRET`. Do not commit the value.
 - The workflow fails if production returns a non-2xx response. A `recent_success` skip exits cleanly because it means another real run already satisfied the cadence.
-- If cron-job.org is later repaired with the current secret, disable either cron-job.org or the GitHub Actions schedule so only one authorized production scheduler remains.
+- cron-job.org is the primary scheduler. GitHub Actions may remain enabled as a backup because the production endpoint uses the durable heartbeat to avoid duplicate reminder sends.
 
 cron-job.org setup:
 - Production currently uses cron-job.org job `7551064`, titled `Leaside Fades reminders`.
 - The job is enabled and calls `https://www.leasidefades.com/api/jobs/send-reminders` to avoid the apex-domain redirect.
-- The previous launch schedule was every five minutes (`*/5 * * * *`) in `America/Toronto`. On the current quota-limited database plan, change this to every 30 minutes or rely on the HTTP endpoint's 30-minute guard until the database plan is upgraded.
+- The previous launch schedule was every five minutes (`*/5 * * * *`) in `America/Toronto`. On the current quota-limited database plan, keep this at every 30 minutes or rely on the HTTP endpoint's 30-minute guard until the database plan is upgraded.
 - The job sends a custom header named `Authorization` with value `Bearer <CRON_SECRET>`.
 - The job can be inspected with the cron-job.org API without storing secrets in git:
 

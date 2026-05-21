@@ -680,3 +680,11 @@ Add `.github/workflows/send-reminders.yml` as a free scheduler path for producti
 
 Reason:
 The database outage was caused by exhausted Neon compute quota, so the scheduler should stay on a 30-minute database cadence. cron-job.org is still reaching production with stale credentials and cannot be repaired from this machine without its API key. GitHub Actions scheduled workflows can start late, so wall-clock minute boundaries alone caused skipped runs and failure emails. A heartbeat-based cadence preserves the quota guard without depending on exact scheduler start time.
+
+### 2026-05-21 - Keep cron-job.org Primary With GitHub Actions Backup
+
+Decision:
+Restore cron-job.org job `7551064` as the primary production reminder scheduler at a 30-minute cadence and keep GitHub Actions enabled as a backup/manual scheduler path using the same production scheduler secret.
+
+Reason:
+cron-job.org was repaired after owner-assisted console login, but the incident showed that a single external scheduler can be disabled or misconfigured independently of the app. The secured reminder endpoint now makes duplicate authorized scheduler calls safe: a stale heartbeat runs the reminder job, while a recent success returns a clean `recent_success` skip without duplicate reminder sends. This keeps reminders resilient while preserving the quota-safe 30-minute database cadence.
