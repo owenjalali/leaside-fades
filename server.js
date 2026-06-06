@@ -207,6 +207,10 @@ async function fetchGoogleReviewsFromApi() {
 
 app.disable("x-powered-by");
 app.use(compression());
+app.use(
+  "/api/admin/team/profile-image",
+  express.raw({ type: ["image/jpeg", "image/png", "image/webp"], limit: "4mb" }),
+);
 app.use(express.json({ limit: "100kb" }));
 app.use(
   express.static(publicDir, {
@@ -485,10 +489,26 @@ app.post(
 );
 
 app.post(
+  "/api/admin/team/profile-image",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminUploadTeamProfileImage(req, res, next);
+  }),
+);
+
+app.post(
   "/api/admin/team/barbers",
   asyncRoute(async (req, res, next) => {
     const adminApi = await loadAdminApi();
     return adminApi.handleAdminCreateBarber(req, res, next);
+  }),
+);
+
+app.get(
+  "/api/admin/team/barbers",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminTeamBarbers(req, res, next);
   }),
 );
 

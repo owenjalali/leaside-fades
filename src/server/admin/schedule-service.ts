@@ -12,7 +12,10 @@ export interface AdminScheduleLocationOption {
 
 export interface AdminScheduleBarberOption {
     id: string;
+    slug?: string;
     displayName: string;
+    profileImageUrl?: string | null;
+    profileImagePathname?: string | null;
     sortOrder: number;
     locationIds: string[];
 }

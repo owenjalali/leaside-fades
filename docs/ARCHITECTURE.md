@@ -141,6 +141,10 @@ Phase 12 wires Phase 5B password reset delivery to Resend in production. Non-pro
 
 Phase 12 wires Phase 5C barber invite delivery to Resend in production. Non-production environments keep dev console logging. Production invite links require `APP_URL` and route to `/admin/accept-invite`.
 
+Phase 12 expands team management with an owner/admin-only `/admin/team` surface and `/api/admin/team/*` routes. The create flow uploads a barber profile photo to Vercel Blob, then creates the active barber, location assignments, all active barber-service rows, required recurring weekly shifts, pending linked `barber` user, and invite token in one transaction. The barber is immediately visible through admin calendar options, schedule data, public catalog, and availability because those surfaces read active `barbers`, `barber_locations`, `barber_services`, and `shifts`.
+
+Team removal is a deactivation flow, not destructive history deletion. The server rejects removal while future confirmed bookings exist. Successful removal sets the barber inactive, deactivates linked users, revokes active sessions, and relies on active-barber filters to hide the barber from future admin/public booking surfaces while preserving historical bookings.
+
 ## Data Model Summary
 
 Core tables planned for Phase 1:
@@ -169,6 +173,8 @@ Phase 5A adds nullable `users.password_hash` and a `user_sessions` table for cus
 Phase 5B adds `password_reset_tokens` for hashed, single-use password recovery tokens. Raw reset tokens are delivered only through the delivery layer and are never stored in PostgreSQL.
 
 Phase 5C adds `user_invite_tokens` for owner/admin-created barber account setup links. Raw invite tokens are delivered only through the invite delivery layer and are never stored in PostgreSQL.
+
+Phase 12 adds nullable `barbers.profile_image_url` and `barbers.profile_image_pathname`. Profile image bytes are not stored in PostgreSQL or the local filesystem; production uploads use Vercel Blob and store only the public URL/pathname on the barber row.
 
 Phase 8 uses the existing nullable `bookings.cancellation_token_hash` and `bookings.reschedule_token_hash` columns for customer management links. Public bookings generate raw opaque tokens and store only SHA-256 token hashes. Walk-ins do not generate customer management tokens in Phase 8.
 
@@ -608,6 +614,7 @@ Use environment variables for all secrets.
 Required env vars eventually:
 - `DATABASE_URL`
 - `APP_URL`
+- `BLOB_READ_WRITE_TOKEN`
 - `NOTIFICATION_DELIVERY_MODE`
 - `REMINDER_JOB_LOOKBACK_MINUTES`
 - `REMINDER_JOB_LOOKAHEAD_MINUTES`

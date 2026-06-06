@@ -56,6 +56,8 @@ describe("Phase 4 public booking repository mapping", () => {
                     id: barberId,
                     slug: "sam-to",
                     displayName: "Sam To",
+                    profileImageUrl: "https://blob.example/sam.jpg",
+                    profileImagePathname: "barbers/sam.jpg",
                     sortOrder: 10,
                 },
             ],
@@ -72,7 +74,11 @@ describe("Phase 4 public booking repository mapping", () => {
             }),
         ]);
         expect(catalog.barbers).toEqual([
-            expect.objectContaining({ id: barberId, locationIds: [locationId] }),
+            expect.objectContaining({
+                id: barberId,
+                profileImageUrl: "https://blob.example/sam.jpg",
+                locationIds: [locationId],
+            }),
         ]);
     });
 

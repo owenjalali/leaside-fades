@@ -434,6 +434,8 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
                     id: barbers.id,
                     slug: barbers.slug,
                     displayName: barbers.displayName,
+                    profileImageUrl: barbers.profileImageUrl,
+                    profileImagePathname: barbers.profileImagePathname,
                     sortOrder: barbers.sortOrder,
                 })
                 .from(barbers)

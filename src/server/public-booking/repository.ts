@@ -72,6 +72,8 @@ export interface PublicCatalogBarber {
     id: string;
     slug: string;
     displayName: string;
+    profileImageUrl: string | null;
+    profileImagePathname: string | null;
     sortOrder: number;
     locationIds: string[];
 }
@@ -170,6 +172,8 @@ export async function loadPublicBookingCatalog(
                     id: barbers.id,
                     slug: barbers.slug,
                     displayName: barbers.displayName,
+                    profileImageUrl: barbers.profileImageUrl,
+                    profileImagePathname: barbers.profileImagePathname,
                     sortOrder: barbers.sortOrder,
                 })
                 .from(barbers)

@@ -21,6 +21,7 @@ import {
     SlidersHorizontal,
     AlertTriangle,
     UserRound,
+    UsersRound,
     X,
 } from "lucide-react";
 
@@ -52,6 +53,7 @@ import {
     rescheduleAdminBooking,
 } from "./api";
 import SchedulePage from "./SchedulePage";
+import TeamPage from "./TeamPage";
 import {
     buildDashboardChartScale,
     buildBookingDragPayload,
@@ -546,9 +548,11 @@ function AdminWorkspace({
     const isDashboardPath = path.startsWith("/admin/dashboard");
     const isShiftsPath = path.startsWith("/admin/shifts");
     const isBlockedTimePath = path.startsWith("/admin/blocked-time");
+    const isTeamPath = path.startsWith("/admin/team");
     const isSchedulePath = isShiftsPath || isBlockedTimePath;
+    const isManagementPath = isSchedulePath || isTeamPath;
     const selectedDate = calendarDate;
-    const pageTitle = isDashboardPath ? "Dashboard" : isShiftsPath ? "Staff shifts" : isBlockedTimePath ? "Blocked time" : "Calendar";
+    const pageTitle = isDashboardPath ? "Dashboard" : isTeamPath ? "Team" : isShiftsPath ? "Staff shifts" : isBlockedTimePath ? "Blocked time" : "Calendar";
 
     useEffect(() => {
         fetchAdminCalendarOptions()
@@ -591,7 +595,7 @@ function AdminWorkspace({
     }, [calendarDate, path, view]);
 
     useEffect(() => {
-        if (isSchedulePath) {
+        if (isManagementPath) {
             setLoading(false);
             return;
         }
@@ -612,10 +616,10 @@ function AdminWorkspace({
         return () => {
             cancelled = true;
         };
-    }, [filters, isSchedulePath]);
+    }, [filters, isManagementPath]);
 
     useEffect(() => {
-        if (isSchedulePath) return;
+        if (isManagementPath) return;
 
         let cancelled = false;
         fetchAdminSchedule({ from: filters.from, to: filters.to })
@@ -629,7 +633,7 @@ function AdminWorkspace({
         return () => {
             cancelled = true;
         };
-    }, [filters.from, filters.to, isSchedulePath]);
+    }, [filters.from, filters.to, isManagementPath]);
 
     useEffect(() => {
         if (!isDashboardPath) return;
@@ -669,7 +673,7 @@ function AdminWorkspace({
         const response = await fetchAdminBookings(filters);
         setBookings(response.bookings);
 
-        if (!isSchedulePath) {
+        if (!isManagementPath) {
             const scheduleResponse = await fetchAdminSchedule({ from: filters.from, to: filters.to });
             setSchedule(scheduleResponse);
         }
@@ -694,6 +698,16 @@ function AdminWorkspace({
         } finally {
             if (!quiet) setDashboardLoading(false);
         }
+    }
+
+    async function refreshAdminContext() {
+        const [nextOptions, nextSchedule] = await Promise.all([
+            fetchAdminCalendarOptions(),
+            fetchAdminSchedule({ from: filters.from, to: filters.to }),
+        ]);
+
+        setOptions(nextOptions);
+        setSchedule(nextSchedule);
     }
 
     function openAddAppointment(input?: Partial<{ barberId: string; locationId: string; startTime: string }>) {
@@ -803,7 +817,7 @@ function AdminWorkspace({
     const visibleBarbers = view === "day" ? calendarBarberItems.map((item) => item.barber) : staticVisibleBarbers;
     const isDayCalendarPath =
         !isDashboardPath &&
-        !isSchedulePath &&
+        !isManagementPath &&
         !detailId &&
         !path.startsWith("/admin/bookings") &&
         view === "day";
@@ -829,12 +843,12 @@ function AdminWorkspace({
                     schedule={schedule}
                     loading={isDashboardPath ? dashboardLoading : loading}
                     isDashboardPath={isDashboardPath}
-                    isSchedulePath={isSchedulePath}
+                    isSchedulePath={isManagementPath}
                     compactWorkspace={drawerOpen}
                     onView={changeView}
                     onDate={applyDate}
                     onChangeFilters={setFilters}
-                    onRefresh={isDashboardPath ? refreshDashboard : refreshBookings}
+                    onRefresh={isDashboardPath ? refreshDashboard : isManagementPath ? refreshAdminContext : refreshBookings}
                     onNewBooking={() => openAddAppointment()}
                 />
                 <section
@@ -853,6 +867,8 @@ function AdminWorkspace({
                             refreshError={dashboardRefreshError}
                             onOpenBooking={(bookingId) => setDrawer({ mode: "detail", bookingId })}
                         />
+                    ) : isTeamPath ? (
+                        <TeamPage user={user} onChanged={refreshAdminContext} />
                     ) : isSchedulePath ? (
                         <SchedulePage mode={isBlockedTimePath ? "blocked" : "shifts"} user={user} />
                     ) : detailId ? (
@@ -981,7 +997,8 @@ function AdminRail({
         { label: "Bookings", path: "/admin/bookings", icon: ClipboardList },
         { label: "Shifts", path: "/admin/shifts", icon: Clock },
         { label: "Blocked", path: "/admin/blocked-time", icon: Ban },
-    ];
+        { label: "Team", path: "/admin/team", icon: UsersRound, ownerOnly: true },
+    ].filter((item) => !item.ownerOnly || user.role === "owner" || user.role === "admin");
 
     return (
         <aside className="sticky top-0 z-30 flex h-14 min-h-14 items-center justify-between gap-2 border-b border-white/10 bg-[#08110e] px-2 text-white lg:h-screen lg:min-h-screen lg:flex-col lg:items-stretch lg:gap-3 lg:border-b-0 lg:px-3 lg:py-6 2xl:px-4">
@@ -3840,7 +3857,7 @@ function BarberAvatar({
     barber,
     size = "md",
 }: {
-    barber: Pick<AdminBarberOption, "displayName" | "slug">;
+    barber: Pick<AdminBarberOption, "displayName" | "slug" | "profileImageUrl">;
     size?: "sm" | "md" | "lg";
 }) {
     const source = barberPhotoUrl(barber);
@@ -4510,7 +4527,11 @@ const barberPhotosBySlug: Record<string, string> = {
     josef: josefThumb,
 };
 
-function barberPhotoUrl(barber: Pick<AdminBarberOption, "displayName" | "slug">) {
+function barberPhotoUrl(barber: Pick<AdminBarberOption, "displayName" | "slug" | "profileImageUrl">) {
+    if (barber.profileImageUrl) {
+        return barber.profileImageUrl;
+    }
+
     if (barber.slug && barberPhotosBySlug[barber.slug]) {
         return barberPhotosBySlug[barber.slug];
     }

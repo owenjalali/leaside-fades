@@ -687,6 +687,14 @@ function BarberAvatar({
 }
 
 function getBarberProfile(barber: BookingBarber) {
+    if (barber.profileImageUrl) {
+        return {
+            image: barber.profileImageUrl,
+            shortName: barber.displayName.split(" ")[0] ?? barber.displayName,
+            role: "Barber",
+        };
+    }
+
     return (
         barberProfiles[barber.slug] ?? {
             image: samImage,

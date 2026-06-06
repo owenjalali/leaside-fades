@@ -357,6 +357,11 @@
 - [x] Admin calendar mobile rail/topbar are compact enough for the day-board grid to remain visible at 320x568
 - [x] Admin calendar mobile filters open as an overlay and close without permanently hiding or resizing away the day board
 - [x] Admin calendar mobile slot taps and topbar Add both open a fully framed Add appointment drawer with the create action visible
+- [x] `/admin/team` exists for owner/admin users and is hidden from barber rail navigation
+- [x] Team barber create requires uploaded profile photo, invite email, selected location, and 15-minute-aligned weekly hours
+- [x] Created team barbers are assigned to all active services and appear in admin calendar options, schedule context, public catalog, and public availability
+- [x] Team barber removal is blocked while future confirmed bookings exist, then deactivates the barber/user/session after bookings are cancelled or rescheduled
+- [x] Repeatable local Team management QA runner exists as `npm run qa:phase12-team-management`
 - [x] Local Playwright MCP stress test covered `/admin/calendar` at 320x568, 340x600, 340x720, 375x667, 390x844, 414x896, 768x1024, 1280x720, and 1440x900 without creating appointments
 - [x] Local launch-critical browser QA verified customer cancellation from a token link, admin full-day board labels from 12:00 AM through the 11:00 PM hour, grey-slot staff booking, appointment phone/email/notes edit, one-day shift edit, and mobile calendar filters/add controls
 - [x] Production launch-critical redeploy `dpl_Dtpu3bguZC7ZAVQfo8DdcZJR6i74` is `Ready` and aliased to `https://www.leasidefades.com`

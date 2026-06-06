@@ -73,6 +73,8 @@ export interface AdminBarberOption {
     id: string;
     slug?: string;
     displayName: string;
+    profileImageUrl?: string | null;
+    profileImagePathname?: string | null;
     locationIds: string[];
     sortOrder: number;
 }
@@ -179,6 +181,52 @@ export interface AdminSchedule {
 export interface AdminScheduleFilters {
     from?: string;
     to?: string;
+}
+
+export interface AdminTeamWeeklyShift {
+    id?: string;
+    barberId?: string;
+    locationId: string;
+    dayOfWeek: number;
+    startTime: string;
+    endTime: string;
+    effectiveFrom: string | null;
+    effectiveTo: string | null;
+    active?: boolean;
+}
+
+export interface AdminTeamUser extends SafeAdminUser {
+    active: boolean;
+}
+
+export interface AdminTeamBarber {
+    id: string;
+    slug: string;
+    displayName: string;
+    email: string | null;
+    phoneE164: string | null;
+    profileImageUrl: string | null;
+    profileImagePathname: string | null;
+    active: boolean;
+    locationIds: string[];
+    user: AdminTeamUser | null;
+    weeklyShifts: AdminTeamWeeklyShift[];
+    futureConfirmedBookingCount: number;
+}
+
+export interface AdminTeamBarberCreatePayload {
+    displayName: string;
+    email: string;
+    phoneE164: string;
+    profileImageUrl: string;
+    profileImagePathname: string;
+    locationIds: string[];
+    weeklyShifts: AdminTeamWeeklyShift[];
+}
+
+export interface AdminTeamProfileImageUpload {
+    url: string;
+    pathname: string;
 }
 
 export interface AdminDayShiftReplacePayload {

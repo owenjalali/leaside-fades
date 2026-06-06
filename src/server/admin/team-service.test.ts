@@ -40,33 +40,51 @@ const now = new Date("2026-04-27T15:00:00.000Z");
 
 class InMemoryTeamRepository implements TeamOnboardingRepository {
     activeLocationIds = [eglintonId, millwoodId];
+    activeServiceIds = ["service-a", "service-b"];
+    existingBarberSlugs: string[] = [];
+    futureConfirmedBookingCounts: Record<string, number> = {};
     barbers: TeamBarberRecord[] = [];
     users: TeamUserRecord[] = [];
     inviteTokens: UserInviteTokenRecord[] = [];
     sessions: AuthSessionRecord[] = [];
+    createdShifts: Array<{
+        barberId: string;
+        locationId: string;
+        dayOfWeek: number;
+        startTime: string;
+        endTime: string;
+        effectiveFrom: string | null;
+        effectiveTo: string | null;
+        active: boolean;
+    }> = [];
+    barberServices: Array<{ barberId: string; serviceId: string; active: boolean }> = [];
 
     async findActiveLocationIds(locationIds: string[]) {
         return locationIds.filter((id) => this.activeLocationIds.includes(id));
     }
 
-    async createBarberWithInvite(input: {
-        barber: {
-            slug: string;
-            displayName: string;
-            email: string;
-            phoneE164: string | null;
-            locationIds: string[];
-        };
-        user: {
-            email: string;
-            displayName: string;
-        };
-        invite: {
-            tokenHash: string;
-            expiresAt: Date;
-            createdByUserId: string;
-        };
-    }) {
+    async findExistingBarberSlugs(baseSlug: string) {
+        return this.existingBarberSlugs.filter((slug) => slug === baseSlug || slug.startsWith(`${baseSlug}-`));
+    }
+
+    async findActiveServiceIds() {
+        return this.activeServiceIds;
+    }
+
+    async countFutureConfirmedBookings(barberId: string) {
+        return this.futureConfirmedBookingCounts[barberId] ?? 0;
+    }
+
+    async listTeamBarbers() {
+        return this.barbers.map((barber) => ({
+            ...barber,
+            user: this.users.find((user) => user.barberId === barber.id) ?? null,
+            weeklyShifts: this.createdShifts.filter((shift) => shift.barberId === barber.id),
+            futureConfirmedBookingCount: this.futureConfirmedBookingCounts[barber.id] ?? 0,
+        }));
+    }
+
+    async createBarberWithInvite(input: any) {
         const barber: TeamBarberRecord = {
             id: `barber-${this.barbers.length + 1}`,
             slug: input.barber.slug,
@@ -75,7 +93,9 @@ class InMemoryTeamRepository implements TeamOnboardingRepository {
             phoneE164: input.barber.phoneE164,
             active: true,
             locationIds: input.barber.locationIds,
-        };
+            ...("profileImageUrl" in input.barber ? { profileImageUrl: input.barber.profileImageUrl } : {}),
+            ...("profileImagePathname" in input.barber ? { profileImagePathname: input.barber.profileImagePathname } : {}),
+        } as TeamBarberRecord;
         const user: TeamUserRecord = {
             id: `user-${this.users.length + 1}`,
             email: input.user.email,
@@ -97,6 +117,25 @@ class InMemoryTeamRepository implements TeamOnboardingRepository {
         this.barbers.push(barber);
         this.users.push(user);
         this.inviteTokens.push(inviteToken);
+        this.createdShifts.push(
+            ...(input.weeklyShifts ?? []).map((shift: any) => ({
+                barberId: barber.id,
+                locationId: shift.locationId,
+                dayOfWeek: shift.dayOfWeek,
+                startTime: shift.startTime,
+                endTime: shift.endTime,
+                effectiveFrom: shift.effectiveFrom ?? null,
+                effectiveTo: shift.effectiveTo ?? null,
+                active: true,
+            })),
+        );
+        this.barberServices.push(
+            ...(input.serviceIds ?? []).map((serviceId: string) => ({
+                barberId: barber.id,
+                serviceId,
+                active: true,
+            })),
+        );
 
         return { barber, user, inviteToken };
     }
@@ -164,9 +203,171 @@ function tokenFromInviteUrl(inviteUrl: string) {
     return new URL(inviteUrl).searchParams.get("token") ?? "";
 }
 
+function barberCreateRequest(overrides: Record<string, unknown> = {}) {
+    return {
+        displayName: "New Barber",
+        email: "new.barber@example.com",
+        phoneE164: "+16475550123",
+        profileImageUrl: "https://blob.example/new-barber.jpg",
+        profileImagePathname: "barbers/new-barber.jpg",
+        locationIds: [eglintonId],
+        weeklyShifts: [
+            {
+                locationId: eglintonId,
+                dayOfWeek: 1,
+                startTime: "10:00",
+                endTime: "18:00",
+            },
+        ],
+        ...overrides,
+    };
+}
+
 describe("Phase 5C team onboarding service", () => {
     afterEach(() => {
         vi.unstubAllEnvs();
+    });
+
+    test("owner creates a public barber profile with all services and required weekly shifts", async () => {
+        const repository = new InMemoryTeamRepository();
+        const delivery = new InMemoryTeamInviteDelivery();
+
+        const result = await createBarberOnboarding(
+            ownerUser,
+            {
+                displayName: "Photo Barber",
+                email: "photo@example.com",
+                phoneE164: "+16475550123",
+                locationIds: [eglintonId],
+                profileImageUrl: "https://blob.example/photo-barber.jpg",
+                profileImagePathname: "barbers/photo-barber.jpg",
+                weeklyShifts: [
+                    {
+                        locationId: eglintonId,
+                        dayOfWeek: 1,
+                        startTime: "10:00",
+                        endTime: "18:00",
+                    },
+                    {
+                        locationId: eglintonId,
+                        dayOfWeek: 2,
+                        startTime: "12:00",
+                        endTime: "19:00",
+                    },
+                ],
+            } as any,
+            repository,
+            delivery,
+            { now, appUrl: "https://example.com" },
+        );
+
+        expect(result.barber).toMatchObject({
+            displayName: "Photo Barber",
+            slug: "photo-barber",
+            active: true,
+            locationIds: [eglintonId],
+        });
+        expect((result.barber as any).profileImageUrl).toBe("https://blob.example/photo-barber.jpg");
+        expect((result.barber as any).profileImagePathname).toBe("barbers/photo-barber.jpg");
+        expect(repository.barberServices).toEqual([
+            { barberId: result.barber.id, serviceId: "service-a", active: true },
+            { barberId: result.barber.id, serviceId: "service-b", active: true },
+        ]);
+        expect(repository.createdShifts).toEqual([
+            {
+                barberId: result.barber.id,
+                locationId: eglintonId,
+                dayOfWeek: 1,
+                startTime: "10:00",
+                endTime: "18:00",
+                effectiveFrom: null,
+                effectiveTo: null,
+                active: true,
+            },
+            {
+                barberId: result.barber.id,
+                locationId: eglintonId,
+                dayOfWeek: 2,
+                startTime: "12:00",
+                endTime: "19:00",
+                effectiveFrom: null,
+                effectiveTo: null,
+                active: true,
+            },
+        ]);
+    });
+
+    test("barber creation requires at least one valid weekly shift in a selected location", async () => {
+        const repository = new InMemoryTeamRepository();
+        const delivery = new InMemoryTeamInviteDelivery();
+
+        await expect(
+            createBarberOnboarding(
+                ownerUser,
+                {
+                    displayName: "No Hours",
+                    email: "no-hours@example.com",
+                    profileImageUrl: "https://blob.example/no-hours.jpg",
+                    profileImagePathname: "barbers/no-hours.jpg",
+                    locationIds: [eglintonId],
+                    weeklyShifts: [],
+                } as any,
+                repository,
+                delivery,
+                { now },
+            ),
+        ).rejects.toMatchObject({
+            status: 400,
+            message: "At least one weekly shift is required.",
+        });
+
+        await expect(
+            createBarberOnboarding(
+                ownerUser,
+                {
+                    displayName: "Wrong Location",
+                    email: "wrong-location@example.com",
+                    profileImageUrl: "https://blob.example/wrong-location.jpg",
+                    profileImagePathname: "barbers/wrong-location.jpg",
+                    locationIds: [eglintonId],
+                    weeklyShifts: [
+                        {
+                            locationId: millwoodId,
+                            dayOfWeek: 1,
+                            startTime: "10:00",
+                            endTime: "18:00",
+                        },
+                    ],
+                } as any,
+                repository,
+                delivery,
+                { now },
+            ),
+        ).rejects.toMatchObject({
+            status: 400,
+            message: "Weekly shifts must use one of the selected barber locations.",
+        });
+
+        expect(repository.barbers).toHaveLength(0);
+        expect(delivery.deliveries).toHaveLength(0);
+    });
+
+    test("barber creation generates a collision-safe slug", async () => {
+        const repository = new InMemoryTeamRepository();
+        repository.existingBarberSlugs = ["new-barber", "new-barber-2"];
+
+        const result = await createBarberOnboarding(
+            ownerUser,
+            barberCreateRequest({
+                displayName: "New Barber",
+                email: "collision@example.com",
+            }) as any,
+            repository,
+            new InMemoryTeamInviteDelivery(),
+            { now },
+        );
+
+        expect(result.barber.slug).toBe("new-barber-3");
     });
 
     test("owner creates a linked pending barber user and hashed invite token for Eglinton", async () => {
@@ -175,12 +376,11 @@ describe("Phase 5C team onboarding service", () => {
 
         const result = await createBarberOnboarding(
             ownerUser,
-            {
+            barberCreateRequest({
                 displayName: "New Barber",
                 email: " NEW.BARBER@EXAMPLE.COM ",
                 phoneE164: "+16475550123",
-                locationIds: [eglintonId],
-            },
+            }),
             repository,
             delivery,
             { now, appUrl: "https://example.com" },
@@ -231,11 +431,10 @@ describe("Phase 5C team onboarding service", () => {
         await expect(
             createBarberOnboarding(
                 ownerUser,
-                {
+                barberCreateRequest({
                     displayName: "New Barber",
                     email: "new.barber@example.com",
-                    locationIds: [eglintonId],
-                },
+                }),
                 repository,
                 delivery,
                 { now },
@@ -254,22 +453,30 @@ describe("Phase 5C team onboarding service", () => {
 
         const millwood = await createBarberOnboarding(
             adminUser,
-            {
+            barberCreateRequest({
                 displayName: "Mill Barber",
                 email: "mill@example.com",
                 locationIds: [millwoodId],
-            },
+                weeklyShifts: [
+                    {
+                        locationId: millwoodId,
+                        dayOfWeek: 1,
+                        startTime: "10:00",
+                        endTime: "18:00",
+                    },
+                ],
+            }),
             repository,
             delivery,
             { now },
         );
         const both = await createBarberOnboarding(
             adminUser,
-            {
+            barberCreateRequest({
                 displayName: "Both Barber",
                 email: "both@example.com",
                 locationIds: [eglintonId, millwoodId],
-            },
+            }),
             repository,
             delivery,
             { now },
@@ -320,6 +527,8 @@ describe("Phase 5C team onboarding service", () => {
                 {
                     displayName: "Invalid Location",
                     email: "invalid-location@example.com",
+                    profileImageUrl: "https://blob.example/invalid-location.jpg",
+                    profileImagePathname: "barbers/invalid-location.jpg",
                     locationIds: ["missing-location"],
                 },
                 repository,
@@ -338,11 +547,10 @@ describe("Phase 5C team onboarding service", () => {
         const delivery = new InMemoryTeamInviteDelivery();
         await createBarberOnboarding(
             ownerUser,
-            {
+            barberCreateRequest({
                 displayName: "Invite Barber",
                 email: "invite@example.com",
-                locationIds: [eglintonId],
-            },
+            }),
             repository,
             delivery,
             { now },
@@ -366,11 +574,10 @@ describe("Phase 5C team onboarding service", () => {
         const delivery = new InMemoryTeamInviteDelivery();
         await createBarberOnboarding(
             ownerUser,
-            {
+            barberCreateRequest({
                 displayName: "Invite Barber",
                 email: "invite@example.com",
-                locationIds: [eglintonId],
-            },
+            }),
             repository,
             delivery,
             { now },
@@ -413,6 +620,8 @@ describe("Phase 5C team onboarding service", () => {
             displayName: "Deactivate Me",
             email: "deactivate@example.com",
             phoneE164: null,
+            profileImageUrl: "https://blob.example/deactivate-me.jpg",
+            profileImagePathname: "barbers/deactivate-me.jpg",
             active: true,
             locationIds: [eglintonId],
         });
@@ -440,5 +649,28 @@ describe("Phase 5C team onboarding service", () => {
         expect(repository.barbers[0].active).toBe(false);
         expect(repository.users[0].active).toBe(false);
         expect(repository.sessions[0].revokedAt).toEqual(now);
+    });
+
+    test("deactivation is blocked while future confirmed bookings exist", async () => {
+        const repository = new InMemoryTeamRepository();
+        repository.futureConfirmedBookingCounts["barber-1"] = 2;
+        repository.barbers.push({
+            id: "barber-1",
+            slug: "booked-barber",
+            displayName: "Booked Barber",
+            email: "booked@example.com",
+            phoneE164: null,
+            profileImageUrl: "https://blob.example/booked-barber.jpg",
+            profileImagePathname: "barbers/booked-barber.jpg",
+            active: true,
+            locationIds: [eglintonId],
+        });
+
+        await expect(deactivateBarberAccess(ownerUser, "barber-1", repository, { now })).rejects.toMatchObject({
+            status: 409,
+            message: "This barber has future confirmed bookings. Reschedule or cancel those bookings before removing the barber.",
+        });
+
+        expect(repository.barbers[0].active).toBe(true);
     });
 });

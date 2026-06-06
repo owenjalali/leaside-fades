@@ -3,6 +3,16 @@ import { describe, expect, test } from "vitest";
 import { getAdminBarberPhotoUrl } from "./barber-photos";
 
 describe("admin barber photos", () => {
+    test("prefers an uploaded profile image URL over bundled launch assets", () => {
+        expect(
+            getAdminBarberPhotoUrl({
+                displayName: "Sam To",
+                slug: "sam-to",
+                profileImageUrl: "https://blob.example/barbers/sam.png",
+            }),
+        ).toBe("https://blob.example/barbers/sam.png");
+    });
+
     test("resolves launch barbers to their repo profile assets by slug", () => {
         expect(getAdminBarberPhotoUrl({ displayName: "Sam To", slug: "sam-to" })).toContain("sam-thumb");
         expect(getAdminBarberPhotoUrl({ displayName: "Laura Nguyen", slug: "laura-nguyen" })).toContain("laura-thumb");

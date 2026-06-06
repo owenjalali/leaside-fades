@@ -642,7 +642,7 @@ function StaffAvatar({
     active,
     size = "md",
 }: {
-    barber: Pick<AdminBarberOption, "displayName" | "slug">;
+    barber: Pick<AdminBarberOption, "displayName" | "slug" | "profileImageUrl">;
     active?: boolean;
     size?: "md" | "lg";
 }) {

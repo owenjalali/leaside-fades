@@ -1,10 +1,14 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 
 import { createDatabaseClient } from "../db/client.ts";
 import {
     barberLocations,
+    barberServices,
     barbers,
+    bookings,
     locations,
+    services,
+    shifts,
     userInviteTokens,
     userSessions,
     users,
@@ -12,6 +16,8 @@ import {
 import type {
     TeamOnboardingRepository,
     TeamBarberRecord,
+    TeamListBarberRecord,
+    TeamShiftRecord,
     TeamUserRecord,
     UserInviteTokenRecord,
 } from "./team-service.ts";
@@ -55,14 +61,157 @@ class DrizzleTeamOnboardingRepository implements TeamOnboardingRepository {
         return rows.map((row) => row.id);
     }
 
+    async findExistingBarberSlugs(baseSlug: string): Promise<string[]> {
+        const db = this.database as ReturnType<typeof createDatabaseClient>["db"];
+        const rows = await db
+            .select({ slug: barbers.slug })
+            .from(barbers)
+            .where(sql`${barbers.slug} = ${baseSlug} OR ${barbers.slug} LIKE ${`${baseSlug}-%`}`);
+
+        return rows.map((row) => row.slug);
+    }
+
+    async findActiveServiceIds(): Promise<string[]> {
+        const db = this.database as ReturnType<typeof createDatabaseClient>["db"];
+        const rows = await db
+            .select({ id: services.id })
+            .from(services)
+            .where(eq(services.active, true))
+            .orderBy(asc(services.sortOrder), asc(services.name));
+
+        return rows.map((row) => row.id);
+    }
+
+    async countFutureConfirmedBookings(barberId: string, now: Date): Promise<number> {
+        const db = this.database as ReturnType<typeof createDatabaseClient>["db"];
+        const [row] = await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(bookings)
+            .where(
+                and(
+                    eq(bookings.barberId, barberId),
+                    eq(bookings.status, "confirmed"),
+                    gte(bookings.startTime, now),
+                ),
+            );
+
+        return row?.count ?? 0;
+    }
+
+    async listTeamBarbers(now: Date): Promise<TeamListBarberRecord[]> {
+        const db = this.database as ReturnType<typeof createDatabaseClient>["db"];
+        const barberRows = await db
+            .select({
+                id: barbers.id,
+                slug: barbers.slug,
+                displayName: barbers.displayName,
+                email: barbers.email,
+                phoneE164: barbers.phoneE164,
+                profileImageUrl: barbers.profileImageUrl,
+                profileImagePathname: barbers.profileImagePathname,
+                active: barbers.active,
+                sortOrder: barbers.sortOrder,
+            })
+            .from(barbers)
+            .where(eq(barbers.active, true))
+            .orderBy(asc(barbers.sortOrder), asc(barbers.displayName));
+        const barberIds = barberRows.map((barber) => barber.id);
+
+        if (barberIds.length === 0) {
+            return [];
+        }
+
+        const [locationRows, userRows, shiftRows, bookingCountRows] = await Promise.all([
+            db
+                .select({
+                    barberId: barberLocations.barberId,
+                    locationId: barberLocations.locationId,
+                })
+                .from(barberLocations)
+                .where(inArray(barberLocations.barberId, barberIds)),
+            db
+                .select({
+                    id: users.id,
+                    email: users.email,
+                    displayName: users.displayName,
+                    role: users.role,
+                    barberId: users.barberId,
+                    active: users.active,
+                    passwordHash: users.passwordHash,
+                })
+                .from(users)
+                .where(and(inArray(users.barberId, barberIds), eq(users.role, "barber"))),
+            db
+                .select({
+                    id: shifts.id,
+                    barberId: shifts.barberId,
+                    locationId: shifts.locationId,
+                    dayOfWeek: shifts.dayOfWeek,
+                    startTime: shifts.startTime,
+                    endTime: shifts.endTime,
+                    effectiveFrom: shifts.effectiveFrom,
+                    effectiveTo: shifts.effectiveTo,
+                    active: shifts.active,
+                })
+                .from(shifts)
+                .where(and(inArray(shifts.barberId, barberIds), eq(shifts.active, true)))
+                .orderBy(asc(shifts.dayOfWeek), asc(shifts.startTime)),
+            db
+                .select({
+                    barberId: bookings.barberId,
+                    count: sql<number>`count(*)::int`,
+                })
+                .from(bookings)
+                .where(
+                    and(
+                        inArray(bookings.barberId, barberIds),
+                        eq(bookings.status, "confirmed"),
+                        gte(bookings.startTime, now),
+                    ),
+                )
+                .groupBy(bookings.barberId),
+        ]);
+        const countsByBarberId = new Map(bookingCountRows.map((row) => [row.barberId, row.count]));
+
+        return barberRows.map((barber) => ({
+            id: barber.id,
+            slug: barber.slug,
+            displayName: barber.displayName,
+            email: barber.email,
+            phoneE164: barber.phoneE164,
+            profileImageUrl: barber.profileImageUrl,
+            profileImagePathname: barber.profileImagePathname,
+            active: barber.active,
+            locationIds: locationRows
+                .filter((location) => location.barberId === barber.id)
+                .map((location) => location.locationId),
+            user: userRows.find((user) => user.barberId === barber.id) ?? null,
+            weeklyShifts: shiftRows
+                .filter((shift) => shift.barberId === barber.id)
+                .map(toTeamShiftRecord),
+            futureConfirmedBookingCount: countsByBarberId.get(barber.id) ?? 0,
+        }));
+    }
+
     async createBarberWithInvite(input: {
         barber: {
             slug: string;
             displayName: string;
             email: string;
             phoneE164: string | null;
+            profileImageUrl: string;
+            profileImagePathname: string;
             locationIds: string[];
         };
+        weeklyShifts: Array<{
+            locationId: string;
+            dayOfWeek: number;
+            startTime: string;
+            endTime: string;
+            effectiveFrom: string | null;
+            effectiveTo: string | null;
+        }>;
+        serviceIds: string[];
         user: {
             email: string;
             displayName: string;
@@ -87,6 +236,8 @@ class DrizzleTeamOnboardingRepository implements TeamOnboardingRepository {
                     displayName: input.barber.displayName,
                     email: input.barber.email,
                     phoneE164: input.barber.phoneE164,
+                    profileImageUrl: input.barber.profileImageUrl,
+                    profileImagePathname: input.barber.profileImagePathname,
                     active: true,
                 })
                 .returning({
@@ -95,6 +246,8 @@ class DrizzleTeamOnboardingRepository implements TeamOnboardingRepository {
                     displayName: barbers.displayName,
                     email: barbers.email,
                     phoneE164: barbers.phoneE164,
+                    profileImageUrl: barbers.profileImageUrl,
+                    profileImagePathname: barbers.profileImagePathname,
                     active: barbers.active,
                 });
 
@@ -102,6 +255,27 @@ class DrizzleTeamOnboardingRepository implements TeamOnboardingRepository {
                 input.barber.locationIds.map((locationId) => ({
                     barberId: createdBarber.id,
                     locationId,
+                })),
+            );
+
+            await tx.insert(barberServices).values(
+                input.serviceIds.map((serviceId) => ({
+                    barberId: createdBarber.id,
+                    serviceId,
+                    active: true,
+                })),
+            );
+
+            await tx.insert(shifts).values(
+                input.weeklyShifts.map((shift) => ({
+                    barberId: createdBarber.id,
+                    locationId: shift.locationId,
+                    dayOfWeek: shift.dayOfWeek,
+                    startTime: shift.startTime,
+                    endTime: shift.endTime,
+                    effectiveFrom: shift.effectiveFrom,
+                    effectiveTo: shift.effectiveTo,
+                    active: true,
                 })),
             );
 
@@ -258,9 +432,9 @@ class DrizzleTeamOnboardingRepository implements TeamOnboardingRepository {
                 await tx
                     .update(userSessions)
                     .set({
-                    revokedAt: input.deactivatedAt,
-                    updatedAt: sql`now()`,
-                })
+                        revokedAt: input.deactivatedAt,
+                        updatedAt: sql`now()`,
+                    })
                     .where(and(inArray(userSessions.userId, deactivatedUserIds), isNull(userSessions.revokedAt)));
             }
 
@@ -270,4 +444,33 @@ class DrizzleTeamOnboardingRepository implements TeamOnboardingRepository {
             };
         });
     }
+}
+
+function toTeamShiftRecord(
+    shift: Omit<TeamShiftRecord, "startTime" | "endTime" | "effectiveFrom" | "effectiveTo"> & {
+        startTime: string;
+        endTime: string;
+        effectiveFrom: string | Date | null;
+        effectiveTo: string | Date | null;
+    },
+): TeamShiftRecord {
+    return {
+        ...shift,
+        startTime: shift.startTime.slice(0, 5),
+        endTime: shift.endTime.slice(0, 5),
+        effectiveFrom: normalizeDate(shift.effectiveFrom),
+        effectiveTo: normalizeDate(shift.effectiveTo),
+    };
+}
+
+function normalizeDate(value: string | Date | null) {
+    if (!value) {
+        return null;
+    }
+
+    if (value instanceof Date) {
+        return value.toISOString().slice(0, 10);
+    }
+
+    return value.slice(0, 10);
 }

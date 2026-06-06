@@ -71,7 +71,10 @@ class DrizzleAdminScheduleRepository implements AdminScheduleRepository {
         const barberRows = await db
             .select({
                 id: barbers.id,
+                slug: barbers.slug,
                 displayName: barbers.displayName,
+                profileImageUrl: barbers.profileImageUrl,
+                profileImagePathname: barbers.profileImagePathname,
                 sortOrder: barbers.sortOrder,
             })
             .from(barbers)
@@ -172,7 +175,10 @@ class DrizzleAdminScheduleRepository implements AdminScheduleRepository {
         const [barber] = await db
             .select({
                 id: barbers.id,
+                slug: barbers.slug,
                 displayName: barbers.displayName,
+                profileImageUrl: barbers.profileImageUrl,
+                profileImagePathname: barbers.profileImagePathname,
                 sortOrder: barbers.sortOrder,
             })
             .from(barbers)

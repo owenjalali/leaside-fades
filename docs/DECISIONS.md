@@ -688,3 +688,11 @@ Restore cron-job.org job `7551064` as the primary production reminder scheduler 
 
 Reason:
 cron-job.org was repaired after owner-assisted console login, but the incident showed that a single external scheduler can be disabled or misconfigured independently of the app. The secured reminder endpoint now makes duplicate authorized scheduler calls safe: a stale heartbeat runs the reminder job, while a recent success returns a clean `recent_success` skip without duplicate reminder sends. This keeps reminders resilient while preserving the quota-safe 30-minute database cadence.
+
+### 2026-06-06 - Make Team Barber Management Owner/Admin Operated
+
+Decision:
+Add an owner/admin-only `/admin/team` section backed by `GET /api/admin/team/barbers`, `POST /api/admin/team/profile-image`, `POST /api/admin/team/barbers`, and `POST /api/admin/team/barbers/:barberId/deactivate`. Barber profile photos upload through Vercel Blob and store only `barbers.profile_image_url` plus `barbers.profile_image_pathname`. Creating a barber writes the barber, selected locations, all active service assignments, required recurring weekly shifts, pending linked barber user, and invite token in one transaction. Removing a barber deactivates the profile/users/sessions and is blocked while future confirmed bookings exist.
+
+Reason:
+Sam needs to add/remove bookable staff without deploys, and new staff must appear immediately in public booking and admin calendar surfaces. Blob storage avoids relying on non-persistent local/serverless filesystems. Deactivation preserves booking history and customer records while still revoking access and hiding the barber from future selection.

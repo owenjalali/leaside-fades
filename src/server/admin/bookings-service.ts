@@ -57,6 +57,8 @@ export interface AdminCalendarBarberOption {
     id: string;
     slug?: string;
     displayName: string;
+    profileImageUrl?: string | null;
+    profileImagePathname?: string | null;
     locationIds: string[];
     sortOrder: number;
 }

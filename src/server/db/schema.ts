@@ -123,6 +123,8 @@ export const barbers = pgTable(
         displayName: varchar("display_name", { length: 160 }).notNull(),
         phoneE164: varchar("phone_e164", { length: 32 }),
         email: varchar("email", { length: 255 }),
+        profileImageUrl: text("profile_image_url"),
+        profileImagePathname: text("profile_image_pathname"),
         active: boolean("active").notNull().default(true),
         sortOrder: integer("sort_order").notNull().default(0),
         createdAt: createdAtColumn(),

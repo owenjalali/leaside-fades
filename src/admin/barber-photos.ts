@@ -7,6 +7,7 @@ import yogeshThumb from "../assets/barbers/booking-thumbnails/yogesh-thumb.jpg";
 type BarberPhotoInput = {
     displayName: string;
     slug?: string;
+    profileImageUrl?: string | null;
 };
 
 const barberPhotosBySlug: Record<string, string> = {
@@ -19,6 +20,10 @@ const barberPhotosBySlug: Record<string, string> = {
 };
 
 export function getAdminBarberPhotoUrl(barber: BarberPhotoInput) {
+    if (barber.profileImageUrl) {
+        return barber.profileImageUrl;
+    }
+
     if (barber.slug && barberPhotosBySlug[barber.slug]) {
         return barberPhotosBySlug[barber.slug];
     }

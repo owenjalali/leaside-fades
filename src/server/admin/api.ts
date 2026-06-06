@@ -56,9 +56,17 @@ import { resolveNotificationDeliveryMode } from "../notifications/index.ts";
 import { createTeamInviteDelivery } from "./team-invite-delivery.ts";
 import { createDrizzleTeamOnboardingRepository } from "./team-repository.ts";
 import {
+    createTeamProfileImageStorage,
+    TEAM_PROFILE_IMAGE_CONTENT_TYPES,
+    TEAM_PROFILE_IMAGE_MAX_BYTES,
+    TeamProfileImageUploadError,
+    type TeamProfileImageStorage,
+} from "./team-profile-image-storage.ts";
+import {
     acceptBarberInvite,
     createBarberOnboarding,
     deactivateBarberAccess,
+    listTeamBarbers,
     TeamAccessError,
     type TeamInviteDelivery,
     type TeamOnboardingRepository,
@@ -70,6 +78,7 @@ interface AdminApiDependencies {
     passwordResetDelivery?: PasswordResetDelivery;
     teamRepository?: TeamOnboardingRepository;
     teamInviteDelivery?: TeamInviteDelivery;
+    teamProfileImageStorage?: TeamProfileImageStorage;
     bookingsRepository?: AdminBookingManagementRepository;
     scheduleRepository?: AdminScheduleRepository;
     appUrl?: string;
@@ -136,9 +145,23 @@ export function registerAdminApiRoutes(app: ExpressLikeApp, dependencies: AdminA
     );
 
     app.post(
+        "/api/admin/team/profile-image",
+        asyncRoute((request, response) =>
+            handleAdminUploadTeamProfileImage(request, response, undefined, dependencies),
+        ),
+    );
+
+    app.post(
         "/api/admin/team/barbers",
         asyncRoute((request, response) =>
             handleAdminCreateBarber(request, response, undefined, dependencies),
+        ),
+    );
+
+    app.get(
+        "/api/admin/team/barbers",
+        asyncRoute((request, response) =>
+            handleAdminTeamBarbers(request, response, undefined, dependencies),
         ),
     );
 
@@ -996,7 +1019,10 @@ export async function handleAdminCreateBarber(
                 displayName: request.body?.displayName,
                 email: request.body?.email,
                 phoneE164: request.body?.phoneE164,
+                profileImageUrl: request.body?.profileImageUrl,
+                profileImagePathname: request.body?.profileImagePathname,
                 locationIds: request.body?.locationIds,
+                weeklyShifts: request.body?.weeklyShifts,
             },
             dependencies.teamRepository ?? createDrizzleTeamOnboardingRepository(),
             dependencies.teamInviteDelivery ?? createTeamInviteDelivery(),
@@ -1008,6 +1034,75 @@ export async function handleAdminCreateBarber(
 
         response.set("Cache-Control", "no-store");
         response.status(201).json(result);
+    } catch (error) {
+        sendAdminApiError(error, response, next);
+    }
+}
+
+export async function handleAdminTeamBarbers(
+    request: any,
+    response: any,
+    next?: any,
+    dependencies: AdminApiDependencies = {},
+) {
+    try {
+        assertAdminMutationOrigin(request, dependencies);
+        const session = await requireAdminSession(request, response, dependencies);
+        const result = await listTeamBarbers(
+            session.user,
+            dependencies.teamRepository ?? createDrizzleTeamOnboardingRepository(),
+            { now: dependencies.now?.() ?? new Date() },
+        );
+
+        response.set("Cache-Control", "no-store");
+        response.status(200).json(result);
+    } catch (error) {
+        sendAdminApiError(error, response, next);
+    }
+}
+
+export async function handleAdminUploadTeamProfileImage(
+    request: any,
+    response: any,
+    next?: any,
+    dependencies: AdminApiDependencies = {},
+) {
+    try {
+        assertAdminMutationOrigin(request, dependencies);
+        const session = await requireAdminSession(request, response, dependencies);
+
+        if (session.user.role !== "owner" && session.user.role !== "admin") {
+            throw new TeamAccessError(403, "Owner or admin access is required.");
+        }
+
+        const contentType = normalizeContentType(readRequestHeader(request, "Content-Type"));
+
+        if (!TEAM_PROFILE_IMAGE_CONTENT_TYPES.has(contentType)) {
+            throw new TeamProfileImageUploadError(415, "Profile images must be JPG, PNG, or WebP.");
+        }
+
+        const body = Buffer.isBuffer(request.body) ? request.body : Buffer.alloc(0);
+
+        if (body.length === 0) {
+            throw new TeamProfileImageUploadError(400, "Profile image file is required.");
+        }
+
+        if (body.length > TEAM_PROFILE_IMAGE_MAX_BYTES) {
+            throw new TeamProfileImageUploadError(413, "Profile image must be 4 MB or smaller.");
+        }
+
+        const filename = typeof request.query?.filename === "string" && request.query.filename.trim()
+            ? request.query.filename.trim()
+            : "profile-image";
+        const upload = await (dependencies.teamProfileImageStorage ?? createTeamProfileImageStorage()).uploadProfileImage({
+            filename,
+            contentType,
+            sizeBytes: body.length,
+            body,
+        });
+
+        response.set("Cache-Control", "no-store");
+        response.status(201).json(upload);
     } catch (error) {
         sendAdminApiError(error, response, next);
     }
@@ -1162,6 +1257,10 @@ function readRequestHeader(request: any, name: string) {
     return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function normalizeContentType(value: string | undefined) {
+    return value?.split(";")[0]?.trim().toLowerCase() ?? "";
+}
+
 function sendAdminApiError(error: unknown, response: any, next?: any) {
     if (
         error instanceof AuthError ||
@@ -1169,6 +1268,7 @@ function sendAdminApiError(error: unknown, response: any, next?: any) {
         error instanceof AdminBookingRequestError ||
         error instanceof AdminScheduleRequestError ||
         error instanceof TeamAccessError ||
+        error instanceof TeamProfileImageUploadError ||
         error instanceof AdminMutationOriginError
     ) {
         response.status(error.status).json({ message: error.message });

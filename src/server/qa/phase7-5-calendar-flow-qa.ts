@@ -176,18 +176,20 @@ async function main() {
             .expect(409);
         logStep("Overlapping walk-in was rejected by backend availability.");
 
-        await ownerAgent
+        const offShiftWalkInStart = localDateTimeToUtc(localDateAfter(3), "05:00", TIME_ZONE).toISOString();
+        const offShiftWalkIn = await ownerAgent
             .post("/api/admin/bookings/walk-in")
             .send({
                 locationId: seedRows.locationId,
                 barberId: seedRows.barberId,
                 serviceIds: [seedRows.serviceId],
-                startTime: localDateTimeToUtc(localDateAfter(3), "05:00", TIME_ZONE).toISOString(),
+                startTime: offShiftWalkInStart,
                 customerName: "Phase75 OutsideShift",
                 internalNotes: `${QA_NOTE_PREFIX} outside shift ${runId}`,
             })
-            .expect(409);
-        logStep("Walk-in outside shift/business hours was rejected.");
+            .expect(201);
+        assert.equal(offShiftWalkIn.body.booking.startTime, offShiftWalkInStart);
+        logStep("Staff-created walk-in outside shift/business hours was allowed as a grey-cell booking.");
 
         await assertWalkInRejectedDuringBlock(ownerAgent, seedRows, "barber", runId);
         await assertWalkInRejectedDuringBlock(ownerAgent, seedRows, "location", runId);
@@ -225,7 +227,7 @@ async function main() {
                 customerName: "Phase75 InactiveBarber",
                 internalNotes: `${QA_NOTE_PREFIX} inactive barber ${runId}`,
             })
-            .expect(409);
+            .expect(400);
         await db.update(barbers).set({ active: true }).where(eq(barbers.id, seedRows.otherBarberId));
         restoreBarberId = null;
         logStep("Inactive barber target was rejected and restored.");
@@ -290,16 +292,18 @@ async function main() {
                 startTime: ownWalkInSlot.startTime,
             })
             .expect(409);
-        await ownerAgent
+        const offShiftMoveStart = localDateTimeToUtc(localDateAfter(5), "05:00", TIME_ZONE).toISOString();
+        const offShiftMove = await ownerAgent
             .post(`/api/admin/bookings/${dragBookingId}/reschedule`)
             .send({
                 locationId: seedRows.locationId,
                 barberId: seedRows.barberId,
-                startTime: localDateTimeToUtc(localDateAfter(5), "05:00", TIME_ZONE).toISOString(),
+                startTime: offShiftMoveStart,
             })
-            .expect(409);
+            .expect(200);
+        assert.equal(offShiftMove.body.booking.startTime, offShiftMoveStart);
         await assertRescheduleRejectedDuringBlock(ownerAgent, seedRows, dragBookingId, runId);
-        logStep("Drag/reschedule overlap, outside shift, and blocked-time moves were rejected.");
+        logStep("Drag/reschedule overlap and blocked-time moves were rejected; off-shift move was allowed.");
 
         const crossBarberSlot = await findFirstAvailableSlot(ownerAgent, seedRows, seedRows.otherBarberId);
         await barberAgent

@@ -11,6 +11,10 @@ import type {
     AdminSchedule,
     AdminScheduleFilters,
     AdminSessionResponse,
+    AdminTeamBarber,
+    AdminTeamBarberCreatePayload,
+    AdminTeamProfileImageUpload,
+    SafeAdminUser,
 } from "./types";
 
 export const ADMIN_AUTH_EXPIRED_EVENT = "leaside-admin-auth-expired";
@@ -86,6 +90,48 @@ export function fetchAdminSession() {
 
 export function fetchAdminCalendarOptions() {
     return requestJson<AdminCalendarOptions>("/api/admin/calendar/options");
+}
+
+export function fetchAdminTeamBarbers() {
+    return requestJson<{ barbers: AdminTeamBarber[] }>("/api/admin/team/barbers");
+}
+
+export async function uploadAdminBarberProfileImage(file: File) {
+    const params = new URLSearchParams({ filename: file.name || "profile-image" });
+    const response = await fetch(`/api/admin/team/profile-image?${params.toString()}`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+            "Content-Type": file.type,
+        },
+        body: file,
+    });
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+        const message = typeof payload.message === "string" ? payload.message : "Profile image upload failed.";
+        if (response.status === 401) {
+            notifyAdminAuthExpired(message);
+        }
+
+        throw new AdminApiError(message, response.status);
+    }
+
+    return payload as AdminTeamProfileImageUpload;
+}
+
+export function createAdminTeamBarber(input: AdminTeamBarberCreatePayload) {
+    return requestJson<{ barber: AdminTeamBarber; user: SafeAdminUser }>("/api/admin/team/barbers", {
+        method: "POST",
+        body: JSON.stringify(input),
+    });
+}
+
+export function deactivateAdminTeamBarber(barberId: string) {
+    return requestJson<{ barberId: string; deactivatedUserIds: string[] }>(
+        `/api/admin/team/barbers/${barberId}/deactivate`,
+        { method: "POST" },
+    );
 }
 
 export function fetchAdminBookings(filters: AdminBookingFilters) {

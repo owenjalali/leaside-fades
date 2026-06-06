@@ -20,6 +20,7 @@
     "qa:phase8-customer-token": "tsx src/server/qa/phase8-customer-token-flow-qa.ts",
     "qa:phase9-notifications": "tsx src/server/qa/phase9-notifications-flow-qa.ts",
     "qa:phase10-reminders": "tsx src/server/qa/phase10-reminders-flow-qa.ts",
+    "qa:phase12-team-management": "tsx src/server/qa/phase12-team-management-flow-qa.ts",
     "qa:phase12-dashboard-fixture": "tsx src/server/qa/phase12-dashboard-fixture.ts",
     "qa:production-smoke": "tsx src/server/qa/production-smoke.ts",
     "qa:production-read-stress": "tsx src/server/qa/production-read-stress.ts",
@@ -44,6 +45,7 @@
   "author": "",
   "license": "UNLICENSED",
   "dependencies": {
+    "@vercel/blob": "^2.4.0",
     "argon2": "^0.44.0",
     "clsx": "^2.1.1",
     "compression": "^1.8.1",

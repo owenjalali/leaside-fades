@@ -43,6 +43,21 @@ Barbers can work split shifts and can work at different locations on the same da
 
 By default, the same barber cannot have overlapping shifts at different locations.
 
+## Team Management
+
+Owner/admin users can create barbers from `/admin/team` without a deploy.
+
+Creation requires:
+- display name
+- email invite
+- JPG/PNG/WebP profile photo up to 4 MB
+- at least one assigned active location
+- at least one 15-minute-aligned weekly shift assigned to a selected location
+
+Created barbers are active immediately after the transaction commits. They are assigned to all active services by default, matching the MVP service rule, and they can be booked publicly before accepting their invite. Invite acceptance controls only the barber's own login access.
+
+Removal is deactivation. If future confirmed bookings exist, removal is rejected until those appointments are cancelled or rescheduled. Successful removal deactivates the barber profile, linked users, and active sessions, and hides the barber from future public/admin booking selection while preserving historical bookings.
+
 ## Shift Management
 
 Phase 7 schedule management rules:

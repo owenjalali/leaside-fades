@@ -140,7 +140,17 @@ async function main() {
                     displayName: `Phase 5 QA Barber ${runId}`,
                     email: barberEmail,
                     phoneE164: "+16475550123",
+                    profileImageUrl: `https://blob.example/barbers/phase5-qa-${runId}.png`,
+                    profileImagePathname: `barbers/phase5-qa-${runId}.png`,
                     locationIds: [seedRows.eglintonLocationId],
+                    weeklyShifts: [
+                        {
+                            locationId: seedRows.eglintonLocationId,
+                            dayOfWeek: 1,
+                            startTime: "10:00",
+                            endTime: "18:00",
+                        },
+                    ],
                 })
                 .expect(201);
         });
@@ -153,7 +163,7 @@ async function main() {
             .expect(204);
         logStep("New barber accepted invite and set a password.");
 
-        await createQaBooking(db, {
+        const ownBooking = await createQaBooking(db, {
             customerEmail: `phase5-qa-own-customer-${runId}@${QA_EMAIL_DOMAIN}`,
             customerFirstName: "Phase5",
             customerLastName: "Own",
@@ -194,6 +204,14 @@ async function main() {
             "Barber received booking rows outside their own barber scope.",
         );
         logStep("Barber protected booking read is scoped to own bookings only.");
+
+        await resetOwnerAgent
+            .post(`/api/admin/team/barbers/${createBarberResponse.body.barber.id}/deactivate`)
+            .expect(409);
+        logStep("Owner deactivation was blocked while the barber had a future confirmed booking.");
+
+        await resetOwnerAgent.post(`/api/admin/bookings/${ownBooking.id}/cancel`).expect(200);
+        logStep("Owner cancelled the QA booking before deactivating the barber.");
 
         const deactivateResponse = await resetOwnerAgent
             .post(`/api/admin/team/barbers/${createBarberResponse.body.barber.id}/deactivate`)
@@ -314,10 +332,26 @@ async function cleanupPriorQaRows(db: ReturnType<typeof createDatabaseClient>["d
     await db.execute(sql`
         delete from booking_services
         where booking_id in (
-            select id from bookings where internal_notes like ${`${QA_BOOKING_NOTE_PREFIX}%`}
+            select id from bookings
+            where internal_notes like ${`${QA_BOOKING_NOTE_PREFIX}%`}
+               or barber_id in (
+                   select id from barbers
+                   where email like ${QA_EMAIL_PATTERN}
+                      or slug like 'phase5-qa-%'
+                      or slug like 'phase-5-qa-%'
+               )
         )
     `);
-    await db.execute(sql`delete from bookings where internal_notes like ${`${QA_BOOKING_NOTE_PREFIX}%`}`);
+    await db.execute(sql`
+        delete from bookings
+        where internal_notes like ${`${QA_BOOKING_NOTE_PREFIX}%`}
+           or barber_id in (
+               select id from barbers
+               where email like ${QA_EMAIL_PATTERN}
+                  or slug like 'phase5-qa-%'
+                  or slug like 'phase-5-qa-%'
+           )
+    `);
     await db.execute(sql`delete from customers where email like ${QA_EMAIL_PATTERN}`);
     await db.execute(sql`
         delete from user_invite_tokens
@@ -333,10 +367,38 @@ async function cleanupPriorQaRows(db: ReturnType<typeof createDatabaseClient>["d
     `);
     await db.execute(sql`delete from users where email like ${QA_EMAIL_PATTERN}`);
     await db.execute(sql`
-        delete from barber_locations
-        where barber_id in (select id from barbers where slug like 'phase5-qa-%')
+        delete from shifts
+        where barber_id in (
+            select id from barbers
+            where email like ${QA_EMAIL_PATTERN}
+               or slug like 'phase5-qa-%'
+               or slug like 'phase-5-qa-%'
+        )
     `);
-    await db.execute(sql`delete from barbers where slug like 'phase5-qa-%'`);
+    await db.execute(sql`
+        delete from barber_services
+        where barber_id in (
+            select id from barbers
+            where email like ${QA_EMAIL_PATTERN}
+               or slug like 'phase5-qa-%'
+               or slug like 'phase-5-qa-%'
+        )
+    `);
+    await db.execute(sql`
+        delete from barber_locations
+        where barber_id in (
+            select id from barbers
+            where email like ${QA_EMAIL_PATTERN}
+               or slug like 'phase5-qa-%'
+               or slug like 'phase-5-qa-%'
+        )
+    `);
+    await db.execute(sql`
+        delete from barbers
+        where email like ${QA_EMAIL_PATTERN}
+           or slug like 'phase5-qa-%'
+           or slug like 'phase-5-qa-%'
+    `);
     logStep("Prior Phase 5 QA rows were cleaned from the local database.");
 }
 
@@ -376,6 +438,8 @@ async function createQaBooking(db: ReturnType<typeof createDatabaseClient>["db"]
         displayPrice: "$30",
         sortOrder: 10,
     });
+
+    return booking;
 }
 
 async function captureLocalDevToken(pathname: string, action: () => Promise<void>) {
@@ -431,6 +495,7 @@ function assertClearedAdminCookie(setCookie: unknown) {
 function assertCreatedBarberPayload(body: any, barberEmail: string, locationId: string) {
     assert.equal(body?.barber?.email, barberEmail);
     assert.equal(body?.barber?.active, true);
+    assert.equal(typeof body?.barber?.profileImageUrl, "string");
     assert.deepEqual(body?.barber?.locationIds, [locationId]);
     assert.equal(body?.user?.email, barberEmail);
     assert.equal(body?.user?.role, "barber");

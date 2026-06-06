@@ -58,6 +58,20 @@ class InMemoryAuthRepository implements AuthRepository, PasswordResetRepository,
     barbers: TeamBarberRecord[] = [];
     inviteTokens: UserInviteTokenRecord[] = [];
     activeLocationIds = [eglintonId, millwoodId];
+    activeServiceIds = [serviceId, "66666666-6666-6666-6666-666666666666"];
+    existingBarberSlugs: string[] = [];
+    futureConfirmedBookingCounts: Record<string, number> = {};
+    createdShifts: Array<{
+        barberId: string;
+        locationId: string;
+        dayOfWeek: number;
+        startTime: string;
+        endTime: string;
+        effectiveFrom: string | null;
+        effectiveTo: string | null;
+        active: boolean;
+    }> = [];
+    barberServices: Array<{ barberId: string; serviceId: string; active: boolean }> = [];
 
     async findActiveUserByEmail(email: string) {
         return this.users.find((user) => user.email === email && user.active) ?? null;
@@ -149,30 +163,36 @@ class InMemoryAuthRepository implements AuthRepository, PasswordResetRepository,
         return locationIds.filter((id) => this.activeLocationIds.includes(id));
     }
 
-    async createBarberWithInvite(input: {
-        barber: {
-            slug: string;
-            displayName: string;
-            email: string;
-            phoneE164: string | null;
-            locationIds: string[];
-        };
-        user: {
-            email: string;
-            displayName: string;
-        };
-        invite: {
-            tokenHash: string;
-            expiresAt: Date;
-            createdByUserId: string;
-        };
-    }) {
+    async findExistingBarberSlugs(baseSlug: string) {
+        return this.existingBarberSlugs.filter((slug) => slug === baseSlug || slug.startsWith(`${baseSlug}-`));
+    }
+
+    async findActiveServiceIds() {
+        return this.activeServiceIds;
+    }
+
+    async countFutureConfirmedBookings(barberId: string) {
+        return this.futureConfirmedBookingCounts[barberId] ?? 0;
+    }
+
+    async listTeamBarbers() {
+        return this.barbers.map((barber) => ({
+            ...barber,
+            user: this.users.find((user) => user.barberId === barber.id) ?? null,
+            weeklyShifts: this.createdShifts.filter((shift) => shift.barberId === barber.id),
+            futureConfirmedBookingCount: this.futureConfirmedBookingCounts[barber.id] ?? 0,
+        }));
+    }
+
+    async createBarberWithInvite(input: any) {
         const barber: TeamBarberRecord = {
             id: `barber-${this.barbers.length + 1}`,
             slug: input.barber.slug,
             displayName: input.barber.displayName,
             email: input.barber.email,
             phoneE164: input.barber.phoneE164,
+            profileImageUrl: input.barber.profileImageUrl,
+            profileImagePathname: input.barber.profileImagePathname,
             active: true,
             locationIds: input.barber.locationIds,
         };
@@ -197,6 +217,25 @@ class InMemoryAuthRepository implements AuthRepository, PasswordResetRepository,
         this.barbers.push(barber);
         this.users.push(user);
         this.inviteTokens.push(inviteToken);
+        this.createdShifts.push(
+            ...(input.weeklyShifts ?? []).map((shift: any) => ({
+                barberId: barber.id,
+                locationId: shift.locationId,
+                dayOfWeek: shift.dayOfWeek,
+                startTime: shift.startTime,
+                endTime: shift.endTime,
+                effectiveFrom: shift.effectiveFrom ?? null,
+                effectiveTo: shift.effectiveTo ?? null,
+                active: true,
+            })),
+        );
+        this.barberServices.push(
+            ...(input.serviceIds ?? []).map((createdServiceId: string) => ({
+                barberId: barber.id,
+                serviceId: createdServiceId,
+                active: true,
+            })),
+        );
 
         return { barber, user, inviteToken };
     }
@@ -278,6 +317,18 @@ class InMemoryTeamInviteDelivery implements TeamInviteDelivery {
     }
 }
 
+class InMemoryTeamProfileImageStorage {
+    uploads: Array<{ filename: string; contentType: string; sizeBytes: number; body: Buffer }> = [];
+
+    async uploadProfileImage(input: { filename: string; contentType: string; sizeBytes: number; body: Buffer }) {
+        this.uploads.push(input);
+        return {
+            url: `https://blob.example/barbers/${input.filename}`,
+            pathname: `barbers/${input.filename}`,
+        };
+    }
+}
+
 const serviceSnapshot: BookingServiceSnapshot = {
     serviceId,
     serviceName: "Men's Cut",
@@ -336,6 +387,7 @@ function baseAvailability(overrides: Partial<AvailabilityData> = {}): Availabili
 class InMemoryAdminBookingsRepository
     implements AdminBookingsRepository, AdminCalendarOptionsRepository, AdminBookingManagementRepository, BookingRepository
 {
+    teamBarbers: TeamBarberRecord[] = [];
     bookings: AdminBookingRecord[] = [
         {
             id: "booking-a",
@@ -453,6 +505,18 @@ class InMemoryAdminBookingsRepository
     }
 
     async listCalendarOptions(scope: { barberId?: string }) {
+        const teamBarberOptions = this.teamBarbers
+            .filter((barber) => barber.active)
+            .map((barber) => ({
+                id: barber.id,
+                slug: barber.slug,
+                displayName: barber.displayName,
+                profileImageUrl: barber.profileImageUrl,
+                profileImagePathname: barber.profileImagePathname,
+                locationIds: barber.locationIds,
+                sortOrder: 100,
+            }));
+
         return {
             locations: [
                 { id: eglintonId, name: "Leaside Fades Eglinton", sortOrder: 10 },
@@ -461,6 +525,7 @@ class InMemoryAdminBookingsRepository
             barbers: [
                 { id: "barber-a", displayName: "Sam To", locationIds: [eglintonId], sortOrder: 10 },
                 { id: "barber-b", displayName: "Laura Nguyen", locationIds: [millwoodId], sortOrder: 20 },
+                ...teamBarberOptions,
             ].filter((barber) => !scope.barberId || barber.id === scope.barberId),
             services: [
                 {
@@ -670,7 +735,9 @@ async function createTestApp(options: { now?: () => Date } = {}) {
     const authRepository = new InMemoryAuthRepository();
     const passwordResetDelivery = new InMemoryPasswordResetDelivery();
     const teamInviteDelivery = new InMemoryTeamInviteDelivery();
+    const teamProfileImageStorage = new InMemoryTeamProfileImageStorage();
     const bookingsRepository = new InMemoryAdminBookingsRepository();
+    bookingsRepository.teamBarbers = authRepository.barbers;
     authRepository.users.push({
         id: ownerId,
         email: "owner@example.com",
@@ -682,6 +749,10 @@ async function createTestApp(options: { now?: () => Date } = {}) {
     });
 
     const app = express();
+    app.use(
+        "/api/admin/team/profile-image",
+        express.raw({ type: ["image/jpeg", "image/png", "image/webp"], limit: "4mb" }),
+    );
     app.use(express.json());
     registerAdminApiRoutes(app, {
         authRepository,
@@ -690,11 +761,12 @@ async function createTestApp(options: { now?: () => Date } = {}) {
         passwordResetDelivery,
         teamRepository: authRepository,
         teamInviteDelivery,
+        teamProfileImageStorage,
         appUrl: "http://localhost:3000",
         now: options.now ?? (() => now),
-    });
+    } as any);
 
-    return { app, authRepository, passwordResetDelivery, teamInviteDelivery, bookingsRepository };
+    return { app, authRepository, passwordResetDelivery, teamInviteDelivery, teamProfileImageStorage, bookingsRepository };
 }
 
 function cookieExpiryIso(setCookie: string | undefined) {
@@ -708,6 +780,26 @@ function tokenFromResetUrl(resetUrl: string) {
 
 function tokenFromInviteUrl(inviteUrl: string) {
     return new URL(inviteUrl).searchParams.get("token") ?? "";
+}
+
+function teamCreatePayload(overrides: Record<string, unknown> = {}) {
+    return {
+        displayName: "New Barber",
+        email: "new@example.com",
+        phoneE164: "+16475550123",
+        profileImageUrl: "https://blob.example/barbers/new.png",
+        profileImagePathname: "barbers/new.png",
+        locationIds: [eglintonId, millwoodId],
+        weeklyShifts: [
+            {
+                locationId: eglintonId,
+                dayOfWeek: 1,
+                startTime: "10:00",
+                endTime: "18:00",
+            },
+        ],
+        ...overrides,
+    };
 }
 
 describe("Phase 5A admin API", () => {
@@ -889,13 +981,63 @@ describe("Phase 5C admin team onboarding API", () => {
 
         await request(app)
             .post("/api/admin/team/barbers")
-            .send({
+            .send(teamCreatePayload({
                 displayName: "New Barber",
                 email: "new@example.com",
                 locationIds: [eglintonId],
-            })
+            }))
             .expect(401)
             .expect({ message: "Authentication required." });
+    });
+
+    test("owner uploads a barber profile image through the authenticated image route", async () => {
+        const { app, teamProfileImageStorage } = await createTestApp();
+        const agent = request.agent(app);
+
+        await agent
+            .post("/api/admin/auth/login")
+            .send({ email: "owner@example.com", password: "correct-password" })
+            .expect(200);
+
+        const response = await agent
+            .post("/api/admin/team/profile-image?filename=profile.png")
+            .set("Content-Type", "image/png")
+            .send(Buffer.from([137, 80, 78, 71]))
+            .expect(201);
+
+        expect(response.body).toEqual({
+            url: "https://blob.example/barbers/profile.png",
+            pathname: "barbers/profile.png",
+        });
+        expect(teamProfileImageStorage.uploads).toHaveLength(1);
+        expect(teamProfileImageStorage.uploads[0]).toMatchObject({
+            filename: "profile.png",
+            contentType: "image/png",
+            sizeBytes: 4,
+        });
+    });
+
+    test("profile image upload rejects unauthenticated and unsupported content types", async () => {
+        const { app } = await createTestApp();
+        const agent = request.agent(app);
+
+        await request(app)
+            .post("/api/admin/team/profile-image?filename=profile.png")
+            .set("Content-Type", "image/png")
+            .send(Buffer.from([1, 2, 3]))
+            .expect(401);
+
+        await agent
+            .post("/api/admin/auth/login")
+            .send({ email: "owner@example.com", password: "correct-password" })
+            .expect(200);
+
+        await agent
+            .post("/api/admin/team/profile-image?filename=profile.gif")
+            .set("Content-Type", "image/gif")
+            .send(Buffer.from([1, 2, 3]))
+            .expect(415)
+            .expect({ message: "Profile images must be JPG, PNG, or WebP." });
     });
 
     test("owner creates and invites a linked barber user", async () => {
@@ -909,21 +1051,39 @@ describe("Phase 5C admin team onboarding API", () => {
 
         const response = await agent
             .post("/api/admin/team/barbers")
-            .send({
+            .send(teamCreatePayload({
                 displayName: "New Barber",
                 email: "new@example.com",
                 phoneE164: "+16475550123",
                 locationIds: [eglintonId, millwoodId],
-            })
+            }))
             .expect(201);
 
         expect(response.body.barber).toMatchObject({
             id: "barber-1",
             displayName: "New Barber",
             email: "new@example.com",
+            profileImageUrl: "https://blob.example/barbers/new.png",
+            profileImagePathname: "barbers/new.png",
             active: true,
             locationIds: [eglintonId, millwoodId],
         });
+        expect(authRepository.barberServices).toEqual([
+            { barberId: "barber-1", serviceId, active: true },
+            { barberId: "barber-1", serviceId: "66666666-6666-6666-6666-666666666666", active: true },
+        ]);
+        expect(authRepository.createdShifts).toEqual([
+            {
+                barberId: "barber-1",
+                locationId: eglintonId,
+                dayOfWeek: 1,
+                startTime: "10:00",
+                endTime: "18:00",
+                effectiveFrom: null,
+                effectiveTo: null,
+                active: true,
+            },
+        ]);
         expect(response.body.user).toEqual({
             id: "team-user-2",
             email: "new@example.com",
@@ -962,13 +1122,54 @@ describe("Phase 5C admin team onboarding API", () => {
             .expect(200);
         await agent
             .post("/api/admin/team/barbers")
-            .send({
+            .send(teamCreatePayload({
                 displayName: "Blocked Barber",
                 email: "blocked@example.com",
                 locationIds: [eglintonId],
-            })
+            }))
             .expect(403)
             .expect({ message: "Owner or admin access is required." });
+    });
+
+    test("owner lists team barbers with account status, shifts, photo, and future booking count", async () => {
+        const { app, authRepository } = await createTestApp();
+        const agent = request.agent(app);
+
+        await agent
+            .post("/api/admin/auth/login")
+            .send({ email: "owner@example.com", password: "correct-password" })
+            .expect(200);
+
+        const createResponse = await agent
+            .post("/api/admin/team/barbers")
+            .send(teamCreatePayload({ displayName: "Listed Barber", email: "listed@example.com" }))
+            .expect(201);
+        authRepository.futureConfirmedBookingCounts[createResponse.body.barber.id] = 3;
+
+        const response = await agent.get("/api/admin/team/barbers").expect(200);
+
+        expect(response.body.barbers).toEqual([
+            expect.objectContaining({
+                id: createResponse.body.barber.id,
+                displayName: "Listed Barber",
+                profileImageUrl: "https://blob.example/barbers/new.png",
+                active: true,
+                futureConfirmedBookingCount: 3,
+                user: expect.objectContaining({
+                    email: "listed@example.com",
+                    role: "barber",
+                    active: false,
+                }),
+                weeklyShifts: [
+                    expect.objectContaining({
+                        locationId: eglintonId,
+                        dayOfWeek: 1,
+                        startTime: "10:00",
+                        endTime: "18:00",
+                    }),
+                ],
+            }),
+        ]);
     });
 
     test("accepted invite lets the barber log in and see only their own bookings", async () => {
@@ -981,11 +1182,11 @@ describe("Phase 5C admin team onboarding API", () => {
             .expect(200);
         const createResponse = await ownerAgent
             .post("/api/admin/team/barbers")
-            .send({
+            .send(teamCreatePayload({
                 displayName: "Own Scope Barber",
                 email: "own-scope@example.com",
                 locationIds: [eglintonId],
-            })
+            }))
             .expect(201);
         const inviteToken = tokenFromInviteUrl(teamInviteDelivery.deliveries[0].inviteUrl);
         bookingsRepository.bookings = [
@@ -1050,11 +1251,11 @@ describe("Phase 5C admin team onboarding API", () => {
             .expect(200);
         await ownerAgent
             .post("/api/admin/team/barbers")
-            .send({
+            .send(teamCreatePayload({
                 displayName: "Invite Barber",
                 email: "invite@example.com",
                 locationIds: [eglintonId],
-            })
+            }))
             .expect(201);
         const inviteToken = tokenFromInviteUrl(teamInviteDelivery.deliveries[0].inviteUrl);
 
@@ -1084,11 +1285,11 @@ describe("Phase 5C admin team onboarding API", () => {
             .expect(200);
         const createResponse = await ownerAgent
             .post("/api/admin/team/barbers")
-            .send({
+            .send(teamCreatePayload({
                 displayName: "Deactivate Barber",
                 email: "deactivate@example.com",
                 locationIds: [eglintonId],
-            })
+            }))
             .expect(201);
         const inviteToken = tokenFromInviteUrl(teamInviteDelivery.deliveries[0].inviteUrl);
         await request(app)
@@ -1112,6 +1313,66 @@ describe("Phase 5C admin team onboarding API", () => {
 
         await barberAgent.get("/api/admin/auth/session").expect(401);
         await barberAgent.get("/api/admin/bookings").expect(401);
+    });
+
+    test("successful deactivation hides the barber from admin calendar options", async () => {
+        const { app } = await createTestApp();
+        const ownerAgent = request.agent(app);
+
+        await ownerAgent
+            .post("/api/admin/auth/login")
+            .send({ email: "owner@example.com", password: "correct-password" })
+            .expect(200);
+        const createResponse = await ownerAgent
+            .post("/api/admin/team/barbers")
+            .send(teamCreatePayload({
+                displayName: "Calendar Hidden Barber",
+                email: "calendar-hidden@example.com",
+                locationIds: [eglintonId],
+            }))
+            .expect(201);
+
+        const beforeDeactivate = await ownerAgent.get("/api/admin/calendar/options").expect(200);
+        expect(beforeDeactivate.body.barbers.map((barber: { id: string }) => barber.id)).toContain(
+            createResponse.body.barber.id,
+        );
+
+        await ownerAgent
+            .post(`/api/admin/team/barbers/${createResponse.body.barber.id}/deactivate`)
+            .expect(200);
+
+        const afterDeactivate = await ownerAgent.get("/api/admin/calendar/options").expect(200);
+        expect(afterDeactivate.body.barbers.map((barber: { id: string }) => barber.id)).not.toContain(
+            createResponse.body.barber.id,
+        );
+    });
+
+    test("barber deactivation is blocked while future confirmed bookings exist", async () => {
+        const { app, authRepository } = await createTestApp();
+        const ownerAgent = request.agent(app);
+
+        await ownerAgent
+            .post("/api/admin/auth/login")
+            .send({ email: "owner@example.com", password: "correct-password" })
+            .expect(200);
+        const createResponse = await ownerAgent
+            .post("/api/admin/team/barbers")
+            .send(teamCreatePayload({
+                displayName: "Booked Barber",
+                email: "booked@example.com",
+                locationIds: [eglintonId],
+            }))
+            .expect(201);
+        authRepository.futureConfirmedBookingCounts[createResponse.body.barber.id] = 1;
+
+        await ownerAgent
+            .post(`/api/admin/team/barbers/${createResponse.body.barber.id}/deactivate`)
+            .expect(409)
+            .expect({
+                message: "This barber has future confirmed bookings. Reschedule or cancel those bookings before removing the barber.",
+            });
+
+        expect(authRepository.barbers[0].active).toBe(true);
     });
 });
 

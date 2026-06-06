@@ -8,6 +8,8 @@ export interface TeamBarberRecord {
     displayName: string;
     email: string | null;
     phoneE164: string | null;
+    profileImageUrl: string | null;
+    profileImagePathname: string | null;
     active: boolean;
     locationIds: string[];
 }
@@ -31,16 +33,42 @@ export interface UserInviteTokenRecord {
     createdByUserId: string | null;
 }
 
+export interface TeamShiftRecord {
+    id?: string;
+    barberId: string;
+    locationId: string;
+    dayOfWeek: number;
+    startTime: string;
+    endTime: string;
+    effectiveFrom: string | null;
+    effectiveTo: string | null;
+    active: boolean;
+}
+
+export interface TeamListBarberRecord extends TeamBarberRecord {
+    user: TeamUserRecord | null;
+    weeklyShifts: TeamShiftRecord[];
+    futureConfirmedBookingCount: number;
+}
+
 export interface TeamOnboardingRepository {
     findActiveLocationIds(locationIds: string[]): Promise<string[]>;
+    findExistingBarberSlugs(baseSlug: string): Promise<string[]>;
+    findActiveServiceIds(): Promise<string[]>;
+    countFutureConfirmedBookings(barberId: string, now: Date): Promise<number>;
+    listTeamBarbers(now: Date): Promise<TeamListBarberRecord[]>;
     createBarberWithInvite(input: {
         barber: {
             slug: string;
             displayName: string;
             email: string;
             phoneE164: string | null;
+            profileImageUrl: string;
+            profileImagePathname: string;
             locationIds: string[];
         };
+        weeklyShifts: TeamWeeklyShiftInput[];
+        serviceIds: string[];
         user: {
             email: string;
             displayName: string;
@@ -68,6 +96,15 @@ export interface TeamOnboardingRepository {
         barberId: string;
         deactivatedAt: Date;
     }): Promise<{ barberId: string; deactivatedUserIds: string[] }>;
+}
+
+export interface TeamWeeklyShiftInput {
+    locationId: string;
+    dayOfWeek: number;
+    startTime: string;
+    endTime: string;
+    effectiveFrom: string | null;
+    effectiveTo: string | null;
 }
 
 export interface TeamInviteDelivery {
@@ -98,7 +135,10 @@ interface CreateBarberRequest {
     displayName: unknown;
     email: unknown;
     phoneE164?: unknown;
+    profileImageUrl?: unknown;
+    profileImagePathname?: unknown;
     locationIds: unknown;
+    weeklyShifts?: unknown;
 }
 
 interface AcceptInviteRequest {
@@ -122,6 +162,11 @@ export async function createBarberOnboarding(
     const email = normalizeEmail(request.email);
     const phoneE164 = normalizeOptionalText(request.phoneE164);
     const locationIds = normalizeLocationIds(request.locationIds);
+    const profileImageUrl = normalizeProfileImageUrl(request.profileImageUrl);
+    const profileImagePathname = normalizeRequiredText(
+        request.profileImagePathname,
+        "Profile image upload is required.",
+    );
 
     if (!email || !email.includes("@")) {
         throw new TeamAccessError(400, "Valid email is required.");
@@ -137,18 +182,30 @@ export async function createBarberOnboarding(
         throw new TeamAccessError(400, "One or more selected locations are invalid.");
     }
 
+    const weeklyShifts = normalizeWeeklyShifts(request.weeklyShifts, locationIds);
+    const serviceIds = await repository.findActiveServiceIds();
+
+    if (serviceIds.length === 0) {
+        throw new TeamAccessError(500, "At least one active service is required before creating a barber.");
+    }
+
+    const slug = await buildAvailableSlug(slugify(displayName), repository);
     const now = options.now ?? new Date();
     const expiresAt = new Date(now.getTime() + (options.inviteDurationMs ?? DEFAULT_INVITE_DURATION_MS));
     const inviteToken = generateUserInviteToken();
     const inviteUrl = buildInviteUrl(inviteToken, options.appUrl);
     const created = await repository.createBarberWithInvite({
         barber: {
-            slug: slugify(displayName),
+            slug,
             displayName,
             email,
             phoneE164,
+            profileImageUrl,
+            profileImagePathname,
             locationIds,
         },
+        weeklyShifts,
+        serviceIds,
         user: {
             email,
             displayName,
@@ -212,6 +269,23 @@ export async function acceptBarberInvite(
     return { user: toSafeTeamUser({ ...inviteWithUser.user, active: true }) };
 }
 
+export async function listTeamBarbers(
+    actor: SafeAdminUser,
+    repository: TeamOnboardingRepository,
+    options: TeamOptions = {},
+) {
+    requireOwnerOrAdmin(actor);
+
+    const barbers = await repository.listTeamBarbers(options.now ?? new Date());
+
+    return {
+        barbers: barbers.map((barber) => ({
+            ...barber,
+            user: barber.user ? toSafeTeamUser(barber.user) : null,
+        })),
+    };
+}
+
 export async function deactivateBarberAccess(
     actor: SafeAdminUser,
     barberId: unknown,
@@ -221,9 +295,19 @@ export async function deactivateBarberAccess(
     requireOwnerOrAdmin(actor);
 
     const normalizedBarberId = normalizeRequiredText(barberId, "Barber id is required.");
+    const deactivatedAt = options.now ?? new Date();
+    const futureConfirmedBookings = await repository.countFutureConfirmedBookings(normalizedBarberId, deactivatedAt);
+
+    if (futureConfirmedBookings > 0) {
+        throw new TeamAccessError(
+            409,
+            "This barber has future confirmed bookings. Reschedule or cancel those bookings before removing the barber.",
+        );
+    }
+
     return repository.deactivateBarberAndLinkedUsers({
         barberId: normalizedBarberId,
-        deactivatedAt: options.now ?? new Date(),
+        deactivatedAt,
     });
 }
 
@@ -262,6 +346,22 @@ function normalizeEmail(value: unknown) {
     return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
+function normalizeProfileImageUrl(value: unknown) {
+    const url = normalizeRequiredText(value, "Profile image upload is required.");
+
+    try {
+        const parsed = new URL(url);
+
+        if (parsed.protocol !== "https:") {
+            throw new Error("Profile image URL must be HTTPS.");
+        }
+    } catch {
+        throw new TeamAccessError(400, "Profile image URL must be a valid HTTPS URL.");
+    }
+
+    return url;
+}
+
 function normalizeLocationIds(value: unknown) {
     if (!Array.isArray(value)) {
         return [];
@@ -277,6 +377,116 @@ function normalizeLocationIds(value: unknown) {
     );
 }
 
+function normalizeWeeklyShifts(value: unknown, locationIds: string[]): TeamWeeklyShiftInput[] {
+    if (!Array.isArray(value) || value.length === 0) {
+        throw new TeamAccessError(400, "At least one weekly shift is required.");
+    }
+
+    const selectedLocations = new Set(locationIds);
+    const shifts = value.map((raw) => normalizeWeeklyShift(raw, selectedLocations));
+
+    for (let index = 0; index < shifts.length; index += 1) {
+        for (let nextIndex = index + 1; nextIndex < shifts.length; nextIndex += 1) {
+            const first = shifts[index];
+            const second = shifts[nextIndex];
+
+            if (
+                first.dayOfWeek === second.dayOfWeek &&
+                timeToMinutes(first.startTime) < timeToMinutes(second.endTime) &&
+                timeToMinutes(first.endTime) > timeToMinutes(second.startTime)
+            ) {
+                throw new TeamAccessError(400, "Weekly shifts for a barber cannot overlap.");
+            }
+        }
+    }
+
+    return shifts;
+}
+
+function normalizeWeeklyShift(raw: unknown, selectedLocations: Set<string>): TeamWeeklyShiftInput {
+    const input = typeof raw === "object" && raw ? raw as Record<string, unknown> : {};
+    const locationId = normalizeRequiredText(input.locationId, "Weekly shift location is required.");
+
+    if (!selectedLocations.has(locationId)) {
+        throw new TeamAccessError(400, "Weekly shifts must use one of the selected barber locations.");
+    }
+
+    const dayOfWeek = normalizeDayOfWeek(input.dayOfWeek);
+    const startTime = normalizeQuarterHourTime(input.startTime, "Weekly shift start time is required.");
+    const endTime = normalizeQuarterHourTime(input.endTime, "Weekly shift end time is required.");
+    const effectiveFrom = normalizeOptionalLocalDate(input.effectiveFrom, "Weekly shift effective start date is invalid.");
+    const effectiveTo = normalizeOptionalLocalDate(input.effectiveTo, "Weekly shift effective end date is invalid.");
+
+    if (startTime >= endTime) {
+        throw new TeamAccessError(400, "Weekly shift start time must be before end time.");
+    }
+
+    if (effectiveFrom && effectiveTo && effectiveFrom > effectiveTo) {
+        throw new TeamAccessError(400, "Weekly shift effective start date must be on or before end date.");
+    }
+
+    return { locationId, dayOfWeek, startTime, endTime, effectiveFrom, effectiveTo };
+}
+
+function normalizeDayOfWeek(value: unknown) {
+    const dayOfWeek = typeof value === "number" ? value : Number(value);
+
+    if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
+        throw new TeamAccessError(400, "Weekly shift day must be between 0 and 6.");
+    }
+
+    return dayOfWeek;
+}
+
+function normalizeQuarterHourTime(value: unknown, message: string) {
+    const time = normalizeRequiredText(value, message);
+    const normalized = time.slice(0, 5);
+
+    if (!/^\d{2}:\d{2}$/.test(normalized)) {
+        throw new TeamAccessError(400, message);
+    }
+
+    const minutes = timeToMinutes(normalized);
+
+    if (minutes < 0 || minutes > 24 * 60 || minutes % 15 !== 0) {
+        throw new TeamAccessError(400, "Weekly shift times must use 15-minute increments.");
+    }
+
+    return normalized;
+}
+
+function normalizeOptionalLocalDate(value: unknown, message: string) {
+    const normalized = normalizeOptionalText(value);
+
+    if (!normalized) {
+        return null;
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+        throw new TeamAccessError(400, message);
+    }
+
+    return normalized;
+}
+
+async function buildAvailableSlug(baseSlug: string, repository: TeamOnboardingRepository) {
+    const existingSlugs = new Set(await repository.findExistingBarberSlugs(baseSlug));
+
+    if (!existingSlugs.has(baseSlug)) {
+        return baseSlug;
+    }
+
+    for (let suffix = 2; suffix < 10_000; suffix += 1) {
+        const candidate = `${baseSlug}-${suffix}`;
+
+        if (!existingSlugs.has(candidate)) {
+            return candidate;
+        }
+    }
+
+    throw new TeamAccessError(409, "Could not generate a unique barber slug.");
+}
+
 function slugify(value: string) {
     const slug = value
         .trim()
@@ -286,6 +496,20 @@ function slugify(value: string) {
         .slice(0, 70);
 
     return slug || "barber";
+}
+
+function timeToMinutes(value: string) {
+    const [hours, minutes] = value.split(":").map(Number);
+
+    if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 24 || minutes < 0 || minutes > 59) {
+        return -1;
+    }
+
+    if (hours === 24 && minutes !== 0) {
+        return -1;
+    }
+
+    return hours * 60 + minutes;
 }
 
 function buildInviteUrl(token: string, appUrl?: string) {
