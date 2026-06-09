@@ -293,22 +293,32 @@ export interface AdminUpcomingReminderPreview {
     recipientLabel: string;
 }
 
-export interface AdminDashboardValueSeriesPoint {
-    date: string;
-    totalCents: number;
-    appointmentCount: number;
-    pricedAppointmentCount: number;
-    unpricedAppointmentCount: number;
-}
+export type AdminDashboardPeriod = "week" | "month" | "year";
+export type AdminDashboardBucketGranularity = "day" | "month";
 
-export interface AdminDashboardAppointmentValue {
+export interface AdminDashboardRevenueSeriesPoint {
+    key: string;
+    label: string;
     totalCents: number;
-    appointmentCount: number;
+    completedAppointmentCount: number;
     pricedAppointmentCount: number;
     unpricedAppointmentCount: number;
     fromPriceAppointmentCount: number;
-    averageValueCents: number;
-    dailySeries: AdminDashboardValueSeriesPoint[];
+}
+
+export interface AdminDashboardRevenue {
+    period: AdminDashboardPeriod;
+    anchorDate: string;
+    periodStart: string;
+    periodEnd: string;
+    bucketGranularity: AdminDashboardBucketGranularity;
+    totalCents: number;
+    completedAppointmentCount: number;
+    pricedAppointmentCount: number;
+    unpricedAppointmentCount: number;
+    fromPriceAppointmentCount: number;
+    averageRevenueCents: number;
+    series: AdminDashboardRevenueSeriesPoint[];
 }
 
 export interface AdminDashboardUpcomingSeriesPoint {
@@ -358,7 +368,7 @@ export interface AdminDashboardSnapshot {
     activity: AdminDashboardActivity[];
     notificationDeliveryMode: AdminNotificationDeliveryMode;
     upcomingReminders: AdminUpcomingReminderPreview[];
-    appointmentValue: AdminDashboardAppointmentValue;
+    revenue: AdminDashboardRevenue;
     upcomingAppointments: AdminDashboardUpcomingAppointments;
     notificationHealth: AdminDashboardNotificationHealth;
 }

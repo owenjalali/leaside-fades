@@ -4,7 +4,9 @@ import {
     ADMIN_AUTH_EXPIRED_EVENT,
     AdminApiError,
     acceptAdminInvite,
+    completeAdminBooking,
     fetchAdminCalendarOptions,
+    fetchAdminDashboard,
     fetchAdminSession,
     requestAdminPasswordReset,
     resetAdminPassword,
@@ -119,5 +121,77 @@ describe("admin api client", () => {
             }),
         );
         expect(dispatchEvent).not.toHaveBeenCalled();
+    });
+
+    test("serializes dashboard period filters and completion mutations", async () => {
+        const fetchMock = vi.fn(async () =>
+            jsonResponse(200, {
+                generatedAt: "2026-06-09T14:00:00.000Z",
+                todayBookings: [],
+                upcomingBookings: [],
+                activity: [],
+                notificationDeliveryMode: "mock",
+                upcomingReminders: [],
+                revenue: {
+                    period: "month",
+                    anchorDate: "2026-06-09",
+                    periodStart: "2026-06-01",
+                    periodEnd: "2026-06-30",
+                    bucketGranularity: "day",
+                    totalCents: 0,
+                    completedAppointmentCount: 0,
+                    pricedAppointmentCount: 0,
+                    unpricedAppointmentCount: 0,
+                    fromPriceAppointmentCount: 0,
+                    averageRevenueCents: 0,
+                    series: [],
+                },
+                upcomingAppointments: { confirmedCount: 0, cancelledCount: 0, dailySeries: [] },
+                notificationHealth: {
+                    sentCount: 0,
+                    scheduledCount: 0,
+                    skippedCount: 0,
+                    failedActiveCount: 0,
+                    failedHistoricalCount: 0,
+                    deliverySuccessRate: 0,
+                    reminderQueueCount: 0,
+                    reminderScheduler: {
+                        state: "unknown",
+                        latestRunAt: null,
+                        latestStatus: null,
+                        lastSuccessAt: null,
+                        lastFailureAt: null,
+                        minutesSinceLastSuccess: null,
+                        staleAfterMinutes: 90,
+                        trigger: null,
+                        durationMs: null,
+                        errorMessage: null,
+                        latestResult: null,
+                        message: "No reminder scheduler runs recorded yet.",
+                    },
+                },
+                booking: { id: "booking-a", status: "completed" },
+            }),
+        );
+        vi.stubGlobal("fetch", fetchMock);
+
+        await fetchAdminDashboard({ period: "month", anchorDate: "2026-06-09" });
+        await completeAdminBooking("booking-a");
+
+        expect(fetchMock).toHaveBeenNthCalledWith(
+            1,
+            "/api/admin/dashboard?period=month&anchorDate=2026-06-09",
+            expect.objectContaining({
+                credentials: "same-origin",
+            }),
+        );
+        expect(fetchMock).toHaveBeenNthCalledWith(
+            2,
+            "/api/admin/bookings/booking-a/complete",
+            expect.objectContaining({
+                method: "POST",
+                credentials: "same-origin",
+            }),
+        );
     });
 });

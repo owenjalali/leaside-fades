@@ -125,6 +125,19 @@ For stacked services:
 - if all selected services are fixed price, show estimated total
 - if any selected service uses `from`, show estimated total as `from $X` or show itemized pricing only
 
+## Dashboard Revenue
+
+Dashboard revenue is not online payment revenue, POS-verified revenue, payroll revenue, or an editable paid amount.
+
+Rules:
+- revenue means completed appointments only
+- revenue is summed from immutable `booking_services.price_cents` snapshots
+- totals are grouped by the appointment's `America/Toronto` local date
+- confirmed, cancelled, and no-show bookings do not count toward revenue
+- completed bookings without service snapshots count as unpriced completions but do not increase the revenue total
+- services configured as `from` prices count at their stored snapshot total and should show a caveat in the dashboard
+- completing an appointment does not create a payment record, send a lifecycle notification, or change customer payment handling
+
 ## Availability Requirements
 
 Availability must account for:
@@ -317,6 +330,15 @@ Phase 7.5 no-show:
 - cancelled, completed, and already no-show bookings cannot be marked no-show
 - no-show does not send notifications, charge fees, or create payment records in Phase 7.5
 - no-show bookings should be visually distinct in the calendar, using red styling
+
+Admin completion:
+- owner/admin can mark any scoped current or past confirmed booking as completed
+- barber users can mark only their own current or past confirmed bookings as completed
+- future bookings cannot be marked completed
+- cancelled, already-completed, and no-show bookings cannot be marked completed
+- completion sends no lifecycle notification, charges no fees, and creates no payment records
+- completed bookings are not cancellable or reschedulable through the existing customer/admin mutation rules
+- completion does not weaken availability correctness; only confirmed bookings block future slots
 
 Phase 7.5 drag/drop:
 - drag/drop applies only to confirmed bookings

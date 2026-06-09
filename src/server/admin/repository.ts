@@ -617,6 +617,57 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
         return updated ? { ...updated, mutable: true } : null;
     }
 
+    async completeBookingForAdminScope(input: {
+        bookingId: string;
+        barberId?: string;
+        completedAt: Date;
+    }) {
+        const existing = await this.getBookingByIdForAdminScope({
+            bookingId: input.bookingId,
+            barberId: input.barberId,
+        });
+
+        if (!existing) {
+            return null;
+        }
+
+        if (existing.status !== "confirmed" || existing.startTime > input.completedAt) {
+            return { ...existing, mutable: false };
+        }
+
+        const db = this.database as ReturnType<typeof createDatabaseClient>["db"];
+        const [completed] = await db
+            .update(bookings)
+            .set({
+                status: "completed",
+                updatedAt: input.completedAt,
+            })
+            .where(
+                compactAnd(
+                    eq(bookings.id, input.bookingId),
+                    input.barberId ? eq(bookings.barberId, input.barberId) : undefined,
+                    eq(bookings.status, "confirmed"),
+                    lte(bookings.startTime, input.completedAt),
+                ),
+            )
+            .returning({ id: bookings.id });
+
+        if (!completed) {
+            const latest = await this.getBookingByIdForAdminScope({
+                bookingId: input.bookingId,
+                barberId: input.barberId,
+            });
+            return latest ? { ...latest, mutable: false } : null;
+        }
+
+        const updated = await this.getBookingByIdForAdminScope({
+            bookingId: input.bookingId,
+            barberId: input.barberId,
+        });
+
+        return updated ? { ...updated, mutable: true } : null;
+    }
+
     async updateBookingScheduleForAdminScope(input: {
         bookingId: string;
         barberId?: string;

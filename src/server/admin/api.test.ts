@@ -630,6 +630,20 @@ class InMemoryAdminBookingsRepository
         return { ...booking, mutable: true as const };
     }
 
+    async completeBookingForAdminScope(input: { bookingId: string; barberId?: string; completedAt: Date }) {
+        const booking = this.bookings.find(
+            (candidate) =>
+                candidate.id === input.bookingId &&
+                (!input.barberId || candidate.barberId === input.barberId),
+        );
+        if (!booking) return null;
+        if (booking.status !== "confirmed" || booking.startTime > input.completedAt) {
+            return { ...booking, mutable: false as const };
+        }
+        booking.status = "completed";
+        return { ...booking, mutable: true as const };
+    }
+
     async updateBookingScheduleForAdminScope(input: {
         bookingId: string;
         barberId?: string;
@@ -1554,6 +1568,38 @@ describe("Phase 6 admin calendar and booking management API", () => {
         expect(JSON.stringify(response.body.activity)).not.toContain("rescheduleUrl");
     });
 
+    test("owner dashboard accepts completed-revenue period query filters", async () => {
+        const { app, bookingsRepository } = await createTestApp();
+        bookingsRepository.bookings = [
+            {
+                ...bookingsRepository.bookings[0],
+                id: "completed-revenue",
+                status: "completed",
+                startTime: new Date("2026-04-27T16:00:00.000Z"),
+                endTime: new Date("2026-04-27T16:30:00.000Z"),
+                serviceDetails: [serviceSnapshot],
+            } as AdminBookingRecord,
+        ];
+        const agent = request.agent(app);
+
+        await agent
+            .post("/api/admin/auth/login")
+            .send({ email: "owner@example.com", password: "correct-password" })
+            .expect(200);
+
+        const response = await agent.get("/api/admin/dashboard?period=month&anchorDate=2026-04-15").expect(200);
+
+        expect(response.body.revenue).toMatchObject({
+            period: "month",
+            anchorDate: "2026-04-15",
+            periodStart: "2026-04-01",
+            periodEnd: "2026-04-30",
+            totalCents: 3000,
+            completedAppointmentCount: 1,
+        });
+        expect(response.body.revenue.series).toHaveLength(30);
+    });
+
     test("owner dashboard serializes active and historical notification failure metadata", async () => {
         const { app, bookingsRepository } = await createTestApp();
         bookingsRepository.activityRecords = [
@@ -1647,6 +1693,9 @@ describe("Phase 6 admin calendar and booking management API", () => {
             .post("/api/admin/bookings/booking-b/cancel")
             .expect(404);
         await agent
+            .post("/api/admin/bookings/booking-b/complete")
+            .expect(404);
+        await agent
             .post("/api/admin/bookings/booking-b/reschedule")
             .send({
                 locationId: eglintonId,
@@ -1717,6 +1766,13 @@ describe("Phase 6 admin calendar and booking management API", () => {
             startTime: "2026-05-04T14:15:00.000Z",
             endTime: "2026-05-04T14:45:00.000Z",
         });
+
+        bookingsRepository.bookings[0].status = "confirmed";
+        bookingsRepository.bookings[0].startTime = new Date("2026-04-27T14:00:00.000Z");
+        bookingsRepository.bookings[0].endTime = new Date("2026-04-27T14:30:00.000Z");
+
+        const completeResponse = await agent.post("/api/admin/bookings/booking-a/complete").expect(200);
+        expect(completeResponse.body.booking.status).toBe("completed");
     });
 
     test("unauthenticated Phase 6 booking management requests are rejected", async () => {
@@ -1729,6 +1785,7 @@ describe("Phase 6 admin calendar and booking management API", () => {
         await request(app).post("/api/admin/bookings/walk-in").send({}).expect(401);
         await request(app).post("/api/admin/bookings/booking-a/cancel").expect(401);
         await request(app).post("/api/admin/bookings/booking-a/no-show").expect(401);
+        await request(app).post("/api/admin/bookings/booking-a/complete").expect(401);
         await request(app).post("/api/admin/bookings/booking-a/reschedule").send({}).expect(401);
     });
 });

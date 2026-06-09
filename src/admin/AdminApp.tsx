@@ -33,6 +33,7 @@ import shayonPhoto from "../assets/barbers/shayon.png";
 import {
     ADMIN_AUTH_EXPIRED_EVENT,
     cancelAdminBooking,
+    completeAdminBooking,
     createManualBooking,
     createWalkInBooking,
     editAdminBooking,
@@ -56,6 +57,7 @@ import SchedulePage from "./SchedulePage";
 import TeamPage from "./TeamPage";
 import {
     buildDashboardChartScale,
+    buildDashboardPeriodRange,
     buildBookingDragPayload,
     buildCalendarBoardRows,
     buildCalendarUnavailableRanges,
@@ -67,6 +69,7 @@ import {
     formatAdminStatus,
     formatCompactDashboardCurrency,
     formatDashboardCurrency,
+    formatDashboardPeriodLabel,
     formatLocalDateTime,
     formatLocalTime,
     getCalendarInitialScrollTop,
@@ -80,6 +83,7 @@ import {
     summarizeNotificationHealth,
     todayLocalDate,
     navigateCalendarDate,
+    navigateDashboardPeriod,
     type AdminCalendarView,
     type NotificationCenterFilter,
     type ScheduledCalendarBarber,
@@ -93,6 +97,7 @@ import type {
     AdminBookingSummary,
     AdminCalendarOptions,
     AdminDashboardActivity,
+    AdminDashboardPeriod,
     AdminDashboardSnapshot,
     AdminSchedule,
     AdminServiceOption,
@@ -530,6 +535,8 @@ function AdminWorkspace({
     const [options, setOptions] = useState<AdminCalendarOptions | null>(null);
     const [schedule, setSchedule] = useState<AdminSchedule | null>(null);
     const [dashboard, setDashboard] = useState<AdminDashboardSnapshot | null>(null);
+    const [dashboardPeriod, setDashboardPeriod] = useState<AdminDashboardPeriod>("week");
+    const [dashboardAnchorDate, setDashboardAnchorDate] = useState(() => todayLocalDate());
     const [bookings, setBookings] = useState<AdminBookingSummary[]>([]);
     const initialView: AdminView = path.startsWith("/admin/bookings") ? "list" : "day";
     const [calendarDate, setCalendarDate] = useState(() => todayLocalDate());
@@ -644,7 +651,10 @@ function AdminWorkspace({
             if (!quiet) setDashboardLoading(true);
 
             try {
-                const response = await fetchAdminDashboard();
+                const response = await fetchAdminDashboard({
+                    period: dashboardPeriod,
+                    anchorDate: dashboardAnchorDate,
+                });
                 if (!active) return;
                 setDashboard(response);
                 setDashboardRefreshError("");
@@ -667,7 +677,7 @@ function AdminWorkspace({
             active = false;
             window.clearInterval(refreshTimer);
         };
-    }, [isDashboardPath]);
+    }, [dashboardAnchorDate, dashboardPeriod, isDashboardPath]);
 
     async function refreshBookings() {
         const response = await fetchAdminBookings(filters);
@@ -688,7 +698,10 @@ function AdminWorkspace({
         if (!quiet) setDashboardLoading(true);
 
         try {
-            const response = await fetchAdminDashboard();
+            const response = await fetchAdminDashboard({
+                period: dashboardPeriod,
+                anchorDate: dashboardAnchorDate,
+            });
             setDashboard(response);
             setDashboardRefreshError("");
         } catch (error) {
@@ -738,6 +751,15 @@ function AdminWorkspace({
         if (!path.startsWith("/admin/calendar")) {
             onNavigate("/admin/calendar");
         }
+    }
+
+    function changeDashboardPeriod(nextPeriod: AdminDashboardPeriod) {
+        setDashboardPeriod(nextPeriod);
+        setDashboardAnchorDate((current) => buildDashboardPeriodRange(nextPeriod, current).anchorDate);
+    }
+
+    function moveDashboardPeriod(direction: -1 | 1) {
+        setDashboardAnchorDate((current) => navigateDashboardPeriod(dashboardPeriod, current, direction));
     }
 
     async function handleBookingDrop(
@@ -863,8 +885,12 @@ function AdminWorkspace({
                     {isDashboardPath ? (
                         <DashboardPage
                             dashboard={dashboard}
+                            period={dashboardPeriod}
+                            anchorDate={dashboardAnchorDate}
                             loading={dashboardLoading}
                             refreshError={dashboardRefreshError}
+                            onChangePeriod={changeDashboardPeriod}
+                            onNavigatePeriod={moveDashboardPeriod}
                             onOpenBooking={(bookingId) => setDrawer({ mode: "detail", bookingId })}
                         />
                     ) : isTeamPath ? (
@@ -1341,13 +1367,21 @@ function CalendarTopbar({
 
 function DashboardPage({
     dashboard,
+    period,
+    anchorDate,
     loading,
     refreshError,
+    onChangePeriod,
+    onNavigatePeriod,
     onOpenBooking,
 }: {
     dashboard: AdminDashboardSnapshot | null;
+    period: AdminDashboardPeriod;
+    anchorDate: string;
     loading: boolean;
     refreshError: string;
+    onChangePeriod: (period: AdminDashboardPeriod) => void;
+    onNavigatePeriod: (direction: -1 | 1) => void;
     onOpenBooking: (bookingId: string) => void;
 }) {
     const today = dashboard?.todayBookings ?? [];
@@ -1384,7 +1418,7 @@ function DashboardPage({
                 <div className="min-w-0">
                     <p className="text-sm font-black uppercase tracking-[0.14em] text-green">Operating dashboard</p>
                     <h1 className="mt-1 text-3xl font-black leading-tight text-forest sm:text-4xl">
-                        Appointment value, bookings, and notification health
+                        Completed revenue, bookings, and notification health
                     </h1>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-sm font-black text-charcoal/55">
@@ -1404,7 +1438,13 @@ function DashboardPage({
                 </div>
             </section>
             <section className="grid gap-5 xl:grid-cols-2">
-                <EstimatedAppointmentValueCard value={dashboard.appointmentValue} />
+                <CompletedRevenueCard
+                    revenue={dashboard.revenue}
+                    period={period}
+                    anchorDate={anchorDate}
+                    onChangePeriod={onChangePeriod}
+                    onNavigatePeriod={onNavigatePeriod}
+                />
                 <UpcomingAppointmentsChartCard upcoming={dashboard.upcomingAppointments} />
             </section>
             <section className="grid gap-5 2xl:grid-cols-[1.15fr_0.85fr]">
@@ -1426,60 +1466,96 @@ function DashboardPage({
     );
 }
 
-function EstimatedAppointmentValueCard({
-    value,
+function CompletedRevenueCard({
+    revenue,
+    period,
+    anchorDate,
+    onChangePeriod,
+    onNavigatePeriod,
 }: {
-    value: AdminDashboardSnapshot["appointmentValue"];
+    revenue: AdminDashboardSnapshot["revenue"];
+    period: AdminDashboardPeriod;
+    anchorDate: string;
+    onChangePeriod: (period: AdminDashboardPeriod) => void;
+    onNavigatePeriod: (direction: -1 | 1) => void;
 }) {
-    const hasUnpriced = value.unpricedAppointmentCount > 0;
-    const hasFromPrices = value.fromPriceAppointmentCount > 0;
+    const hasUnpriced = revenue.unpricedAppointmentCount > 0;
+    const hasFromPrices = revenue.fromPriceAppointmentCount > 0;
+    const periodLabel = formatDashboardPeriodLabel(revenue.period, revenue.periodStart, revenue.periodEnd);
+    const periodOptions: AdminDashboardPeriod[] = ["week", "month", "year"];
 
     return (
         <section className="overflow-hidden rounded-md border border-[#d7e0d7] bg-white shadow-sm">
             <div className="space-y-5 p-5 sm:p-6">
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="min-w-0">
-                        <p className="text-sm font-black uppercase tracking-[0.13em] text-charcoal/45">All locations, last 7 days</p>
-                        <h2 className="mt-1 text-2xl font-black text-forest sm:text-3xl">Estimated appointment value</h2>
+                        <p className="text-sm font-black uppercase tracking-[0.13em] text-charcoal/45">Completed only</p>
+                        <h2 className="mt-1 text-2xl font-black text-forest sm:text-3xl">Completed revenue</h2>
                     </div>
-                    <span className="rounded-full bg-[#eef5f1] px-3 py-1 text-xs font-black uppercase tracking-[0.08em] text-charcoal/65">
-                        Snapshot
-                    </span>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                        <div className="inline-grid grid-cols-3 overflow-hidden rounded-md border border-[#d7e0d7] bg-[#f7faf7] p-1">
+                            {periodOptions.map((option) => (
+                                <button
+                                    key={`dashboard-period-${option}`}
+                                    className={`rounded px-3 py-1.5 text-xs font-black uppercase tracking-[0.08em] transition ${
+                                        option === period
+                                            ? "bg-forest text-white shadow-sm"
+                                            : "text-charcoal/58 hover:bg-white hover:text-forest"
+                                    }`}
+                                    onClick={() => onChangePeriod(option)}
+                                    type="button"
+                                >
+                                    {option === "week" ? "Week" : option === "month" ? "Month" : "Year"}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="flex min-w-0 items-center gap-1 rounded-md border border-[#d7e0d7] bg-white p-1 shadow-sm" title={`Anchor date ${anchorDate}`}>
+                            <button className="icon-button size-8" onClick={() => onNavigatePeriod(-1)} type="button" title={`Previous ${period}`}>
+                                <ChevronLeft size={18} />
+                            </button>
+                            <span className="min-w-[9rem] truncate px-2 text-center text-sm font-black text-forest">
+                                {periodLabel}
+                            </span>
+                            <button className="icon-button size-8" onClick={() => onNavigatePeriod(1)} type="button" title={`Next ${period}`}>
+                                <ChevronRight size={18} />
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3">
                     <DashboardMetricTile
-                        label="Value"
-                        value={formatDashboardCurrency(value.totalCents)}
-                        detail={`${value.pricedAppointmentCount} priced`}
+                        label="Revenue"
+                        value={formatDashboardCurrency(revenue.totalCents)}
+                        detail={`${revenue.pricedAppointmentCount} priced`}
                     />
                     <DashboardMetricTile
-                        label="Appointments"
-                        value={`${value.appointmentCount}`}
-                        detail={`${value.unpricedAppointmentCount} unpriced`}
+                        label="Completed"
+                        value={`${revenue.completedAppointmentCount}`}
+                        detail={`${revenue.unpricedAppointmentCount} unpriced`}
                     />
                     <DashboardMetricTile
                         label="Average"
-                        value={formatDashboardCurrency(value.averageValueCents)}
-                        detail="priced bookings"
+                        value={formatDashboardCurrency(revenue.averageRevenueCents)}
+                        detail="priced completions"
                     />
                 </div>
                 {(hasUnpriced || hasFromPrices) && (
                     <div className="flex flex-wrap gap-2 text-xs font-black uppercase tracking-[0.08em]">
                         {hasUnpriced && (
                             <span className="rounded-full bg-amber-50 px-3 py-1.5 text-amber-800">
-                                {value.unpricedAppointmentCount} unpriced appointment{value.unpricedAppointmentCount === 1 ? "" : "s"}
+                                {revenue.unpricedAppointmentCount} unpriced completion{revenue.unpricedAppointmentCount === 1 ? "" : "s"}
                             </span>
                         )}
                         {hasFromPrices && (
                             <span className="rounded-full bg-[#eef5f1] px-3 py-1.5 text-charcoal/65">
-                                {value.fromPriceAppointmentCount} estimated from-price booking{value.fromPriceAppointmentCount === 1 ? "" : "s"}
+                                {revenue.fromPriceAppointmentCount} from-price snapshot{revenue.fromPriceAppointmentCount === 1 ? "" : "s"} counted at stored total
                             </span>
                         )}
                     </div>
                 )}
             </div>
             <div className="border-t border-[#e1e8e1] px-3 pb-4 pt-3 sm:px-5">
-                <AppointmentValueChart series={value.dailySeries} />
+                <RevenueChart series={revenue.series} period={revenue.period} />
             </div>
         </section>
     );
@@ -1537,12 +1613,27 @@ function DashboardMetricTile({ label, value, detail }: { label: string; value: s
     );
 }
 
-function AppointmentValueChart({
+function RevenueChart({
     series,
+    period,
 }: {
-    series: AdminDashboardSnapshot["appointmentValue"]["dailySeries"];
+    series: AdminDashboardSnapshot["revenue"]["series"];
+    period: AdminDashboardPeriod;
 }) {
-    const chartSeries = series.length > 0 ? series : [{ date: "", totalCents: 0, appointmentCount: 0, pricedAppointmentCount: 0, unpricedAppointmentCount: 0 }];
+    const chartSeries =
+        series.length > 0
+            ? series
+            : [
+                  {
+                      key: "",
+                      label: "",
+                      totalCents: 0,
+                      completedAppointmentCount: 0,
+                      pricedAppointmentCount: 0,
+                      unpricedAppointmentCount: 0,
+                      fromPriceAppointmentCount: 0,
+                  },
+              ];
     const hasData = seriesHasDashboardData(chartSeries, "totalCents");
     const scale = buildDashboardChartScale(chartSeries.map((point) => point.totalCents));
     const width = 680;
@@ -1563,9 +1654,9 @@ function AppointmentValueChart({
 
     return (
         <div className="relative aspect-[16/9] min-h-[260px] w-full overflow-hidden rounded-md bg-[#fbfdfb]">
-            <svg role="img" aria-label="Estimated appointment value over the last 7 days" viewBox={`0 0 ${width} ${height}`} className="h-full w-full">
+            <svg role="img" aria-label={`Completed revenue by ${period === "year" ? "month" : "day"}`} viewBox={`0 0 ${width} ${height}`} className="h-full w-full">
                 <defs>
-                    <linearGradient id="appointmentValueArea" x1="0" x2="0" y1="0" y2="1">
+                    <linearGradient id="completedRevenueArea" x1="0" x2="0" y1="0" y2="1">
                         <stop offset="0%" stopColor="#51c28a" stopOpacity="0.28" />
                         <stop offset="100%" stopColor="#51c28a" stopOpacity="0.03" />
                     </linearGradient>
@@ -1582,20 +1673,22 @@ function AppointmentValueChart({
                     );
                 })}
                 <line x1={frame.left} x2={width - frame.right} y1={baseline} y2={baseline} stroke="#cfdacf" strokeWidth="1.5" />
-                {areaPath && <path d={areaPath} fill="url(#appointmentValueArea)" />}
+                {areaPath && <path d={areaPath} fill="url(#completedRevenueArea)" />}
                 {linePoints && <polyline points={linePoints} fill="none" stroke="#009e65" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" />}
-                {points.map((point) => (
-                    <g key={`value-point-${point.date}`}>
+                {points.map((point, index) => (
+                    <g key={`revenue-point-${point.key || index}`}>
                         <circle cx={point.x} cy={point.y} r="5.5" fill="#009e65" stroke="#ffffff" strokeWidth="3">
-                            <title>{`${formatDashboardSeriesDate(point.date)}: ${formatDashboardCurrency(point.totalCents)} from ${point.appointmentCount} appointment${point.appointmentCount === 1 ? "" : "s"}`}</title>
+                            <title>{`${point.label}: ${formatDashboardCurrency(point.totalCents)} from ${point.completedAppointmentCount} completed appointment${point.completedAppointmentCount === 1 ? "" : "s"}`}</title>
                         </circle>
-                        <text x={point.x} y={height - 17} textAnchor="middle" className="fill-charcoal/50 text-[0.72rem] font-black">
-                            {formatDashboardSeriesDate(point.date)}
-                        </text>
+                        {shouldShowRevenueChartLabel(index, chartSeries.length, period) && (
+                            <text x={point.x} y={height - 17} textAnchor="middle" className="fill-charcoal/50 text-[0.72rem] font-black">
+                                {point.label}
+                            </text>
+                        )}
                     </g>
                 ))}
             </svg>
-            {!hasData && <ChartEmptyState title="No priced appointment value yet" detail="Bookings will draw this line once service price snapshots exist." />}
+            {!hasData && <ChartEmptyState title="No completed revenue yet" detail="Completed appointments with service price snapshots will draw this line." />}
         </div>
     );
 }
@@ -2691,6 +2784,7 @@ function BookingDetailBody({
     const [showReschedule, setShowReschedule] = useState(false);
     const canMutate = booking.status === "confirmed";
     const canNoShow = canMutate && new Date(booking.startTime).getTime() <= Date.now();
+    const canComplete = canMutate && new Date(booking.startTime).getTime() <= Date.now();
     const bookingBarber = options?.barbers.find((barber) => barber.id === booking.barberId);
 
     async function refreshDetail() {
@@ -2720,6 +2814,18 @@ function BookingDetailBody({
             await onChanged("Booking marked no-show.");
         } catch (error) {
             setError(error instanceof Error ? error.message : "No-show update failed.");
+        }
+    }
+
+    async function handleComplete() {
+        setError("");
+
+        try {
+            await completeAdminBooking(booking.id);
+            await refreshDetail();
+            await onChanged("Booking completed.");
+        } catch (error) {
+            setError(error instanceof Error ? error.message : "Completion failed.");
         }
     }
 
@@ -2759,7 +2865,7 @@ function BookingDetailBody({
                 </div>
             )}
             {canMutate && (
-                <div className="grid gap-2 sm:grid-cols-4">
+                <div className="grid gap-2 sm:grid-cols-5">
                     <button className="icon-text-button justify-center" onClick={() => setShowEdit((value) => !value)}>
                         <ClipboardList size={16} />
                         Edit
@@ -2771,6 +2877,10 @@ function BookingDetailBody({
                     <button className="danger-button justify-center" onClick={handleCancel}>
                         <X size={16} />
                         Cancel
+                    </button>
+                    <button className="icon-text-button justify-center" onClick={handleComplete} disabled={!canComplete} title={canComplete ? "Mark completed" : "Complete is only for current or past bookings"}>
+                        <Check size={16} />
+                        Complete
                     </button>
                     <button className="danger-button justify-center" onClick={handleNoShow} disabled={!canNoShow} title={canNoShow ? "Mark no-show" : "No-show is only for current or past bookings"}>
                         <Ban size={16} />
@@ -4398,6 +4508,14 @@ function chartPointX(index: number, count: number, left: number, width: number) 
 
 function chartPointY(value: number, max: number, top: number, height: number) {
     return top + (1 - Math.min(1, Math.max(0, value / Math.max(1, max)))) * height;
+}
+
+function shouldShowRevenueChartLabel(index: number, count: number, period: AdminDashboardPeriod) {
+    if (period !== "month" || count <= 12) {
+        return true;
+    }
+
+    return index === 0 || index === count - 1 || index % 7 === 0;
 }
 
 function buildDashboardCountScale(maxValue: number) {

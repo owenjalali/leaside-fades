@@ -156,22 +156,32 @@ export interface AdminUpcomingReminderPreview {
     recipientLabel: string;
 }
 
-export interface AdminDashboardValueSeriesPoint {
-    date: string;
-    totalCents: number;
-    appointmentCount: number;
-    pricedAppointmentCount: number;
-    unpricedAppointmentCount: number;
-}
+export type AdminDashboardPeriod = "week" | "month" | "year";
+export type AdminDashboardBucketGranularity = "day" | "month";
 
-export interface AdminDashboardAppointmentValue {
+export interface AdminDashboardRevenueSeriesPoint {
+    key: string;
+    label: string;
     totalCents: number;
-    appointmentCount: number;
+    completedAppointmentCount: number;
     pricedAppointmentCount: number;
     unpricedAppointmentCount: number;
     fromPriceAppointmentCount: number;
-    averageValueCents: number;
-    dailySeries: AdminDashboardValueSeriesPoint[];
+}
+
+export interface AdminDashboardRevenue {
+    period: AdminDashboardPeriod;
+    anchorDate: string;
+    periodStart: string;
+    periodEnd: string;
+    bucketGranularity: AdminDashboardBucketGranularity;
+    totalCents: number;
+    completedAppointmentCount: number;
+    pricedAppointmentCount: number;
+    unpricedAppointmentCount: number;
+    fromPriceAppointmentCount: number;
+    averageRevenueCents: number;
+    series: AdminDashboardRevenueSeriesPoint[];
 }
 
 export interface AdminDashboardUpcomingSeriesPoint {
@@ -242,7 +252,7 @@ export interface AdminDashboardSnapshot {
     activity: AdminDashboardActivityRecord[];
     notificationDeliveryMode: NotificationDeliveryMode;
     upcomingReminders: AdminUpcomingReminderPreview[];
-    appointmentValue: AdminDashboardAppointmentValue;
+    revenue: AdminDashboardRevenue;
     upcomingAppointments: AdminDashboardUpcomingAppointments;
     notificationHealth: AdminDashboardNotificationHealth;
 }
@@ -354,6 +364,11 @@ export interface AdminBookingManagementRepository
         markedAt: Date;
         markedByUserId: string;
     }): Promise<(AdminBookingRecord & { mutable: boolean }) | null>;
+    completeBookingForAdminScope(input: {
+        bookingId: string;
+        barberId?: string;
+        completedAt: Date;
+    }): Promise<(AdminBookingRecord & { mutable: boolean }) | null>;
     updateBookingScheduleForAdminScope(input: {
         bookingId: string;
         barberId?: string;
@@ -402,6 +417,14 @@ export class AdminBookingRequestError extends Error {
 interface AdminBookingMutationOptions {
     now?: Date;
     notificationDispatcher?: BookingLifecycleNotificationDispatcher;
+}
+
+interface DashboardRevenuePeriod {
+    period: AdminDashboardPeriod;
+    anchorDate: string;
+    periodStart: string;
+    periodEnd: string;
+    bucketGranularity: AdminDashboardBucketGranularity;
 }
 
 const DEFAULT_TIME_ZONE = "America/Toronto";
@@ -489,22 +512,28 @@ export async function getAdminDashboard(
         now?: Date;
         notificationDeliveryMode?: NotificationDeliveryMode;
         reminderSchedulerStaleAfterMinutes?: number;
+        dashboardPeriod?: AdminDashboardPeriod;
+        dashboardAnchorDate?: string;
     } = {},
 ): Promise<AdminDashboardSnapshot> {
     const now = options.now ?? new Date();
     const actorScope = buildActorScope(user);
     const today = getLocalDate(now, DEFAULT_TIME_ZONE);
+    const revenuePeriod = buildDashboardRevenuePeriod(
+        options.dashboardPeriod ?? "week",
+        options.dashboardAnchorDate ?? today,
+    );
     const todayStart = localDateTimeToUtc(today, "00:00", DEFAULT_TIME_ZONE);
     const tomorrowStart = localDateTimeToUtc(nextLocalDate(today), "00:00", DEFAULT_TIME_ZONE);
-    const valueStartDate = addLocalDays(today, -6);
-    const valueStart = localDateTimeToUtc(valueStartDate, "00:00", DEFAULT_TIME_ZONE);
+    const revenueStart = localDateTimeToUtc(revenuePeriod.periodStart, "00:00", DEFAULT_TIME_ZONE);
+    const revenueEnd = localDateTimeToUtc(nextLocalDate(revenuePeriod.periodEnd), "00:00", DEFAULT_TIME_ZONE);
     const upcomingEnd = localDateTimeToUtc(addLocalDays(today, 8), "00:00", DEFAULT_TIME_ZONE);
     const upcomingChartEnd = localDateTimeToUtc(addLocalDays(today, 7), "00:00", DEFAULT_TIME_ZONE);
 
     const [
         todayBookings,
         upcomingBookings,
-        valueBookings,
+        revenueBookings,
         upcomingStatusBookings,
         activity,
         reminderSchedulerRuns,
@@ -525,8 +554,9 @@ export async function getAdminDashboard(
         }),
         repository.listDashboardBookingsForAdminScope({
             ...actorScope,
-            from: valueStart,
-            to: tomorrowStart,
+            status: "completed",
+            from: revenueStart,
+            to: revenueEnd,
             limit: 500,
         }),
         repository.listDashboardBookingsForAdminScope({
@@ -558,10 +588,7 @@ export async function getAdminDashboard(
         activity: classifiedActivity,
         notificationDeliveryMode: options.notificationDeliveryMode ?? "mock",
         upcomingReminders,
-        appointmentValue: buildAppointmentValueAnalytics(
-            valueBookings,
-            buildLocalDateSeries(valueStartDate, 7),
-        ),
+        revenue: buildDashboardRevenueAnalytics(revenueBookings, revenuePeriod),
         upcomingAppointments: buildUpcomingAppointmentAnalytics(
             upcomingStatusBookings,
             buildLocalDateSeries(today, 7),
@@ -761,6 +788,34 @@ export async function markAdminBookingNoShow(
         throw new AdminBookingRequestError(
             409,
             "Only current or past confirmed bookings can be marked no-show.",
+        );
+    }
+
+    return withoutMutableFlag(booking);
+}
+
+export async function completeAdminBooking(
+    user: SafeAdminUser,
+    bookingId: string,
+    repository: Pick<AdminBookingManagementRepository, "completeBookingForAdminScope">,
+    options: { now?: Date } = {},
+) {
+    const scope = buildActorScope(user);
+    const completedAt = options.now ?? new Date();
+    const booking = await repository.completeBookingForAdminScope({
+        bookingId: asNonEmptyString(bookingId, "Booking is required."),
+        barberId: scope.barberId,
+        completedAt,
+    });
+
+    if (!booking) {
+        throw new AdminBookingRequestError(404, "Booking was not found.");
+    }
+
+    if (!booking.mutable) {
+        throw new AdminBookingRequestError(
+            409,
+            "Only current or past confirmed bookings can be completed.",
         );
     }
 
@@ -1275,33 +1330,37 @@ function buildLocalDateSeries(startLocalDate: string, length: number) {
     return Array.from({ length }, (_, index) => addLocalDays(startLocalDate, index));
 }
 
-function buildAppointmentValueAnalytics(
+function buildDashboardRevenueAnalytics(
     bookings: AdminBookingRecord[],
-    dates: string[],
-): AdminDashboardAppointmentValue {
-    const dateBuckets = dates.reduce<Record<string, AdminDashboardValueSeriesPoint>>((buckets, date) => {
-        buckets[date] = {
-            date,
+    period: DashboardRevenuePeriod,
+): AdminDashboardRevenue {
+    const bucketKeys = buildDashboardRevenueBucketKeys(period);
+    const dateBuckets = bucketKeys.reduce<Record<string, AdminDashboardRevenueSeriesPoint>>((buckets, key) => {
+        buckets[key] = {
+            key,
+            label: formatDashboardRevenueBucketLabel(key, period.bucketGranularity),
             totalCents: 0,
-            appointmentCount: 0,
+            completedAppointmentCount: 0,
             pricedAppointmentCount: 0,
             unpricedAppointmentCount: 0,
+            fromPriceAppointmentCount: 0,
         };
         return buckets;
     }, {});
     let totalCents = 0;
-    let appointmentCount = 0;
+    let completedAppointmentCount = 0;
     let pricedAppointmentCount = 0;
     let unpricedAppointmentCount = 0;
     let fromPriceAppointmentCount = 0;
 
     for (const booking of bookings) {
-        if (booking.status !== "confirmed" && booking.status !== "completed") {
+        if (booking.status !== "completed") {
             continue;
         }
 
         const localDate = getLocalDate(booking.startTime, DEFAULT_TIME_ZONE);
-        const bucket = dateBuckets[localDate];
+        const bucketKey = period.bucketGranularity === "month" ? localDate.slice(0, 7) : localDate;
+        const bucket = dateBuckets[bucketKey];
         if (!bucket) {
             continue;
         }
@@ -1311,8 +1370,8 @@ function buildAppointmentValueAnalytics(
         const hasPriceSnapshot = details.length > 0;
         const hasFromPrice = details.some((service) => service.priceType === "from");
 
-        appointmentCount += 1;
-        bucket.appointmentCount += 1;
+        completedAppointmentCount += 1;
+        bucket.completedAppointmentCount += 1;
 
         if (hasPriceSnapshot) {
             totalCents += valueCents;
@@ -1321,6 +1380,7 @@ function buildAppointmentValueAnalytics(
             bucket.pricedAppointmentCount += 1;
             if (hasFromPrice) {
                 fromPriceAppointmentCount += 1;
+                bucket.fromPriceAppointmentCount += 1;
             }
         } else {
             unpricedAppointmentCount += 1;
@@ -1329,13 +1389,18 @@ function buildAppointmentValueAnalytics(
     }
 
     return {
+        period: period.period,
+        anchorDate: period.anchorDate,
+        periodStart: period.periodStart,
+        periodEnd: period.periodEnd,
+        bucketGranularity: period.bucketGranularity,
         totalCents,
-        appointmentCount,
+        completedAppointmentCount,
         pricedAppointmentCount,
         unpricedAppointmentCount,
         fromPriceAppointmentCount,
-        averageValueCents: pricedAppointmentCount > 0 ? Math.round(totalCents / pricedAppointmentCount) : 0,
-        dailySeries: dates.map((date) => dateBuckets[date]),
+        averageRevenueCents: pricedAppointmentCount > 0 ? Math.round(totalCents / pricedAppointmentCount) : 0,
+        series: bucketKeys.map((key) => dateBuckets[key]),
     };
 }
 
@@ -1799,6 +1864,97 @@ function localDateStart(localDate: string) {
     }
 
     return localDateTimeToUtc(localDate, "00:00", DEFAULT_TIME_ZONE);
+}
+
+function buildDashboardRevenuePeriod(
+    period: AdminDashboardPeriod,
+    anchorDate: string,
+): DashboardRevenuePeriod {
+    assertDashboardLocalDate(anchorDate);
+
+    if (period === "week") {
+        return {
+            period,
+            anchorDate,
+            periodStart: addLocalDays(anchorDate, -6),
+            periodEnd: anchorDate,
+            bucketGranularity: "day",
+        };
+    }
+
+    if (period === "month") {
+        const periodStart = monthStartLocalDate(anchorDate);
+        return {
+            period,
+            anchorDate,
+            periodStart,
+            periodEnd: addLocalDays(addLocalMonths(periodStart, 1), -1),
+            bucketGranularity: "day",
+        };
+    }
+
+    const periodStart = `${anchorDate.slice(0, 4)}-01-01`;
+    return {
+        period,
+        anchorDate,
+        periodStart,
+        periodEnd: `${anchorDate.slice(0, 4)}-12-31`,
+        bucketGranularity: "month",
+    };
+}
+
+function buildDashboardRevenueBucketKeys(period: DashboardRevenuePeriod) {
+    if (period.bucketGranularity === "month") {
+        return Array.from({ length: 12 }, (_, index) => {
+            const month = String(index + 1).padStart(2, "0");
+            return `${period.periodStart.slice(0, 4)}-${month}`;
+        });
+    }
+
+    const dayCount = localDateDifferenceInDays(period.periodStart, period.periodEnd) + 1;
+    return Array.from({ length: dayCount }, (_, index) => addLocalDays(period.periodStart, index));
+}
+
+function formatDashboardRevenueBucketLabel(key: string, granularity: AdminDashboardBucketGranularity) {
+    if (granularity === "month") {
+        const [year, month] = key.split("-").map(Number);
+        return new Intl.DateTimeFormat("en-CA", { month: "short", timeZone: "UTC" }).format(
+            new Date(Date.UTC(year, month - 1, 1)),
+        );
+    }
+
+    const [year, month, day] = key.split("-").map(Number);
+    return new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric", timeZone: "UTC" }).format(
+        new Date(Date.UTC(year, month - 1, day)),
+    );
+}
+
+function monthStartLocalDate(localDate: string) {
+    return `${localDate.slice(0, 7)}-01`;
+}
+
+function addLocalMonths(localDate: string, months: number) {
+    const [year, month, day] = localDate.split("-").map(Number);
+    return getLocalDate(new Date(Date.UTC(year, month - 1 + months, day)), "UTC");
+}
+
+function localDateDifferenceInDays(fromLocalDate: string, toLocalDate: string) {
+    const [fromYear, fromMonth, fromDay] = fromLocalDate.split("-").map(Number);
+    const [toYear, toMonth, toDay] = toLocalDate.split("-").map(Number);
+    return Math.round(
+        (Date.UTC(toYear, toMonth - 1, toDay) - Date.UTC(fromYear, fromMonth - 1, fromDay)) / 86_400_000,
+    );
+}
+
+function assertDashboardLocalDate(localDate: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(localDate)) {
+        throw new AdminBookingRequestError(400, "A valid dashboard anchor date is required.");
+    }
+
+    const [year, month, day] = localDate.split("-").map(Number);
+    if (getLocalDate(new Date(Date.UTC(year, month - 1, day)), "UTC") !== localDate) {
+        throw new AdminBookingRequestError(400, "A valid dashboard anchor date is required.");
+    }
 }
 
 function nextLocalDate(localDate: string) {

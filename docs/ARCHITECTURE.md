@@ -313,6 +313,7 @@ Implemented:
 - `POST /api/admin/bookings/walk-in`
 - `POST /api/admin/bookings/:bookingId/cancel`
 - `POST /api/admin/bookings/:bookingId/no-show`
+- `POST /api/admin/bookings/:bookingId/complete`
 - `POST /api/admin/bookings/:bookingId/reschedule`
 - `POST /api/admin/bookings/:bookingId/edit`
 
@@ -329,14 +330,17 @@ Rules:
 - admin booking edit updates the linked customer row, booking schedule/duration/notes, and `booking_services` snapshots transactionally while preserving booking source/status and existing customer management token hashes
 - cancellation is idempotent for already-cancelled bookings but rejects completed/no-show bookings
 - no-show is allowed only for current or past confirmed bookings, is role-scoped server-side, and does not send notifications or charge fees in Phase 7.5
+- completion is allowed only for current or past confirmed bookings, is role-scoped server-side, sets `status = "completed"`, and does not send lifecycle notifications or create payment records
 - manual booking creation, cancellation, and rescheduling dispatch Phase 9 lifecycle notifications after successful mutation
-- contacted walk-ins create lifecycle notification attempts through the shared dispatcher; no-shows create no notification attempts
+- contacted walk-ins create lifecycle notification attempts through the shared dispatcher; no-shows and completions create no notification attempts
 - customer token UI, shift management, blocked-time management, payments, and Fresha automation are outside Phase 6
 
 Dashboard snapshot:
-- `GET /api/admin/dashboard` returns today's active appointments, upcoming active appointments, notification/reminder activity, estimated appointment value, upcoming confirmed/cancelled appointment series, and notification health
-- estimated appointment value is not payment revenue; it is calculated from stored booking service price snapshots for confirmed/completed bookings, while cancelled/no-show bookings are excluded from active value
-- public, manual, walk-in, and imported booking sources are included when service snapshots exist; bookings without snapshots remain counted as appointments but excluded from value
+- `GET /api/admin/dashboard?period=week|month|year&anchorDate=YYYY-MM-DD` returns today's active appointments, upcoming active appointments, notification/reminder activity, completed revenue, upcoming confirmed/cancelled appointment series, and notification health
+- completed revenue is not payment/POS revenue; it is calculated from stored `booking_services.price_cents` snapshots for completed bookings only, grouped by the appointment's `America/Toronto` local date
+- week revenue uses seven daily buckets ending on the anchor date, month revenue uses daily buckets for the anchor month, and year revenue uses 12 monthly buckets for the anchor year
+- confirmed, cancelled, and no-show bookings are excluded from revenue; completed bookings without service snapshots remain counted as unpriced completions but excluded from the total
+- from-price service snapshots count at their stored total and increment the dashboard caveat count
 - `/admin/dashboard` polls the snapshot every 30 seconds, refreshes immediately after booking mutations, and keeps the last good snapshot visible when a refresh fails
 
 ## Admin Schedule Management API
@@ -498,12 +502,12 @@ Deferred:
 Phase 7.5 implements the admin/barber scheduling console as the primary operational surface.
 
 Implemented:
-- `/admin/dashboard` owner/staff landing surface with estimated appointment value, upcoming confirmed/cancelled appointment trends, appointment activity, and compact notification health
-- dashboard estimated value uses booking service price snapshots and is labeled estimated appointment value, not actual paid revenue
-- dashboard appointment charts show active confirmed/completed value separately from cancellation and delivery history
+- `/admin/dashboard` owner/staff landing surface with completed service-snapshot revenue, Week/Month/Year controls, upcoming confirmed/cancelled appointment trends, appointment activity, and compact notification health
+- dashboard completed revenue uses booking service price snapshots for completed appointments only and is not actual POS/payment revenue
+- dashboard revenue charts show selected-period completed revenue separately from active booking, cancellation, and delivery history
 - `/admin/calendar` day-board with compact dark rail, topbar filters, owner/admin multi-barber columns for active location-assigned barbers, barber single-calendar scoping, a Fresha-style full-day 12:00 AM-11:00 PM operating surface, 15-minute grid rows, current-time marker, blocked-time overlays, status/source-styled booking cards, purple appointment preview, and right-side drawers
 - unified staff Add appointment drawer using the authenticated staff-only scheduling path, optional customer contact, service-derived duration/price summary, online-availability suggestions, and staff booking for grey off-shift cells
-- booking detail drawer with edit, cancel, reschedule, and no-show actions
+- booking detail drawer with edit, cancel, reschedule, complete, and no-show actions
 - barber header `Edit shift` dropdown that calls the one-day shift replacement endpoint and updates the same schedule model used by public availability
 - booking-only drag/drop rescheduling through `POST /api/admin/bookings/:bookingId/reschedule`
 - `/admin/bookings` retained as search/history rather than the primary workflow
@@ -519,6 +523,7 @@ Rules:
 - drag/drop is snapped by the UI to 15-minute slots and never updates local state as truth; rejected backend moves leave the card in its original slot
 - drag/drop applies only to bookings, not shifts or blocked time
 - no-show is view/state only in Phase 7.5: no notifications, payments, or fees
+- completion is a status-only staff action: no notifications, payments, fees, or availability-side effects beyond the existing rule that only confirmed bookings block future slots
 
 Deferred:
 - reminder jobs were implemented in Phase 10

@@ -6,6 +6,7 @@ import type {
     AdminCalendarOptions,
     AdminDashboardActivity,
     AdminDashboardNotificationHealth,
+    AdminDashboardPeriod,
     AdminDay,
     AdminSchedule,
     AdminScheduleFilters,
@@ -217,6 +218,87 @@ export function summarizeNotificationHealth(health: AdminDashboardNotificationHe
         `${health.reminderQueueCount} reminders queued`,
         `Scheduler ${health.reminderScheduler.state}`,
     ];
+}
+
+export function buildDashboardPeriodRange(period: AdminDashboardPeriod, anchorDate: string) {
+    if (period === "week") {
+        return {
+            period,
+            anchorDate,
+            periodStart: addDaysToLocalDate(anchorDate, -6),
+            periodEnd: anchorDate,
+        };
+    }
+
+    if (period === "month") {
+        const date = parseLocalDate(anchorDate);
+        const periodStart = dateToLocalString(new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)));
+        const periodEnd = dateToLocalString(new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)));
+
+        return {
+            period,
+            anchorDate,
+            periodStart,
+            periodEnd,
+        };
+    }
+
+    const year = anchorDate.slice(0, 4);
+    return {
+        period,
+        anchorDate,
+        periodStart: `${year}-01-01`,
+        periodEnd: `${year}-12-31`,
+    };
+}
+
+export function navigateDashboardPeriod(period: AdminDashboardPeriod, anchorDate: string, direction: -1 | 1) {
+    if (period === "week") {
+        return addDaysToLocalDate(anchorDate, direction * 7);
+    }
+
+    if (period === "month") {
+        return addMonthsToLocalDate(anchorDate, direction);
+    }
+
+    return addMonthsToLocalDate(anchorDate, direction * 12);
+}
+
+export function formatDashboardPeriodLabel(
+    period: AdminDashboardPeriod,
+    periodStart: string,
+    periodEnd: string,
+) {
+    if (period === "year") {
+        return periodStart.slice(0, 4);
+    }
+
+    if (period === "month") {
+        return new Intl.DateTimeFormat("en-US", {
+            timeZone: "UTC",
+            month: "long",
+            year: "numeric",
+        }).format(parseLocalDate(periodStart));
+    }
+
+    const start = parseLocalDate(periodStart);
+    const end = parseLocalDate(periodEnd);
+    const sameYear = start.getUTCFullYear() === end.getUTCFullYear();
+
+    const startLabel = new Intl.DateTimeFormat("en-US", {
+        timeZone: "UTC",
+        month: "short",
+        day: "numeric",
+        year: sameYear ? undefined : "numeric",
+    }).format(start);
+    const endLabel = new Intl.DateTimeFormat("en-US", {
+        timeZone: "UTC",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+    }).format(end);
+
+    return `${startLabel}-${endLabel}`;
 }
 
 export function buildWeekDays(selectedDate: string) {

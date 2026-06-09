@@ -200,6 +200,9 @@
 - [x] No-show status is supported for current/past confirmed bookings
 - [x] Future, cancelled, completed, and already no-show bookings reject no-show transitions
 - [x] Barber no-show actions are limited to their own bookings
+- [x] Completed status is supported for current/past confirmed bookings
+- [x] Future, cancelled, completed, and no-show bookings reject completion transitions
+- [x] Barber complete actions are limited to their own bookings
 - [x] Booking drag/drop calls the admin reschedule endpoint
 - [x] Rejected drag/drop moves leave the booking in its original slot
 - [x] Drag/drop can target grey off-shift time while blocked-time cells remain unavailable
@@ -307,8 +310,11 @@
 - [x] Security/privacy launch checklist documented
 - [x] Owner-approved staff notification contact checklist documented
 - [x] Staff notification missing-contact behavior documented
-- [x] `/admin/dashboard` shows estimated appointment value and upcoming appointment chart cards
-- [x] Dashboard estimated value uses booking service price snapshots for confirmed/completed bookings and excludes cancelled/no-show bookings from active value
+- [x] `/admin/dashboard` shows completed revenue and upcoming appointment chart cards
+- [x] Dashboard completed revenue uses booking service price snapshots for completed bookings only and excludes confirmed/cancelled/no-show bookings from revenue
+- [x] Dashboard completed revenue supports Week, Month, and Year period controls with previous/next navigation
+- [x] Dashboard completed revenue aggregates by Toronto appointment date and uses 12 monthly buckets for annual view
+- [x] Dashboard from-price services count at stored snapshot totals and show a caveat count
 - [x] Dashboard charts include empty states and compact labels for large values
 - [x] Dashboard refreshes every 30 seconds, immediately refreshes after booking actions, and keeps the last good snapshot on network refresh failure
 - [x] Dashboard compact notification health shows delivery success, scheduled/skipped/failed counts, reminder queue, and recent delivery rows

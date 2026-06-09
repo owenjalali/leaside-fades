@@ -23,6 +23,7 @@ import {
     AdminBookingRequestError,
     type AdminBookingStatus,
     cancelAdminBooking,
+    completeAdminBooking,
     createAdminManualBooking,
     createAdminWalkInBooking,
     editAdminBooking,
@@ -34,6 +35,7 @@ import {
     markAdminBookingNoShow,
     rescheduleAdminBooking,
     type AdminBookingManagementRepository,
+    type AdminDashboardPeriod,
 } from "./bookings-service.ts";
 import { createDrizzleAdminBookingsRepository } from "./repository.ts";
 import { createDrizzleAdminScheduleRepository } from "./schedule-repository.ts";
@@ -239,6 +241,13 @@ export function registerAdminApiRoutes(app: ExpressLikeApp, dependencies: AdminA
         "/api/admin/bookings/:bookingId/no-show",
         asyncRoute((request, response) =>
             handleAdminNoShowBooking(request, response, undefined, dependencies),
+        ),
+    );
+
+    app.post(
+        "/api/admin/bookings/:bookingId/complete",
+        asyncRoute((request, response) =>
+            handleAdminCompleteBooking(request, response, undefined, dependencies),
         ),
     );
 
@@ -534,6 +543,8 @@ export async function handleAdminDashboard(
             {
                 now: dependencies.now?.() ?? new Date(),
                 notificationDeliveryMode: resolveNotificationDeliveryMode(process.env),
+                dashboardPeriod: parseDashboardPeriod(request.query?.period),
+                dashboardAnchorDate: parseDashboardAnchorDate(request.query?.anchorDate),
             },
         );
 
@@ -688,6 +699,29 @@ export async function handleAdminNoShowBooking(
         assertAdminMutationOrigin(request, dependencies);
         const session = await requireAdminSession(request, response, dependencies);
         const booking = await markAdminBookingNoShow(
+            session.user,
+            request.params?.bookingId,
+            dependencies.bookingsRepository ?? createDrizzleAdminBookingsRepository(),
+            { now: dependencies.now?.() ?? new Date() },
+        );
+
+        response.set("Cache-Control", "no-store");
+        response.status(200).json({ booking });
+    } catch (error) {
+        sendAdminApiError(error, response, next);
+    }
+}
+
+export async function handleAdminCompleteBooking(
+    request: any,
+    response: any,
+    next?: any,
+    dependencies: AdminApiDependencies = {},
+) {
+    try {
+        assertAdminMutationOrigin(request, dependencies);
+        const session = await requireAdminSession(request, response, dependencies);
+        const booking = await completeAdminBooking(
             session.user,
             request.params?.bookingId,
             dependencies.bookingsRepository ?? createDrizzleAdminBookingsRepository(),
@@ -1142,6 +1176,30 @@ function parseAdminBookingFilters(query: Record<string, unknown>) {
         status: typeof query.status === "string" ? (query.status as AdminBookingStatus) : undefined,
         limit: typeof query.limit === "string" ? Number(query.limit) : undefined,
     };
+}
+
+function parseDashboardPeriod(value: unknown): AdminDashboardPeriod | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+
+    if (value === "week" || value === "month" || value === "year") {
+        return value;
+    }
+
+    throw new AdminBookingRequestError(400, "Dashboard period is invalid.");
+}
+
+function parseDashboardAnchorDate(value: unknown) {
+    if (value === undefined) {
+        return undefined;
+    }
+
+    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return value;
+    }
+
+    throw new AdminBookingRequestError(400, "Dashboard anchor date is invalid.");
 }
 
 function parseAdminAvailabilityQuery(query: Record<string, unknown>, now: Date) {

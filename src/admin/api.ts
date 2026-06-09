@@ -6,6 +6,7 @@ import type {
     AdminBookingFilters,
     AdminBookingSummary,
     AdminCalendarOptions,
+    AdminDashboardPeriod,
     AdminDashboardSnapshot,
     AdminDayShiftReplacePayload,
     AdminSchedule,
@@ -141,8 +142,19 @@ export function fetchAdminBookings(filters: AdminBookingFilters) {
     );
 }
 
-export function fetchAdminDashboard() {
-    return requestJson<AdminDashboardSnapshot>("/api/admin/dashboard");
+export function fetchAdminDashboard(input: { period?: AdminDashboardPeriod; anchorDate?: string } = {}) {
+    const params = new URLSearchParams();
+
+    if (input.period) {
+        params.set("period", input.period);
+    }
+
+    if (input.anchorDate) {
+        params.set("anchorDate", input.anchorDate);
+    }
+
+    const query = params.toString();
+    return requestJson<AdminDashboardSnapshot>(`/api/admin/dashboard${query ? `?${query}` : ""}`);
 }
 
 export function fetchAdminBookingDetail(bookingId: string) {
@@ -190,6 +202,12 @@ export function cancelAdminBooking(bookingId: string) {
 
 export function markAdminBookingNoShow(bookingId: string) {
     return requestJson<{ booking: AdminBookingSummary }>(`/api/admin/bookings/${bookingId}/no-show`, {
+        method: "POST",
+    });
+}
+
+export function completeAdminBooking(bookingId: string) {
+    return requestJson<{ booking: AdminBookingSummary }>(`/api/admin/bookings/${bookingId}/complete`, {
         method: "POST",
     });
 }

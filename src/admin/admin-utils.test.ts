@@ -4,6 +4,7 @@ import {
     buildAdminBookingQuery,
     buildAdminScheduleQuery,
     buildDashboardChartScale,
+    buildDashboardPeriodRange,
     buildCalendarUnavailableRanges,
     buildBookingDragPayload,
     buildBlockedTimePayload,
@@ -20,6 +21,7 @@ import {
     calculateWeeklyScheduleHours,
     estimateMobileCalendarGridHeight,
     formatCompactDashboardCurrency,
+    formatDashboardPeriodLabel,
     formatAdminStatus,
     formatDashboardCurrency,
     compactNotificationFailureMessage,
@@ -33,6 +35,7 @@ import {
     groupShiftsByBarberAndWeekday,
     mobileAdminCalendarLayoutBudget,
     navigateCalendarDate,
+    navigateDashboardPeriod,
     notificationFilterMatches,
     seriesHasDashboardData,
     summarizeNotificationHealth,
@@ -193,6 +196,33 @@ describe("Phase 6 admin UI utilities", () => {
         expect(buildDashboardChartScale([0, 3000, 12500]).max).toBe(15000);
         expect(seriesHasDashboardData([{ totalCents: 0 }, { totalCents: 0 }], "totalCents")).toBe(false);
         expect(seriesHasDashboardData([{ totalCents: 0 }, { totalCents: 1 }], "totalCents")).toBe(true);
+    });
+
+    test("builds dashboard revenue period labels and navigation", () => {
+        expect(buildDashboardPeriodRange("week", "2026-06-09")).toEqual({
+            period: "week",
+            anchorDate: "2026-06-09",
+            periodStart: "2026-06-03",
+            periodEnd: "2026-06-09",
+        });
+        expect(buildDashboardPeriodRange("month", "2026-06-09")).toEqual({
+            period: "month",
+            anchorDate: "2026-06-09",
+            periodStart: "2026-06-01",
+            periodEnd: "2026-06-30",
+        });
+        expect(buildDashboardPeriodRange("year", "2026-06-09")).toEqual({
+            period: "year",
+            anchorDate: "2026-06-09",
+            periodStart: "2026-01-01",
+            periodEnd: "2026-12-31",
+        });
+        expect(navigateDashboardPeriod("week", "2026-06-09", -1)).toBe("2026-06-02");
+        expect(navigateDashboardPeriod("month", "2026-03-31", -1)).toBe("2026-02-28");
+        expect(navigateDashboardPeriod("year", "2026-06-09", 1)).toBe("2027-06-09");
+        expect(formatDashboardPeriodLabel("week", "2026-06-03", "2026-06-09")).toBe("Jun 3-Jun 9, 2026");
+        expect(formatDashboardPeriodLabel("month", "2026-06-01", "2026-06-30")).toBe("June 2026");
+        expect(formatDashboardPeriodLabel("year", "2026-01-01", "2026-12-31")).toBe("2026");
     });
 
     test("summarizes notification health for compact dashboard panels", () => {

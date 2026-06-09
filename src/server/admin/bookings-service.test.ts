@@ -11,6 +11,7 @@ import {
     AdminAuthorizationError,
     AdminBookingRequestError,
     cancelAdminBooking,
+    completeAdminBooking,
     createAdminManualBooking,
     createAdminWalkInBooking,
     editAdminBooking,
@@ -26,6 +27,7 @@ import {
     type AdminBookingsRepository,
     type AdminCalendarOptionsRepository,
     type AdminDashboardActivityRecord,
+    type AdminDashboardPeriod,
     type AdminSchedulerJobRunSummary,
 } from "./bookings-service.ts";
 import type { BookingLifecycleNotificationDispatcher } from "../notifications/index.ts";
@@ -492,6 +494,29 @@ class InMemoryPhase6Repository
         return { ...booking, mutable: true as const };
     }
 
+    async completeBookingForAdminScope(input: {
+        bookingId: string;
+        barberId?: string;
+        completedAt: Date;
+    }) {
+        const booking = this.bookings.find(
+            (candidate) =>
+                candidate.id === input.bookingId &&
+                (!input.barberId || candidate.barberId === input.barberId),
+        );
+
+        if (!booking) {
+            return null;
+        }
+
+        if (booking.status !== "confirmed" || booking.startTime > input.completedAt) {
+            return { ...booking, mutable: false as const };
+        }
+
+        booking.status = "completed";
+        return { ...booking, mutable: true as const };
+    }
+
     async updateBookingScheduleForAdminScope(input: {
         bookingId: string;
         barberId?: string;
@@ -882,11 +907,11 @@ describe("Phase 6 admin calendar and booking management service", () => {
         expect(barberDashboard.activity.map((item) => item.bookingId)).toEqual(["booking-a"]);
     });
 
-    test("dashboard aggregates active estimated appointment value from service snapshots", async () => {
+    test("dashboard aggregates completed revenue from service snapshots by selected period", async () => {
         const repository = new InMemoryPhase6Repository();
         repository.bookings = [
             dashboardBookingFixture({
-                id: "public-confirmed",
+                id: "public-confirmed-excluded",
                 source: "public",
                 status: "confirmed",
                 startTime: new Date("2026-04-27T16:00:00.000Z"),
@@ -900,16 +925,16 @@ describe("Phase 6 admin calendar and booking management service", () => {
                 serviceDetails: [snapshotWithPrice(4500)],
             }),
             dashboardBookingFixture({
-                id: "walk-in-confirmed",
+                id: "walk-in-completed-from-price",
                 source: "walk_in",
-                status: "confirmed",
+                status: "completed",
                 startTime: new Date("2026-04-29T16:00:00.000Z"),
-                serviceDetails: [snapshotWithPrice(1500)],
+                serviceDetails: [{ ...snapshotWithPrice(1500), priceType: "from", displayPrice: "from $15" }],
             }),
             dashboardBookingFixture({
-                id: "imported-confirmed",
+                id: "imported-completed",
                 source: "imported",
-                status: "confirmed",
+                status: "completed",
                 startTime: new Date("2026-04-30T16:00:00.000Z"),
                 serviceDetails: [snapshotWithPrice(3500)],
             }),
@@ -927,13 +952,13 @@ describe("Phase 6 admin calendar and booking management service", () => {
             }),
             dashboardBookingFixture({
                 id: "missing-price-snapshot",
-                status: "confirmed",
+                status: "completed",
                 startTime: new Date("2026-05-02T17:00:00.000Z"),
                 serviceDetails: [],
             }),
             dashboardBookingFixture({
                 id: "outside-window",
-                status: "confirmed",
+                status: "completed",
                 startTime: new Date("2026-04-26T16:00:00.000Z"),
                 serviceDetails: [snapshotWithPrice(8800)],
             }),
@@ -945,22 +970,96 @@ describe("Phase 6 admin calendar and booking management service", () => {
             { now: new Date("2026-05-03T14:00:00.000Z") },
         );
 
-        expect(dashboard.appointmentValue).toMatchObject({
-            totalCents: 12500,
-            appointmentCount: 5,
-            pricedAppointmentCount: 4,
+        expect(dashboard.revenue).toMatchObject({
+            totalCents: 9500,
+            completedAppointmentCount: 4,
+            pricedAppointmentCount: 3,
             unpricedAppointmentCount: 1,
-            averageValueCents: 3125,
+            fromPriceAppointmentCount: 1,
+            averageRevenueCents: 3167,
+            period: "week",
+            anchorDate: "2026-05-03",
+            periodStart: "2026-04-27",
+            periodEnd: "2026-05-03",
+            bucketGranularity: "day",
         });
-        expect(dashboard.appointmentValue.dailySeries).toEqual(
+        expect(dashboard.revenue.series).toEqual(
             expect.arrayContaining([
-                expect.objectContaining({ date: "2026-04-27", totalCents: 3000, appointmentCount: 1 }),
-                expect.objectContaining({ date: "2026-04-28", totalCents: 4500, appointmentCount: 1 }),
-                expect.objectContaining({ date: "2026-04-29", totalCents: 1500, appointmentCount: 1 }),
-                expect.objectContaining({ date: "2026-04-30", totalCents: 3500, appointmentCount: 1 }),
-                expect.objectContaining({ date: "2026-05-02", totalCents: 0, appointmentCount: 1, unpricedAppointmentCount: 1 }),
+                expect.objectContaining({ key: "2026-04-28", label: "Apr 28", totalCents: 4500, completedAppointmentCount: 1 }),
+                expect.objectContaining({ key: "2026-04-29", totalCents: 1500, completedAppointmentCount: 1, fromPriceAppointmentCount: 1 }),
+                expect.objectContaining({ key: "2026-04-30", totalCents: 3500, completedAppointmentCount: 1 }),
+                expect.objectContaining({ key: "2026-05-02", totalCents: 0, completedAppointmentCount: 1, unpricedAppointmentCount: 1 }),
             ]),
         );
+
+        const monthlyDashboard = await getAdminDashboard(
+            { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+            repository,
+            { now: new Date("2026-05-03T14:00:00.000Z"), dashboardPeriod: "month", dashboardAnchorDate: "2026-04-15" },
+        );
+        expect(monthlyDashboard.revenue).toMatchObject({
+            period: "month",
+            anchorDate: "2026-04-15",
+            periodStart: "2026-04-01",
+            periodEnd: "2026-04-30",
+            bucketGranularity: "day",
+            totalCents: 18300,
+            pricedAppointmentCount: 4,
+        });
+        expect(monthlyDashboard.revenue.series).toHaveLength(30);
+
+        const annualDashboard = await getAdminDashboard(
+            { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+            repository,
+            { now: new Date("2026-05-03T14:00:00.000Z"), dashboardPeriod: "year", dashboardAnchorDate: "2026-06-09" },
+        );
+        expect(annualDashboard.revenue).toMatchObject({
+            period: "year",
+            anchorDate: "2026-06-09",
+            periodStart: "2026-01-01",
+            periodEnd: "2026-12-31",
+            bucketGranularity: "month",
+            totalCents: 18300,
+            pricedAppointmentCount: 4,
+        });
+        expect(annualDashboard.revenue.series).toHaveLength(12);
+        expect(annualDashboard.revenue.series).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ key: "2026-04", label: "Apr", totalCents: 18300, pricedAppointmentCount: 4 }),
+            ]),
+        );
+    });
+
+    test("dashboard revenue remains scoped for barber users", async () => {
+        const repository = new InMemoryPhase6Repository();
+        repository.bookings = [
+            dashboardBookingFixture({
+                id: "sam-completed",
+                barberId: barberAId,
+                status: "completed",
+                startTime: new Date("2026-05-01T16:00:00.000Z"),
+                serviceDetails: [snapshotWithPrice(3000)],
+            }),
+            dashboardBookingFixture({
+                id: "laura-completed",
+                barberId: barberBId,
+                status: "completed",
+                startTime: new Date("2026-05-01T17:00:00.000Z"),
+                serviceDetails: [snapshotWithPrice(4500)],
+            }),
+        ];
+
+        const dashboard = await getAdminDashboard(
+            { id: "barber", email: "sam@example.com", displayName: "Sam", role: "barber", barberId: barberAId },
+            repository,
+            { now: new Date("2026-05-03T14:00:00.000Z") },
+        );
+
+        expect(dashboard.revenue).toMatchObject({
+            totalCents: 3000,
+            completedAppointmentCount: 1,
+            pricedAppointmentCount: 1,
+        });
     });
 
     test("dashboard aggregates upcoming appointment status counts by current appointment date", async () => {
@@ -1974,5 +2073,82 @@ describe("Phase 7.5 walk-in and no-show booking operations", () => {
                 { now: new Date("2026-05-04T14:30:00.000Z") },
             ),
         ).resolves.toMatchObject({ id: "booking-a", status: "no_show" });
+    });
+
+    test("completion is permission scoped and only allowed for current or past confirmed bookings", async () => {
+        const repository = new InMemoryPhase6Repository();
+        repository.bookings[0] = {
+            ...repository.bookings[0],
+            startTime: new Date("2026-05-04T14:00:00.000Z"),
+            endTime: new Date("2026-05-04T14:30:00.000Z"),
+        };
+        repository.bookings.push({
+            ...bookings[0],
+            id: "future-booking",
+            startTime: new Date("2026-05-05T14:00:00.000Z"),
+            endTime: new Date("2026-05-05T14:30:00.000Z"),
+            serviceIds: [serviceId],
+        });
+        repository.bookings.push({
+            ...bookings[0],
+            id: "cancelled-booking",
+            status: "cancelled",
+            startTime: new Date("2026-05-04T13:00:00.000Z"),
+            endTime: new Date("2026-05-04T13:30:00.000Z"),
+            serviceIds: [serviceId],
+        });
+        repository.bookings.push({
+            ...bookings[0],
+            id: "no-show-booking",
+            status: "no_show",
+            startTime: new Date("2026-05-04T12:00:00.000Z"),
+            endTime: new Date("2026-05-04T12:30:00.000Z"),
+            serviceIds: [serviceId],
+        });
+
+        await expect(
+            completeAdminBooking(
+                { id: "barber", email: "sam@example.com", displayName: "Sam", role: "barber", barberId: barberBId },
+                "booking-a",
+                repository,
+                { now: new Date("2026-05-04T14:30:00.000Z") },
+            ),
+        ).rejects.toMatchObject({ status: 404 });
+
+        await expect(
+            completeAdminBooking(
+                { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+                "future-booking",
+                repository,
+                { now: new Date("2026-05-04T14:30:00.000Z") },
+            ),
+        ).rejects.toMatchObject({ status: 409 });
+
+        await expect(
+            completeAdminBooking(
+                { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+                "cancelled-booking",
+                repository,
+                { now: new Date("2026-05-04T14:30:00.000Z") },
+            ),
+        ).rejects.toMatchObject({ status: 409 });
+
+        await expect(
+            completeAdminBooking(
+                { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+                "no-show-booking",
+                repository,
+                { now: new Date("2026-05-04T14:30:00.000Z") },
+            ),
+        ).rejects.toMatchObject({ status: 409 });
+
+        await expect(
+            completeAdminBooking(
+                { id: "barber", email: "sam@example.com", displayName: "Sam", role: "barber", barberId: barberAId },
+                "booking-a",
+                repository,
+                { now: new Date("2026-05-04T14:30:00.000Z") },
+            ),
+        ).resolves.toMatchObject({ id: "booking-a", status: "completed" });
     });
 });
