@@ -457,6 +457,18 @@ class InMemoryAdminBookingsRepository
         return candidates[0]?.startTime ?? null;
     }
 
+    async getDashboardRevenueDateRangeForAdminScope(scope: { barberId?: string; now: Date }) {
+        const candidates = this.bookings
+            .filter((booking) => !scope.barberId || booking.barberId === scope.barberId)
+            .filter((booking) => booking.status === "completed" || (booking.status === "confirmed" && booking.startTime <= scope.now))
+            .sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+
+        return {
+            earliest: candidates[0]?.startTime ?? null,
+            latest: candidates[candidates.length - 1]?.startTime ?? null,
+        };
+    }
+
     async listDashboardActivityForAdminScope(scope: any): Promise<AdminDashboardActivityRecord[]> {
         if (this.activityRecords) {
             return this.activityRecords
@@ -1608,6 +1620,55 @@ describe("Phase 6 admin calendar and booking management API", () => {
             completedAppointmentCount: 1,
         });
         expect(response.body.revenue.series).toHaveLength(30);
+    });
+
+    test("owner dashboard accepts the all-time revenue period query filter", async () => {
+        const { app, bookingsRepository } = await createTestApp({
+            now: () => new Date("2026-06-09T19:00:00.000Z"),
+        });
+        bookingsRepository.bookings = [
+            {
+                ...bookingsRepository.bookings[0],
+                id: "historical-completed-revenue",
+                status: "completed",
+                startTime: new Date("2025-12-31T17:00:00.000Z"),
+                endTime: new Date("2025-12-31T17:30:00.000Z"),
+                serviceDetails: [serviceSnapshot],
+            } as AdminBookingRecord,
+            {
+                ...bookingsRepository.bookings[0],
+                id: "past-confirmed-revenue",
+                status: "confirmed",
+                startTime: new Date("2026-04-27T16:00:00.000Z"),
+                endTime: new Date("2026-04-27T16:30:00.000Z"),
+                serviceDetails: [serviceSnapshot],
+            } as AdminBookingRecord,
+        ];
+        const agent = request.agent(app);
+
+        await agent
+            .post("/api/admin/auth/login")
+            .send({ email: "owner@example.com", password: "correct-password" })
+            .expect(200);
+
+        const response = await agent.get("/api/admin/dashboard?period=all-time").expect(200);
+
+        expect(response.body.revenue).toMatchObject({
+            period: "all-time",
+            anchorDate: "2026-04-27",
+            periodStart: "2025-12-31",
+            periodEnd: "2026-04-27",
+            bucketGranularity: "month",
+            totalCents: 6000,
+            pricedAppointmentCount: 2,
+        });
+        expect(response.body.revenue.series.map((point: { key: string }) => point.key)).toEqual([
+            "2025-12",
+            "2026-01",
+            "2026-02",
+            "2026-03",
+            "2026-04",
+        ]);
     });
 
     test("owner dashboard serializes active and historical notification failure metadata", async () => {

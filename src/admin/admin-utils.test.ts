@@ -217,12 +217,20 @@ describe("Phase 6 admin UI utilities", () => {
             periodStart: "2026-01-01",
             periodEnd: "2026-12-31",
         });
+        expect(buildDashboardPeriodRange("all-time", "2026-06-09")).toEqual({
+            period: "all-time",
+            anchorDate: "2026-06-09",
+            periodStart: "2026-06-09",
+            periodEnd: "2026-06-09",
+        });
         expect(navigateDashboardPeriod("week", "2026-06-09", -1)).toBe("2026-06-02");
         expect(navigateDashboardPeriod("month", "2026-03-31", -1)).toBe("2026-02-28");
         expect(navigateDashboardPeriod("year", "2026-06-09", 1)).toBe("2027-06-09");
+        expect(navigateDashboardPeriod("all-time", "2026-06-09", 1)).toBe("2026-06-09");
         expect(formatDashboardPeriodLabel("week", "2026-06-03", "2026-06-09")).toBe("Jun 3-Jun 9, 2026");
         expect(formatDashboardPeriodLabel("month", "2026-06-01", "2026-06-30")).toBe("June 2026");
         expect(formatDashboardPeriodLabel("year", "2026-01-01", "2026-12-31")).toBe("2026");
+        expect(formatDashboardPeriodLabel("all-time", "2025-12-31", "2026-05-18")).toBe("All time");
     });
 
     test("summarizes notification health for compact dashboard panels", () => {

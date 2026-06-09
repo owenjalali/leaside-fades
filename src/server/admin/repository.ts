@@ -185,6 +185,36 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
         return latest?.startTime ?? null;
     }
 
+    async getDashboardRevenueDateRangeForAdminScope(scope: { barberId?: string; now: Date }) {
+        const db = this.database as ReturnType<typeof createDatabaseClient>["db"];
+        const revenueRangeWhere = () => compactAnd(
+            scope.barberId ? eq(bookings.barberId, scope.barberId) : undefined,
+            inArray(bookings.status, ["confirmed", "completed"]),
+            lte(bookings.startTime, scope.now),
+        );
+        const [earliest] = await db
+            .select({
+                startTime: bookings.startTime,
+            })
+            .from(bookings)
+            .where(revenueRangeWhere())
+            .orderBy(asc(bookings.startTime))
+            .limit(1);
+        const [latest] = await db
+            .select({
+                startTime: bookings.startTime,
+            })
+            .from(bookings)
+            .where(revenueRangeWhere())
+            .orderBy(desc(bookings.startTime))
+            .limit(1);
+
+        return {
+            earliest: earliest?.startTime ?? null,
+            latest: latest?.startTime ?? null,
+        };
+    }
+
     async listDashboardActivityForAdminScope(scope: AdminDashboardActivityScope) {
         const db = this.database as ReturnType<typeof createDatabaseClient>["db"];
         const notificationRows = await db

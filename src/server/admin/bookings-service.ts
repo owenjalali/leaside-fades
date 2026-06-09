@@ -156,7 +156,7 @@ export interface AdminUpcomingReminderPreview {
     recipientLabel: string;
 }
 
-export type AdminDashboardPeriod = "week" | "month" | "year";
+export type AdminDashboardPeriod = "week" | "month" | "year" | "all-time";
 export type AdminDashboardBucketGranularity = "day" | "month";
 
 export interface AdminDashboardRevenueSeriesPoint {
@@ -345,6 +345,10 @@ export interface AdminDashboardRepository {
     listDashboardBookingsForAdminScope(scope: AdminDashboardBookingScope): Promise<AdminBookingRecord[]>;
     listDashboardActivityForAdminScope(scope: AdminDashboardActivityScope): Promise<AdminDashboardActivityRecord[]>;
     getLatestDashboardRevenueDateForAdminScope(scope: { barberId?: string; now: Date }): Promise<Date | null>;
+    getDashboardRevenueDateRangeForAdminScope(scope: { barberId?: string; now: Date }): Promise<{
+        earliest: Date | null;
+        latest: Date | null;
+    }>;
     getSchedulerJobRunSummary?(input: { jobName: string }): Promise<AdminSchedulerJobRunSummary | null>;
 }
 
@@ -524,14 +528,27 @@ export async function getAdminDashboard(
     const now = options.now ?? new Date();
     const actorScope = buildActorScope(user);
     const today = getLocalDate(now, DEFAULT_TIME_ZONE);
-    const revenueAnchorDate = options.dashboardAnchorDate ?? getLocalDate(
-        (await repository.getLatestDashboardRevenueDateForAdminScope({ ...actorScope, now })) ?? now,
-        DEFAULT_TIME_ZONE,
-    );
-    const revenuePeriod = buildDashboardRevenuePeriod(
-        options.dashboardPeriod ?? "week",
-        revenueAnchorDate,
-    );
+    const requestedRevenuePeriod = options.dashboardPeriod ?? "week";
+    const revenueDateRange =
+        requestedRevenuePeriod === "all-time"
+            ? await repository.getDashboardRevenueDateRangeForAdminScope({ ...actorScope, now })
+            : null;
+    const revenueAnchorDate =
+        requestedRevenuePeriod === "all-time"
+            ? getLocalDate(revenueDateRange?.latest ?? now, DEFAULT_TIME_ZONE)
+            : options.dashboardAnchorDate ??
+              getLocalDate(
+                  (await repository.getLatestDashboardRevenueDateForAdminScope({ ...actorScope, now })) ?? now,
+                  DEFAULT_TIME_ZONE,
+              );
+    const revenuePeriod = buildDashboardRevenuePeriod(requestedRevenuePeriod, revenueAnchorDate, {
+        periodStart: revenueDateRange?.earliest
+            ? getLocalDate(revenueDateRange.earliest, DEFAULT_TIME_ZONE)
+            : revenueAnchorDate,
+        periodEnd: revenueDateRange?.latest
+            ? getLocalDate(revenueDateRange.latest, DEFAULT_TIME_ZONE)
+            : revenueAnchorDate,
+    });
     const todayStart = localDateTimeToUtc(today, "00:00", DEFAULT_TIME_ZONE);
     const tomorrowStart = localDateTimeToUtc(nextLocalDate(today), "00:00", DEFAULT_TIME_ZONE);
     const revenueStart = localDateTimeToUtc(revenuePeriod.periodStart, "00:00", DEFAULT_TIME_ZONE);
@@ -565,7 +582,7 @@ export async function getAdminDashboard(
             ...actorScope,
             from: revenueStart,
             to: revenueEnd,
-            limit: 500,
+            limit: requestedRevenuePeriod === "all-time" ? 10_000 : 500,
         }),
         repository.listDashboardBookingsForAdminScope({
             ...actorScope,
@@ -1347,7 +1364,7 @@ function buildDashboardRevenueAnalytics(
     const dateBuckets = bucketKeys.reduce<Record<string, AdminDashboardRevenueSeriesPoint>>((buckets, key) => {
         buckets[key] = {
             key,
-            label: formatDashboardRevenueBucketLabel(key, period.bucketGranularity),
+            label: formatDashboardRevenueBucketLabel(key, period),
             totalCents: 0,
             appointmentCount: 0,
             completedAppointmentCount: 0,
@@ -1895,8 +1912,24 @@ function localDateStart(localDate: string) {
 function buildDashboardRevenuePeriod(
     period: AdminDashboardPeriod,
     anchorDate: string,
+    bounds: { periodStart?: string; periodEnd?: string } = {},
 ): DashboardRevenuePeriod {
     assertDashboardLocalDate(anchorDate);
+
+    if (period === "all-time") {
+        const periodStart = bounds.periodStart ?? anchorDate;
+        const periodEnd = bounds.periodEnd ?? anchorDate;
+        assertDashboardLocalDate(periodStart);
+        assertDashboardLocalDate(periodEnd);
+
+        return {
+            period,
+            anchorDate,
+            periodStart,
+            periodEnd,
+            bucketGranularity: "month",
+        };
+    }
 
     if (period === "week") {
         return {
@@ -1931,20 +1964,28 @@ function buildDashboardRevenuePeriod(
 
 function buildDashboardRevenueBucketKeys(period: DashboardRevenuePeriod) {
     if (period.bucketGranularity === "month") {
-        return Array.from({ length: 12 }, (_, index) => {
-            const month = String(index + 1).padStart(2, "0");
-            return `${period.periodStart.slice(0, 4)}-${month}`;
-        });
+        const monthCount =
+            period.period === "year"
+                ? 12
+                : localMonthDifferenceInMonths(monthStartLocalDate(period.periodStart), monthStartLocalDate(period.periodEnd)) + 1;
+
+        return Array.from({ length: monthCount }, (_, index) =>
+            addLocalMonths(monthStartLocalDate(period.periodStart), index).slice(0, 7),
+        );
     }
 
     const dayCount = localDateDifferenceInDays(period.periodStart, period.periodEnd) + 1;
     return Array.from({ length: dayCount }, (_, index) => addLocalDays(period.periodStart, index));
 }
 
-function formatDashboardRevenueBucketLabel(key: string, granularity: AdminDashboardBucketGranularity) {
-    if (granularity === "month") {
+function formatDashboardRevenueBucketLabel(key: string, period: DashboardRevenuePeriod) {
+    if (period.bucketGranularity === "month") {
         const [year, month] = key.split("-").map(Number);
-        return new Intl.DateTimeFormat("en-CA", { month: "short", timeZone: "UTC" }).format(
+        return new Intl.DateTimeFormat("en-CA", {
+            month: "short",
+            year: period.period === "all-time" ? "numeric" : undefined,
+            timeZone: "UTC",
+        }).format(
             new Date(Date.UTC(year, month - 1, 1)),
         );
     }
@@ -1970,6 +2011,12 @@ function localDateDifferenceInDays(fromLocalDate: string, toLocalDate: string) {
     return Math.round(
         (Date.UTC(toYear, toMonth - 1, toDay) - Date.UTC(fromYear, fromMonth - 1, fromDay)) / 86_400_000,
     );
+}
+
+function localMonthDifferenceInMonths(fromLocalDate: string, toLocalDate: string) {
+    const [fromYear, fromMonth] = fromLocalDate.split("-").map(Number);
+    const [toYear, toMonth] = toLocalDate.split("-").map(Number);
+    return (toYear - fromYear) * 12 + (toMonth - fromMonth);
 }
 
 function assertDashboardLocalDate(localDate: string) {

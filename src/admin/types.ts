@@ -293,7 +293,7 @@ export interface AdminUpcomingReminderPreview {
     recipientLabel: string;
 }
 
-export type AdminDashboardPeriod = "week" | "month" | "year";
+export type AdminDashboardPeriod = "week" | "month" | "year" | "all-time";
 export type AdminDashboardBucketGranularity = "day" | "month";
 
 export interface AdminDashboardRevenueSeriesPoint {

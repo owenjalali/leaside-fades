@@ -221,6 +221,15 @@ export function summarizeNotificationHealth(health: AdminDashboardNotificationHe
 }
 
 export function buildDashboardPeriodRange(period: AdminDashboardPeriod, anchorDate: string) {
+    if (period === "all-time") {
+        return {
+            period,
+            anchorDate,
+            periodStart: anchorDate,
+            periodEnd: anchorDate,
+        };
+    }
+
     if (period === "week") {
         return {
             period,
@@ -253,6 +262,10 @@ export function buildDashboardPeriodRange(period: AdminDashboardPeriod, anchorDa
 }
 
 export function navigateDashboardPeriod(period: AdminDashboardPeriod, anchorDate: string, direction: -1 | 1) {
+    if (period === "all-time") {
+        return anchorDate;
+    }
+
     if (period === "week") {
         return addDaysToLocalDate(anchorDate, direction * 7);
     }
@@ -269,6 +282,10 @@ export function formatDashboardPeriodLabel(
     periodStart: string,
     periodEnd: string,
 ) {
+    if (period === "all-time") {
+        return "All time";
+    }
+
     if (period === "year") {
         return periodStart.slice(0, 4);
     }

@@ -139,6 +139,7 @@ Rules:
 - completed or past-confirmed bookings without service snapshots count as unpriced appointments but do not increase the revenue total
 - services configured as `from` prices count at their stored snapshot total and should show a caveat in the dashboard
 - when the dashboard has no explicit anchor date, the revenue card should anchor to the latest reportable historical appointment date for the actor scope
+- the All time dashboard period spans the actor-scoped earliest/latest happened appointments, uses monthly buckets, and still excludes future confirmed, cancelled, and no-show bookings
 - completing an appointment does not create a payment record, send a lifecycle notification, or change customer payment handling
 
 ## Availability Requirements

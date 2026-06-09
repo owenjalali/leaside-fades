@@ -657,7 +657,9 @@ function AdminWorkspace({
                 });
                 if (!active) return;
                 setDashboard(response);
-                setDashboardAnchorDate((current) => current ?? response.revenue.anchorDate);
+                setDashboardAnchorDate((current) =>
+                    dashboardPeriod === "all-time" ? response.revenue.anchorDate : current ?? response.revenue.anchorDate,
+                );
                 setDashboardRefreshError("");
             } catch (error) {
                 if (!active) return;
@@ -704,7 +706,9 @@ function AdminWorkspace({
                 anchorDate: dashboardAnchorDate ?? undefined,
             });
             setDashboard(response);
-            setDashboardAnchorDate((current) => current ?? response.revenue.anchorDate);
+            setDashboardAnchorDate((current) =>
+                dashboardPeriod === "all-time" ? response.revenue.anchorDate : current ?? response.revenue.anchorDate,
+            );
             setDashboardRefreshError("");
         } catch (error) {
             const message = error instanceof Error ? error.message : "Failed to load dashboard.";
@@ -758,10 +762,12 @@ function AdminWorkspace({
     function changeDashboardPeriod(nextPeriod: AdminDashboardPeriod) {
         const currentAnchorDate = dashboardAnchorDate ?? dashboard?.revenue.anchorDate ?? todayLocalDate();
         setDashboardPeriod(nextPeriod);
-        setDashboardAnchorDate(buildDashboardPeriodRange(nextPeriod, currentAnchorDate).anchorDate);
+        setDashboardAnchorDate(nextPeriod === "all-time" ? null : buildDashboardPeriodRange(nextPeriod, currentAnchorDate).anchorDate);
     }
 
     function moveDashboardPeriod(direction: -1 | 1) {
+        if (dashboardPeriod === "all-time") return;
+
         const currentAnchorDate = dashboardAnchorDate ?? dashboard?.revenue.anchorDate ?? todayLocalDate();
         setDashboardAnchorDate(navigateDashboardPeriod(dashboardPeriod, currentAnchorDate, direction));
     }
@@ -1487,7 +1493,8 @@ function TrackedRevenueCard({
     const hasFromPrices = revenue.fromPriceAppointmentCount > 0;
     const hasPastConfirmed = revenue.pastConfirmedAppointmentCount > 0;
     const periodLabel = formatDashboardPeriodLabel(revenue.period, revenue.periodStart, revenue.periodEnd);
-    const periodOptions: AdminDashboardPeriod[] = ["week", "month", "year"];
+    const periodOptions: AdminDashboardPeriod[] = ["week", "month", "year", "all-time"];
+    const isAllTime = period === "all-time";
 
     return (
         <section className="overflow-hidden rounded-md border border-[#d7e0d7] bg-white shadow-sm">
@@ -1498,7 +1505,7 @@ function TrackedRevenueCard({
                         <h2 className="mt-1 text-2xl font-black text-forest sm:text-3xl">Tracked revenue</h2>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-2">
-                        <div className="inline-grid grid-cols-3 overflow-hidden rounded-md border border-[#d7e0d7] bg-[#f7faf7] p-1">
+                        <div className="inline-grid grid-cols-4 overflow-hidden rounded-md border border-[#d7e0d7] bg-[#f7faf7] p-1">
                             {periodOptions.map((option) => (
                                 <button
                                     key={`dashboard-period-${option}`}
@@ -1510,20 +1517,24 @@ function TrackedRevenueCard({
                                     onClick={() => onChangePeriod(option)}
                                     type="button"
                                 >
-                                    {option === "week" ? "Week" : option === "month" ? "Month" : "Year"}
+                                    {formatDashboardPeriodOption(option)}
                                 </button>
                             ))}
                         </div>
                         <div className="flex min-w-0 items-center gap-1 rounded-md border border-[#d7e0d7] bg-white p-1 shadow-sm" title={`Anchor date ${anchorDate}`}>
-                            <button className="icon-button size-8" onClick={() => onNavigatePeriod(-1)} type="button" title={`Previous ${period}`}>
-                                <ChevronLeft size={18} />
-                            </button>
+                            {!isAllTime && (
+                                <button className="icon-button size-8" onClick={() => onNavigatePeriod(-1)} type="button" title={`Previous ${period}`}>
+                                    <ChevronLeft size={18} />
+                                </button>
+                            )}
                             <span className="min-w-[9rem] truncate px-2 text-center text-sm font-black text-forest">
                                 {periodLabel}
                             </span>
-                            <button className="icon-button size-8" onClick={() => onNavigatePeriod(1)} type="button" title={`Next ${period}`}>
-                                <ChevronRight size={18} />
-                            </button>
+                            {!isAllTime && (
+                                <button className="icon-button size-8" onClick={() => onNavigatePeriod(1)} type="button" title={`Next ${period}`}>
+                                    <ChevronRight size={18} />
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -1569,6 +1580,19 @@ function TrackedRevenueCard({
             </div>
         </section>
     );
+}
+
+function formatDashboardPeriodOption(period: AdminDashboardPeriod) {
+    switch (period) {
+        case "week":
+            return "Week";
+        case "month":
+            return "Month";
+        case "year":
+            return "Year";
+        case "all-time":
+            return "All time";
+    }
 }
 
 function UpcomingAppointmentsChartCard({
@@ -1666,7 +1690,12 @@ function RevenueChart({
 
     return (
         <div className="relative aspect-[16/9] min-h-[260px] w-full overflow-hidden rounded-md bg-[#fbfdfb]">
-            <svg role="img" aria-label={`Tracked revenue by ${period === "year" ? "month" : "day"}`} viewBox={`0 0 ${width} ${height}`} className="h-full w-full">
+            <svg
+                role="img"
+                aria-label={`Tracked revenue by ${period === "year" || period === "all-time" ? "month" : "day"}`}
+                viewBox={`0 0 ${width} ${height}`}
+                className="h-full w-full"
+            >
                 <defs>
                     <linearGradient id="completedRevenueArea" x1="0" x2="0" y1="0" y2="1">
                         <stop offset="0%" stopColor="#51c28a" stopOpacity="0.28" />
@@ -4523,8 +4552,12 @@ function chartPointY(value: number, max: number, top: number, height: number) {
 }
 
 function shouldShowRevenueChartLabel(index: number, count: number, period: AdminDashboardPeriod) {
-    if (period !== "month" || count <= 12) {
+    if (count <= 12 || period === "year") {
         return true;
+    }
+
+    if (period === "all-time") {
+        return index === 0 || index === count - 1 || index % 6 === 0;
     }
 
     return index === 0 || index === count - 1 || index % 7 === 0;

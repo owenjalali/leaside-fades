@@ -1183,7 +1183,7 @@ function parseDashboardPeriod(value: unknown): AdminDashboardPeriod | undefined 
         return undefined;
     }
 
-    if (value === "week" || value === "month" || value === "year") {
+    if (value === "week" || value === "month" || value === "year" || value === "all-time") {
         return value;
     }
 
