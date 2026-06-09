@@ -310,10 +310,11 @@
 - [x] Security/privacy launch checklist documented
 - [x] Owner-approved staff notification contact checklist documented
 - [x] Staff notification missing-contact behavior documented
-- [x] `/admin/dashboard` shows completed revenue and upcoming appointment chart cards
-- [x] Dashboard completed revenue uses booking service price snapshots for completed bookings only and excludes confirmed/cancelled/no-show bookings from revenue
-- [x] Dashboard completed revenue supports Week, Month, and Year period controls with previous/next navigation
-- [x] Dashboard completed revenue aggregates by Toronto appointment date and uses 12 monthly buckets for annual view
+- [x] `/admin/dashboard` shows tracked service-snapshot revenue and upcoming appointment chart cards
+- [x] Dashboard tracked revenue uses booking service price snapshots for completed and past confirmed bookings while excluding future confirmed/cancelled/no-show bookings from revenue
+- [x] Dashboard tracked revenue defaults to the latest reportable historical appointment date when no anchor date is supplied
+- [x] Dashboard tracked revenue supports Week, Month, and Year period controls with previous/next navigation
+- [x] Dashboard tracked revenue aggregates by Toronto appointment date and uses 12 monthly buckets for annual view
 - [x] Dashboard from-price services count at stored snapshot totals and show a caveat count
 - [x] Dashboard charts include empty states and compact labels for large values
 - [x] Dashboard refreshes every 30 seconds, immediately refreshes after booking actions, and keeps the last good snapshot on network refresh failure

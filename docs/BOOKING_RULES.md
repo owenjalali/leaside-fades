@@ -130,12 +130,15 @@ For stacked services:
 Dashboard revenue is not online payment revenue, POS-verified revenue, payroll revenue, or an editable paid amount.
 
 Rules:
-- revenue means completed appointments only
+- revenue means tracked service-snapshot value for appointments that have happened
 - revenue is summed from immutable `booking_services.price_cents` snapshots
 - totals are grouped by the appointment's `America/Toronto` local date
-- confirmed, cancelled, and no-show bookings do not count toward revenue
-- completed bookings without service snapshots count as unpriced completions but do not increase the revenue total
+- completed bookings count toward revenue
+- confirmed bookings count toward revenue only when their start time is current or past
+- future confirmed, cancelled, and no-show bookings do not count toward revenue
+- completed or past-confirmed bookings without service snapshots count as unpriced appointments but do not increase the revenue total
 - services configured as `from` prices count at their stored snapshot total and should show a caveat in the dashboard
+- when the dashboard has no explicit anchor date, the revenue card should anchor to the latest reportable historical appointment date for the actor scope
 - completing an appointment does not create a payment record, send a lifecycle notification, or change customer payment handling
 
 ## Availability Requirements

@@ -163,7 +163,9 @@ export interface AdminDashboardRevenueSeriesPoint {
     key: string;
     label: string;
     totalCents: number;
+    appointmentCount: number;
     completedAppointmentCount: number;
+    pastConfirmedAppointmentCount: number;
     pricedAppointmentCount: number;
     unpricedAppointmentCount: number;
     fromPriceAppointmentCount: number;
@@ -176,7 +178,9 @@ export interface AdminDashboardRevenue {
     periodEnd: string;
     bucketGranularity: AdminDashboardBucketGranularity;
     totalCents: number;
+    appointmentCount: number;
     completedAppointmentCount: number;
+    pastConfirmedAppointmentCount: number;
     pricedAppointmentCount: number;
     unpricedAppointmentCount: number;
     fromPriceAppointmentCount: number;
@@ -340,6 +344,7 @@ export type AdminAvailabilityRepository = Pick<BookingRepository, "loadAvailabil
 export interface AdminDashboardRepository {
     listDashboardBookingsForAdminScope(scope: AdminDashboardBookingScope): Promise<AdminBookingRecord[]>;
     listDashboardActivityForAdminScope(scope: AdminDashboardActivityScope): Promise<AdminDashboardActivityRecord[]>;
+    getLatestDashboardRevenueDateForAdminScope(scope: { barberId?: string; now: Date }): Promise<Date | null>;
     getSchedulerJobRunSummary?(input: { jobName: string }): Promise<AdminSchedulerJobRunSummary | null>;
 }
 
@@ -519,9 +524,13 @@ export async function getAdminDashboard(
     const now = options.now ?? new Date();
     const actorScope = buildActorScope(user);
     const today = getLocalDate(now, DEFAULT_TIME_ZONE);
+    const revenueAnchorDate = options.dashboardAnchorDate ?? getLocalDate(
+        (await repository.getLatestDashboardRevenueDateForAdminScope({ ...actorScope, now })) ?? now,
+        DEFAULT_TIME_ZONE,
+    );
     const revenuePeriod = buildDashboardRevenuePeriod(
         options.dashboardPeriod ?? "week",
-        options.dashboardAnchorDate ?? today,
+        revenueAnchorDate,
     );
     const todayStart = localDateTimeToUtc(today, "00:00", DEFAULT_TIME_ZONE);
     const tomorrowStart = localDateTimeToUtc(nextLocalDate(today), "00:00", DEFAULT_TIME_ZONE);
@@ -554,7 +563,6 @@ export async function getAdminDashboard(
         }),
         repository.listDashboardBookingsForAdminScope({
             ...actorScope,
-            status: "completed",
             from: revenueStart,
             to: revenueEnd,
             limit: 500,
@@ -588,7 +596,7 @@ export async function getAdminDashboard(
         activity: classifiedActivity,
         notificationDeliveryMode: options.notificationDeliveryMode ?? "mock",
         upcomingReminders,
-        revenue: buildDashboardRevenueAnalytics(revenueBookings, revenuePeriod),
+        revenue: buildDashboardRevenueAnalytics(revenueBookings, revenuePeriod, now),
         upcomingAppointments: buildUpcomingAppointmentAnalytics(
             upcomingStatusBookings,
             buildLocalDateSeries(today, 7),
@@ -1333,6 +1341,7 @@ function buildLocalDateSeries(startLocalDate: string, length: number) {
 function buildDashboardRevenueAnalytics(
     bookings: AdminBookingRecord[],
     period: DashboardRevenuePeriod,
+    now: Date,
 ): AdminDashboardRevenue {
     const bucketKeys = buildDashboardRevenueBucketKeys(period);
     const dateBuckets = bucketKeys.reduce<Record<string, AdminDashboardRevenueSeriesPoint>>((buckets, key) => {
@@ -1340,7 +1349,9 @@ function buildDashboardRevenueAnalytics(
             key,
             label: formatDashboardRevenueBucketLabel(key, period.bucketGranularity),
             totalCents: 0,
+            appointmentCount: 0,
             completedAppointmentCount: 0,
+            pastConfirmedAppointmentCount: 0,
             pricedAppointmentCount: 0,
             unpricedAppointmentCount: 0,
             fromPriceAppointmentCount: 0,
@@ -1348,13 +1359,18 @@ function buildDashboardRevenueAnalytics(
         return buckets;
     }, {});
     let totalCents = 0;
+    let appointmentCount = 0;
     let completedAppointmentCount = 0;
+    let pastConfirmedAppointmentCount = 0;
     let pricedAppointmentCount = 0;
     let unpricedAppointmentCount = 0;
     let fromPriceAppointmentCount = 0;
 
     for (const booking of bookings) {
-        if (booking.status !== "completed") {
+        const isCompleted = booking.status === "completed";
+        const isPastConfirmed = booking.status === "confirmed" && booking.startTime <= now;
+
+        if (!isCompleted && !isPastConfirmed) {
             continue;
         }
 
@@ -1370,8 +1386,16 @@ function buildDashboardRevenueAnalytics(
         const hasPriceSnapshot = details.length > 0;
         const hasFromPrice = details.some((service) => service.priceType === "from");
 
-        completedAppointmentCount += 1;
-        bucket.completedAppointmentCount += 1;
+        appointmentCount += 1;
+        bucket.appointmentCount += 1;
+
+        if (isCompleted) {
+            completedAppointmentCount += 1;
+            bucket.completedAppointmentCount += 1;
+        } else {
+            pastConfirmedAppointmentCount += 1;
+            bucket.pastConfirmedAppointmentCount += 1;
+        }
 
         if (hasPriceSnapshot) {
             totalCents += valueCents;
@@ -1395,7 +1419,9 @@ function buildDashboardRevenueAnalytics(
         periodEnd: period.periodEnd,
         bucketGranularity: period.bucketGranularity,
         totalCents,
+        appointmentCount,
         completedAppointmentCount,
+        pastConfirmedAppointmentCount,
         pricedAppointmentCount,
         unpricedAppointmentCount,
         fromPriceAppointmentCount,

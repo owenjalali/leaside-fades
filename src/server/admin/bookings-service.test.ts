@@ -281,6 +281,16 @@ class InMemoryPhase6Repository
         return this.listBookingsForAdminScope(scope);
     }
 
+    async getLatestDashboardRevenueDateForAdminScope(scope: { barberId?: string; now: Date }) {
+        const candidates = this.bookings
+            .filter((booking) => !scope.barberId || booking.barberId === scope.barberId)
+            .filter((booking) => booking.serviceDetails && booking.serviceDetails.length > 0)
+            .filter((booking) => booking.status === "completed" || (booking.status === "confirmed" && booking.startTime <= scope.now))
+            .sort((a, b) => b.startTime.getTime() - a.startTime.getTime());
+
+        return candidates[0]?.startTime ?? null;
+    }
+
     async listDashboardActivityForAdminScope(scope: any): Promise<AdminDashboardActivityRecord[]> {
         if (this.activityRecords) {
             return this.activityRecords
@@ -907,15 +917,22 @@ describe("Phase 6 admin calendar and booking management service", () => {
         expect(barberDashboard.activity.map((item) => item.bookingId)).toEqual(["booking-a"]);
     });
 
-    test("dashboard aggregates completed revenue from service snapshots by selected period", async () => {
+    test("dashboard aggregates tracked revenue from service snapshots by selected period", async () => {
         const repository = new InMemoryPhase6Repository();
         repository.bookings = [
             dashboardBookingFixture({
-                id: "public-confirmed-excluded",
+                id: "public-past-confirmed-included",
                 source: "public",
                 status: "confirmed",
                 startTime: new Date("2026-04-27T16:00:00.000Z"),
                 serviceDetails: [snapshotWithPrice(3000)],
+            }),
+            dashboardBookingFixture({
+                id: "future-confirmed-excluded",
+                source: "public",
+                status: "confirmed",
+                startTime: new Date("2026-05-04T16:00:00.000Z"),
+                serviceDetails: [snapshotWithPrice(6000)],
             }),
             dashboardBookingFixture({
                 id: "manual-completed",
@@ -967,16 +984,18 @@ describe("Phase 6 admin calendar and booking management service", () => {
         const dashboard = await getAdminDashboard(
             { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
             repository,
-            { now: new Date("2026-05-03T14:00:00.000Z") },
+            { now: new Date("2026-05-03T14:00:00.000Z"), dashboardAnchorDate: "2026-05-03" },
         );
 
         expect(dashboard.revenue).toMatchObject({
-            totalCents: 9500,
+            totalCents: 12500,
+            appointmentCount: 5,
             completedAppointmentCount: 4,
-            pricedAppointmentCount: 3,
+            pastConfirmedAppointmentCount: 1,
+            pricedAppointmentCount: 4,
             unpricedAppointmentCount: 1,
             fromPriceAppointmentCount: 1,
-            averageRevenueCents: 3167,
+            averageRevenueCents: 3125,
             period: "week",
             anchorDate: "2026-05-03",
             periodStart: "2026-04-27",
@@ -985,10 +1004,11 @@ describe("Phase 6 admin calendar and booking management service", () => {
         });
         expect(dashboard.revenue.series).toEqual(
             expect.arrayContaining([
+                expect.objectContaining({ key: "2026-04-27", totalCents: 3000, appointmentCount: 1, pastConfirmedAppointmentCount: 1 }),
                 expect.objectContaining({ key: "2026-04-28", label: "Apr 28", totalCents: 4500, completedAppointmentCount: 1 }),
                 expect.objectContaining({ key: "2026-04-29", totalCents: 1500, completedAppointmentCount: 1, fromPriceAppointmentCount: 1 }),
                 expect.objectContaining({ key: "2026-04-30", totalCents: 3500, completedAppointmentCount: 1 }),
-                expect.objectContaining({ key: "2026-05-02", totalCents: 0, completedAppointmentCount: 1, unpricedAppointmentCount: 1 }),
+                expect.objectContaining({ key: "2026-05-02", totalCents: 0, appointmentCount: 1, completedAppointmentCount: 1, unpricedAppointmentCount: 1 }),
             ]),
         );
 
@@ -1003,8 +1023,9 @@ describe("Phase 6 admin calendar and booking management service", () => {
             periodStart: "2026-04-01",
             periodEnd: "2026-04-30",
             bucketGranularity: "day",
-            totalCents: 18300,
-            pricedAppointmentCount: 4,
+            totalCents: 21300,
+            appointmentCount: 5,
+            pricedAppointmentCount: 5,
         });
         expect(monthlyDashboard.revenue.series).toHaveLength(30);
 
@@ -1019,15 +1040,57 @@ describe("Phase 6 admin calendar and booking management service", () => {
             periodStart: "2026-01-01",
             periodEnd: "2026-12-31",
             bucketGranularity: "month",
-            totalCents: 18300,
-            pricedAppointmentCount: 4,
+            totalCents: 21300,
+            appointmentCount: 6,
+            pricedAppointmentCount: 5,
         });
         expect(annualDashboard.revenue.series).toHaveLength(12);
         expect(annualDashboard.revenue.series).toEqual(
             expect.arrayContaining([
-                expect.objectContaining({ key: "2026-04", label: "Apr", totalCents: 18300, pricedAppointmentCount: 4 }),
+                expect.objectContaining({ key: "2026-04", label: "Apr", totalCents: 21300, pricedAppointmentCount: 5 }),
             ]),
         );
+    });
+
+    test("dashboard defaults revenue anchor to the latest reportable appointment date", async () => {
+        const repository = new InMemoryPhase6Repository();
+        repository.bookings = [
+            dashboardBookingFixture({
+                id: "completed-history",
+                status: "completed",
+                startTime: new Date("2026-05-01T16:00:00.000Z"),
+                serviceDetails: [snapshotWithPrice(8000)],
+            }),
+            dashboardBookingFixture({
+                id: "latest-past-confirmed",
+                status: "confirmed",
+                startTime: new Date("2026-05-18T16:00:00.000Z"),
+                serviceDetails: [snapshotWithPrice(3000)],
+            }),
+            dashboardBookingFixture({
+                id: "future-confirmed-not-revenue-yet",
+                status: "confirmed",
+                startTime: new Date("2026-06-16T16:00:00.000Z"),
+                serviceDetails: [snapshotWithPrice(3000)],
+            }),
+        ];
+
+        const dashboard = await getAdminDashboard(
+            { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+            repository,
+            { now: new Date("2026-06-09T19:00:00.000Z") },
+        );
+
+        expect(dashboard.revenue).toMatchObject({
+            period: "week",
+            anchorDate: "2026-05-18",
+            periodStart: "2026-05-12",
+            periodEnd: "2026-05-18",
+            totalCents: 3000,
+            appointmentCount: 1,
+            pastConfirmedAppointmentCount: 1,
+            completedAppointmentCount: 0,
+        });
     });
 
     test("dashboard revenue remains scoped for barber users", async () => {

@@ -536,7 +536,7 @@ function AdminWorkspace({
     const [schedule, setSchedule] = useState<AdminSchedule | null>(null);
     const [dashboard, setDashboard] = useState<AdminDashboardSnapshot | null>(null);
     const [dashboardPeriod, setDashboardPeriod] = useState<AdminDashboardPeriod>("week");
-    const [dashboardAnchorDate, setDashboardAnchorDate] = useState(() => todayLocalDate());
+    const [dashboardAnchorDate, setDashboardAnchorDate] = useState<string | null>(null);
     const [bookings, setBookings] = useState<AdminBookingSummary[]>([]);
     const initialView: AdminView = path.startsWith("/admin/bookings") ? "list" : "day";
     const [calendarDate, setCalendarDate] = useState(() => todayLocalDate());
@@ -653,10 +653,11 @@ function AdminWorkspace({
             try {
                 const response = await fetchAdminDashboard({
                     period: dashboardPeriod,
-                    anchorDate: dashboardAnchorDate,
+                    anchorDate: dashboardAnchorDate ?? undefined,
                 });
                 if (!active) return;
                 setDashboard(response);
+                setDashboardAnchorDate((current) => current ?? response.revenue.anchorDate);
                 setDashboardRefreshError("");
             } catch (error) {
                 if (!active) return;
@@ -700,9 +701,10 @@ function AdminWorkspace({
         try {
             const response = await fetchAdminDashboard({
                 period: dashboardPeriod,
-                anchorDate: dashboardAnchorDate,
+                anchorDate: dashboardAnchorDate ?? undefined,
             });
             setDashboard(response);
+            setDashboardAnchorDate((current) => current ?? response.revenue.anchorDate);
             setDashboardRefreshError("");
         } catch (error) {
             const message = error instanceof Error ? error.message : "Failed to load dashboard.";
@@ -754,12 +756,14 @@ function AdminWorkspace({
     }
 
     function changeDashboardPeriod(nextPeriod: AdminDashboardPeriod) {
+        const currentAnchorDate = dashboardAnchorDate ?? dashboard?.revenue.anchorDate ?? todayLocalDate();
         setDashboardPeriod(nextPeriod);
-        setDashboardAnchorDate((current) => buildDashboardPeriodRange(nextPeriod, current).anchorDate);
+        setDashboardAnchorDate(buildDashboardPeriodRange(nextPeriod, currentAnchorDate).anchorDate);
     }
 
     function moveDashboardPeriod(direction: -1 | 1) {
-        setDashboardAnchorDate((current) => navigateDashboardPeriod(dashboardPeriod, current, direction));
+        const currentAnchorDate = dashboardAnchorDate ?? dashboard?.revenue.anchorDate ?? todayLocalDate();
+        setDashboardAnchorDate(navigateDashboardPeriod(dashboardPeriod, currentAnchorDate, direction));
     }
 
     async function handleBookingDrop(
@@ -886,7 +890,7 @@ function AdminWorkspace({
                         <DashboardPage
                             dashboard={dashboard}
                             period={dashboardPeriod}
-                            anchorDate={dashboardAnchorDate}
+                            anchorDate={dashboardAnchorDate ?? dashboard?.revenue.anchorDate ?? todayLocalDate()}
                             loading={dashboardLoading}
                             refreshError={dashboardRefreshError}
                             onChangePeriod={changeDashboardPeriod}
@@ -1418,7 +1422,7 @@ function DashboardPage({
                 <div className="min-w-0">
                     <p className="text-sm font-black uppercase tracking-[0.14em] text-green">Operating dashboard</p>
                     <h1 className="mt-1 text-3xl font-black leading-tight text-forest sm:text-4xl">
-                        Completed revenue, bookings, and notification health
+                        Revenue, bookings, and notification health
                     </h1>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-sm font-black text-charcoal/55">
@@ -1438,7 +1442,7 @@ function DashboardPage({
                 </div>
             </section>
             <section className="grid gap-5 xl:grid-cols-2">
-                <CompletedRevenueCard
+                <TrackedRevenueCard
                     revenue={dashboard.revenue}
                     period={period}
                     anchorDate={anchorDate}
@@ -1466,7 +1470,7 @@ function DashboardPage({
     );
 }
 
-function CompletedRevenueCard({
+function TrackedRevenueCard({
     revenue,
     period,
     anchorDate,
@@ -1481,6 +1485,7 @@ function CompletedRevenueCard({
 }) {
     const hasUnpriced = revenue.unpricedAppointmentCount > 0;
     const hasFromPrices = revenue.fromPriceAppointmentCount > 0;
+    const hasPastConfirmed = revenue.pastConfirmedAppointmentCount > 0;
     const periodLabel = formatDashboardPeriodLabel(revenue.period, revenue.periodStart, revenue.periodEnd);
     const periodOptions: AdminDashboardPeriod[] = ["week", "month", "year"];
 
@@ -1489,8 +1494,8 @@ function CompletedRevenueCard({
             <div className="space-y-5 p-5 sm:p-6">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="min-w-0">
-                        <p className="text-sm font-black uppercase tracking-[0.13em] text-charcoal/45">Completed only</p>
-                        <h2 className="mt-1 text-2xl font-black text-forest sm:text-3xl">Completed revenue</h2>
+                        <p className="text-sm font-black uppercase tracking-[0.13em] text-charcoal/45">Stored service snapshots</p>
+                        <h2 className="mt-1 text-2xl font-black text-forest sm:text-3xl">Tracked revenue</h2>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-2">
                         <div className="inline-grid grid-cols-3 overflow-hidden rounded-md border border-[#d7e0d7] bg-[#f7faf7] p-1">
@@ -1529,21 +1534,26 @@ function CompletedRevenueCard({
                         detail={`${revenue.pricedAppointmentCount} priced`}
                     />
                     <DashboardMetricTile
-                        label="Completed"
-                        value={`${revenue.completedAppointmentCount}`}
-                        detail={`${revenue.unpricedAppointmentCount} unpriced`}
+                        label="Appointments"
+                        value={`${revenue.appointmentCount}`}
+                        detail={`${revenue.completedAppointmentCount} completed`}
                     />
                     <DashboardMetricTile
                         label="Average"
                         value={formatDashboardCurrency(revenue.averageRevenueCents)}
-                        detail="priced completions"
+                        detail="priced appointments"
                     />
                 </div>
-                {(hasUnpriced || hasFromPrices) && (
+                {(hasUnpriced || hasFromPrices || hasPastConfirmed) && (
                     <div className="flex flex-wrap gap-2 text-xs font-black uppercase tracking-[0.08em]">
+                        {hasPastConfirmed && (
+                            <span className="rounded-full bg-[#eef5f1] px-3 py-1.5 text-charcoal/65">
+                                {revenue.pastConfirmedAppointmentCount} past confirmed booking{revenue.pastConfirmedAppointmentCount === 1 ? "" : "s"} counted
+                            </span>
+                        )}
                         {hasUnpriced && (
                             <span className="rounded-full bg-amber-50 px-3 py-1.5 text-amber-800">
-                                {revenue.unpricedAppointmentCount} unpriced completion{revenue.unpricedAppointmentCount === 1 ? "" : "s"}
+                                {revenue.unpricedAppointmentCount} unpriced appointment{revenue.unpricedAppointmentCount === 1 ? "" : "s"}
                             </span>
                         )}
                         {hasFromPrices && (
@@ -1628,7 +1638,9 @@ function RevenueChart({
                       key: "",
                       label: "",
                       totalCents: 0,
+                      appointmentCount: 0,
                       completedAppointmentCount: 0,
+                      pastConfirmedAppointmentCount: 0,
                       pricedAppointmentCount: 0,
                       unpricedAppointmentCount: 0,
                       fromPriceAppointmentCount: 0,
@@ -1654,7 +1666,7 @@ function RevenueChart({
 
     return (
         <div className="relative aspect-[16/9] min-h-[260px] w-full overflow-hidden rounded-md bg-[#fbfdfb]">
-            <svg role="img" aria-label={`Completed revenue by ${period === "year" ? "month" : "day"}`} viewBox={`0 0 ${width} ${height}`} className="h-full w-full">
+            <svg role="img" aria-label={`Tracked revenue by ${period === "year" ? "month" : "day"}`} viewBox={`0 0 ${width} ${height}`} className="h-full w-full">
                 <defs>
                     <linearGradient id="completedRevenueArea" x1="0" x2="0" y1="0" y2="1">
                         <stop offset="0%" stopColor="#51c28a" stopOpacity="0.28" />
@@ -1678,7 +1690,7 @@ function RevenueChart({
                 {points.map((point, index) => (
                     <g key={`revenue-point-${point.key || index}`}>
                         <circle cx={point.x} cy={point.y} r="5.5" fill="#009e65" stroke="#ffffff" strokeWidth="3">
-                            <title>{`${point.label}: ${formatDashboardCurrency(point.totalCents)} from ${point.completedAppointmentCount} completed appointment${point.completedAppointmentCount === 1 ? "" : "s"}`}</title>
+                            <title>{`${point.label}: ${formatDashboardCurrency(point.totalCents)} from ${point.appointmentCount} appointment${point.appointmentCount === 1 ? "" : "s"}`}</title>
                         </circle>
                         {shouldShowRevenueChartLabel(index, chartSeries.length, period) && (
                             <text x={point.x} y={height - 17} textAnchor="middle" className="fill-charcoal/50 text-[0.72rem] font-black">
@@ -1688,7 +1700,7 @@ function RevenueChart({
                     </g>
                 ))}
             </svg>
-            {!hasData && <ChartEmptyState title="No completed revenue yet" detail="Completed appointments with service price snapshots will draw this line." />}
+            {!hasData && <ChartEmptyState title="No tracked revenue yet" detail="Past appointments with service price snapshots will draw this line." />}
         </div>
     );
 }

@@ -447,6 +447,16 @@ class InMemoryAdminBookingsRepository
         return this.listBookingsForAdminScope(scope);
     }
 
+    async getLatestDashboardRevenueDateForAdminScope(scope: { barberId?: string; now: Date }) {
+        const candidates = this.bookings
+            .filter((booking) => !scope.barberId || booking.barberId === scope.barberId)
+            .filter((booking) => booking.serviceDetails && booking.serviceDetails.length > 0)
+            .filter((booking) => booking.status === "completed" || (booking.status === "confirmed" && booking.startTime <= scope.now))
+            .sort((a, b) => b.startTime.getTime() - a.startTime.getTime());
+
+        return candidates[0]?.startTime ?? null;
+    }
+
     async listDashboardActivityForAdminScope(scope: any): Promise<AdminDashboardActivityRecord[]> {
         if (this.activityRecords) {
             return this.activityRecords

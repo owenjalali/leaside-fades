@@ -336,10 +336,11 @@ Rules:
 - customer token UI, shift management, blocked-time management, payments, and Fresha automation are outside Phase 6
 
 Dashboard snapshot:
-- `GET /api/admin/dashboard?period=week|month|year&anchorDate=YYYY-MM-DD` returns today's active appointments, upcoming active appointments, notification/reminder activity, completed revenue, upcoming confirmed/cancelled appointment series, and notification health
-- completed revenue is not payment/POS revenue; it is calculated from stored `booking_services.price_cents` snapshots for completed bookings only, grouped by the appointment's `America/Toronto` local date
+- `GET /api/admin/dashboard?period=week|month|year&anchorDate=YYYY-MM-DD` returns today's active appointments, upcoming active appointments, notification/reminder activity, tracked service-snapshot revenue, upcoming confirmed/cancelled appointment series, and notification health
+- tracked revenue is not payment/POS revenue; it is calculated from stored `booking_services.price_cents` snapshots for appointments that have happened: completed bookings plus confirmed bookings whose start time is current/past, grouped by the appointment's `America/Toronto` local date
 - week revenue uses seven daily buckets ending on the anchor date, month revenue uses daily buckets for the anchor month, and year revenue uses 12 monthly buckets for the anchor year
-- confirmed, cancelled, and no-show bookings are excluded from revenue; completed bookings without service snapshots remain counted as unpriced completions but excluded from the total
+- when `anchorDate` is omitted, the server uses the latest reportable historical revenue date for the actor scope instead of blindly anchoring to an empty current week
+- future confirmed, cancelled, and no-show bookings are excluded from revenue; completed or past-confirmed bookings without service snapshots remain counted as unpriced appointments but excluded from the total
 - from-price service snapshots count at their stored total and increment the dashboard caveat count
 - `/admin/dashboard` polls the snapshot every 30 seconds, refreshes immediately after booking mutations, and keeps the last good snapshot visible when a refresh fails
 
@@ -502,9 +503,9 @@ Deferred:
 Phase 7.5 implements the admin/barber scheduling console as the primary operational surface.
 
 Implemented:
-- `/admin/dashboard` owner/staff landing surface with completed service-snapshot revenue, Week/Month/Year controls, upcoming confirmed/cancelled appointment trends, appointment activity, and compact notification health
-- dashboard completed revenue uses booking service price snapshots for completed appointments only and is not actual POS/payment revenue
-- dashboard revenue charts show selected-period completed revenue separately from active booking, cancellation, and delivery history
+- `/admin/dashboard` owner/staff landing surface with tracked service-snapshot revenue, Week/Month/Year controls, upcoming confirmed/cancelled appointment trends, appointment activity, and compact notification health
+- dashboard tracked revenue uses booking service price snapshots for completed and past confirmed appointments only and is not actual POS/payment revenue
+- dashboard revenue charts show selected-period tracked revenue separately from active booking, cancellation, and delivery history
 - `/admin/calendar` day-board with compact dark rail, topbar filters, owner/admin multi-barber columns for active location-assigned barbers, barber single-calendar scoping, a Fresha-style full-day 12:00 AM-11:00 PM operating surface, 15-minute grid rows, current-time marker, blocked-time overlays, status/source-styled booking cards, purple appointment preview, and right-side drawers
 - unified staff Add appointment drawer using the authenticated staff-only scheduling path, optional customer contact, service-derived duration/price summary, online-availability suggestions, and staff booking for grey off-shift cells
 - booking detail drawer with edit, cancel, reschedule, complete, and no-show actions

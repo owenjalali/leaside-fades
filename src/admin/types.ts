@@ -300,7 +300,9 @@ export interface AdminDashboardRevenueSeriesPoint {
     key: string;
     label: string;
     totalCents: number;
+    appointmentCount: number;
     completedAppointmentCount: number;
+    pastConfirmedAppointmentCount: number;
     pricedAppointmentCount: number;
     unpricedAppointmentCount: number;
     fromPriceAppointmentCount: number;
@@ -313,7 +315,9 @@ export interface AdminDashboardRevenue {
     periodEnd: string;
     bucketGranularity: AdminDashboardBucketGranularity;
     totalCents: number;
+    appointmentCount: number;
     completedAppointmentCount: number;
+    pastConfirmedAppointmentCount: number;
     pricedAppointmentCount: number;
     unpricedAppointmentCount: number;
     fromPriceAppointmentCount: number;

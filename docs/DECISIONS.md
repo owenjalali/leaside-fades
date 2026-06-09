@@ -580,7 +580,7 @@ The desktop split-pane state could visually squeeze the calendar and drawer cont
 Decision:
 `/admin/dashboard` shows estimated appointment value from booking service price snapshots, not actual paid revenue. Confirmed and completed bookings count toward value, cancelled and no-show bookings do not, and public/manual/walk-in/imported sources are included when service snapshots exist. The dashboard uses 30-second polling instead of WebSockets.
 
-Superseded on 2026-06-09 by the completed service-snapshot revenue decision below.
+Superseded on 2026-06-09 by the happened appointment service-snapshot revenue decision below.
 
 Reason:
 The owner wants a Fresha-inspired operating dashboard with value and appointment trends, but online payments remain outside the MVP. Service price snapshots provide useful estimated value without introducing a payment, payroll, or advanced analytics subsystem.
@@ -699,10 +699,10 @@ Add an owner/admin-only `/admin/team` section backed by `GET /api/admin/team/bar
 Reason:
 Sam needs to add/remove bookable staff without deploys, and new staff must appear immediately in public booking and admin calendar surfaces. Blob storage avoids relying on non-persistent local/serverless filesystems. Deactivation preserves booking history and customer records while still revoking access and hiding the barber from future selection.
 
-### 2026-06-09 - Use Completed Service Snapshots For Dashboard Revenue
+### 2026-06-09 - Use Happened Appointment Service Snapshots For Dashboard Revenue
 
 Decision:
-`/admin/dashboard` revenue means completed appointments only, summed from stored `booking_services.price_cents` snapshots on the appointment's `America/Toronto` local date. Week view uses seven daily buckets ending on the anchor date, Month view uses all days in the anchor month, and Year view uses 12 monthly buckets. Confirmed, cancelled, and no-show bookings are excluded. From-price services count at their stored snapshot totals with a dashboard caveat, and unpriced completions are counted separately. Completion is a role-scoped status transition for current or past confirmed bookings and does not create payment records or lifecycle notifications.
+`/admin/dashboard` revenue means tracked service-snapshot value for appointments that have happened: completed bookings plus confirmed bookings whose start time is current or past. Totals are summed from stored `booking_services.price_cents` snapshots on the appointment's `America/Toronto` local date. Week view uses seven daily buckets ending on the anchor date, Month view uses all days in the anchor month, and Year view uses 12 monthly buckets. Future confirmed, cancelled, and no-show bookings are excluded. When no anchor date is supplied, the server anchors the revenue card to the latest reportable historical appointment date for that actor scope. From-price services count at their stored snapshot totals with a dashboard caveat, and unpriced reportable appointments are counted separately. Completion remains a role-scoped status transition for current or past confirmed bookings and does not create payment records or lifecycle notifications.
 
 Reason:
-The owner needs a cleaner revenue dashboard than the previous estimated appointment-value card, but the MVP still has no online payments or POS reconciliation. Service snapshots are the durable price record the booking system already owns, so completed appointment totals provide useful operating revenue without adding payment, payroll, or editable cash/card tracking.
+The owner needs a cleaner revenue dashboard than the previous estimated appointment-value card, but the existing database history was not consistently marked `completed`, so completed-only reporting showed `$0` despite stored price snapshots. Service snapshots are the durable price record the booking system already owns, so happened appointment totals provide useful operating revenue without adding payment, payroll, or editable cash/card tracking.
