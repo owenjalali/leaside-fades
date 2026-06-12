@@ -129,7 +129,7 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
 
     async listDashboardBookingsForAdminScope(scope: AdminDashboardBookingScope) {
         const db = this.database as ReturnType<typeof createDatabaseClient>["db"];
-        const bookingRows = await db
+        const bookingQuery = db
             .select({
                 id: bookings.id,
                 barberId: bookings.barberId,
@@ -158,8 +158,8 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
                     lt(bookings.startTime, scope.to),
                 ),
             )
-            .orderBy(asc(bookings.startTime), asc(bookings.id))
-            .limit(scope.limit);
+            .orderBy(asc(bookings.startTime), asc(bookings.id));
+        const bookingRows = scope.limit === undefined ? await bookingQuery : await bookingQuery.limit(scope.limit);
 
         return this.attachServiceNames(bookingRows);
     }

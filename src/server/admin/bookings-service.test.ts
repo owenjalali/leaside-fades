@@ -1207,6 +1207,31 @@ describe("Phase 6 admin calendar and booking management service", () => {
         });
     });
 
+    test("dashboard yearly revenue fetches every happened appointment in the selected year", async () => {
+        const repository = new InMemoryPhase6Repository();
+        repository.bookings = Array.from({ length: 501 }, (_, index) =>
+            dashboardBookingFixture({
+                id: `year-completed-${index}`,
+                status: "completed",
+                startTime: new Date("2026-05-01T17:00:00.000Z"),
+                serviceDetails: [snapshotWithPrice(1000)],
+            }),
+        );
+
+        const dashboard = await getAdminDashboard(
+            { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+            repository,
+            { now: new Date("2026-06-09T19:00:00.000Z"), dashboardPeriod: "year", dashboardAnchorDate: "2026-06-09" },
+        );
+
+        expect(dashboard.revenue).toMatchObject({
+            period: "year",
+            appointmentCount: 501,
+            pricedAppointmentCount: 501,
+            totalCents: 501000,
+        });
+    });
+
     test("dashboard revenue remains scoped for barber users", async () => {
         const repository = new InMemoryPhase6Repository();
         repository.bookings = [

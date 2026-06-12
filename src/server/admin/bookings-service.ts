@@ -102,7 +102,7 @@ export interface AdminDashboardBookingScope {
     status?: AdminBookingStatus;
     from: Date;
     to: Date;
-    limit: number;
+    limit?: number;
 }
 
 export interface AdminDashboardActivityScope {
@@ -582,7 +582,6 @@ export async function getAdminDashboard(
             ...actorScope,
             from: revenueStart,
             to: revenueEnd,
-            limit: requestedRevenuePeriod === "all-time" ? 10_000 : 500,
         }),
         repository.listDashboardBookingsForAdminScope({
             ...actorScope,

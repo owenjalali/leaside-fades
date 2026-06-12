@@ -315,6 +315,7 @@
 - [x] Dashboard tracked revenue defaults to the latest reportable historical appointment date when no anchor date is supplied
 - [x] Dashboard tracked revenue supports Week, Month, Year, and All time period controls, with previous/next navigation for bounded periods
 - [x] Dashboard tracked revenue aggregates by Toronto appointment date, uses 12 monthly buckets for annual view, and uses monthly buckets across the historical all-time range
+- [x] Dashboard yearly tracked revenue fetches the full selected revenue period and does not truncate annual totals at the small dashboard-list cap
 - [x] Dashboard from-price services count at stored snapshot totals and show a caveat count
 - [x] Dashboard charts include empty states and compact labels for large values
 - [x] Dashboard refreshes every 30 seconds, immediately refreshes after booking actions, and keeps the last good snapshot on network refresh failure
