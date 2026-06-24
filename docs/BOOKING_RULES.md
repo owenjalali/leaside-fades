@@ -17,9 +17,9 @@ Both locations:
 - Saturday: 10:00 AM - 7:00 PM
 - Sunday: 10:00 AM - 5:00 PM
 
-Customers cannot book outside official business hours.
+Closed business days are not bookable.
 
-If a barber shift extends outside official business hours, customer availability must be clipped to official business hours.
+On open business days, saved barber shifts and one-off add overrides define public customer availability. A saved shift can intentionally create bookable slots before posted opening or after posted close.
 
 ## Staff
 
@@ -37,7 +37,7 @@ Laura may work at both locations.
 
 Yogesh Kumar is Millwood-only for launch. He must not be bookable at Eglinton unless the owner explicitly changes this launch rule.
 
-Josef is Eglinton-only for launch. He works 11:00 AM-7:00 PM; customer availability must still be clipped to official business hours, including the Sunday 5:00 PM close.
+Josef is Eglinton-only for launch. He works 11:00 AM-7:00 PM unless the owner changes his saved shifts.
 
 Barbers can work split shifts and can work at different locations on the same day.
 
@@ -85,7 +85,7 @@ Rules:
 - `add`, `remove`, and `not_working` shift overrides must affect displayed working windows
 - non-working time should be shaded visually, explicit blocked time should render separately, and blocked time remains non-clickable
 - authenticated staff can click or drag appointments into grey non-working cells when they need to book outside public online availability
-- public customers cannot book grey non-working cells; public availability still requires official business hours, shifts, minimum notice, and 30-day max window
+- public customers cannot book grey non-working cells; public availability still requires an open business day, saved shifts, minimum notice, and 30-day max window
 - if a booking exists outside a staff member's working window, show it with an outside-hours warning instead of deleting or silently hiding the data
 - if no active staff are assigned to the selected location, show a clean empty state
 
@@ -107,6 +107,9 @@ If multiple services are selected, total duration is the sum of selected service
 For MVP:
 - all services are available at both locations
 - every barber can perform every service
+
+Launch catalog correction:
+- `Men's Color Root Touchup` is a Men service, 45 minutes, displayed as `from $65`.
 
 ## Pricing
 
@@ -150,7 +153,7 @@ Availability must account for:
 - total stacked duration
 - optional selected barber
 - "Any available barber"
-- official business hours
+- open business-day status
 - barber shifts
 - one-off shift overrides
 - confirmed bookings
@@ -248,7 +251,7 @@ Phase 8 customer rescheduling rules:
 - rescheduling changes time, location, and/or barber only
 - services, service snapshots, pricing snapshots, and customer details are preserved
 - the booking being moved is excluded from its own old-slot conflict check
-- all other confirmed booking overlaps, blocked times, closures, shifts, business hours, 15-minute slot boundaries, 30-minute minimum notice, and 30-day max window are enforced server-side
+- all other confirmed booking overlaps, blocked times, closures, open-day status, shifts, 15-minute slot boundaries, 30-minute minimum notice, and 30-day max window are enforced server-side
 - walk-ins do not receive customer reschedule links in Phase 8
 
 Phase 9 reschedule notification rules:
@@ -381,7 +384,6 @@ Notification events:
 - booking confirmation
 - cancellation confirmation
 - reschedule confirmation
-- 24-hour reminder
 - 2-hour reminder
 
 Twilio is used for SMS.
@@ -401,7 +403,7 @@ Notification dispatch rules:
 - raw customer management tokens must never be reconstructed from hashes or persisted in notification logs
 - reminder jobs are run by `npm run notifications:send-reminders`
 - production reminder delivery should pass `npm run notifications:check-live-config` before scheduler enablement
-- reminder jobs send customer SMS/email only for confirmed public/manual/walk-in bookings
+- reminder jobs send one customer SMS and one customer email exactly 2 hours before confirmed public/manual/walk-in bookings
 - cancelled, completed, no-show, and imported bookings do not receive reminders
 - reminder jobs re-check current booking status, source, and start time immediately before sending
 - reminder messages do not include cancel/reschedule links because raw management tokens are not stored

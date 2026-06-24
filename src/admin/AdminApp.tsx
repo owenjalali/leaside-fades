@@ -4055,8 +4055,10 @@ function BarberPreview({ barber }: { barber: AdminBarberOption }) {
 
 function CalendarLegend() {
     const items: Array<[string, string]> = [
-        ["Confirmed", "bg-blue-100"],
-        ["Walk-in", "bg-violet-100"],
+        ["Men", "bg-sky-100"],
+        ["Women", "bg-rose-100"],
+        ["Boys", "bg-amber-100"],
+        ["Mixed", "bg-violet-100"],
         ["No-show", "bg-red-100"],
         ["Completed", "bg-emerald-100"],
         ["Blocked", "bg-charcoal/10"],
@@ -4720,6 +4722,10 @@ function initials(name: string) {
 }
 
 function bookingToneClasses(tone: ReturnType<typeof getBookingCardTone>) {
+    if (tone === "men") return "border-sky-500 bg-sky-50 text-sky-950";
+    if (tone === "women") return "border-rose-500 bg-rose-50 text-rose-950";
+    if (tone === "boys") return "border-amber-500 bg-amber-50 text-amber-950";
+    if (tone === "mixed") return "border-violet-500 bg-violet-50 text-violet-950";
     if (tone === "walk_in") return "border-violet-500 bg-violet-50 text-violet-950";
     if (tone === "no_show") return "border-red-500 bg-red-50 text-red-900";
     if (tone === "cancelled") return "border-stone-400 bg-stone-100 text-stone-700";

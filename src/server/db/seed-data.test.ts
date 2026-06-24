@@ -25,8 +25,22 @@ describe("Phase 1 seed data", () => {
         expect(locationSeeds).toHaveLength(2);
         expect(barberSeeds).toHaveLength(5);
         expect(serviceCategorySeeds).toHaveLength(3);
-        expect(serviceSeeds).toHaveLength(37);
+        expect(serviceSeeds).toHaveLength(38);
         expect(barberLocationSeeds).toHaveLength(6);
+    });
+
+    test("includes owner-approved Men's Color Root Touchup launch service", () => {
+        expect(serviceSeeds).toContainEqual(
+            expect.objectContaining({
+                slug: "mens-color-root-touchup",
+                categorySlug: "hair-styling-men",
+                name: "Men's Color Root Touchup",
+                durationMinutes: 45,
+                priceCents: 6500,
+                priceType: "from",
+                displayPrice: "from $65",
+            }),
+        );
     });
 
     test("has complete business hours for each week", () => {

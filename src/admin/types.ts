@@ -29,6 +29,7 @@ export interface AdminBookingSummary {
     endTime: string;
     totalDurationMinutes: number;
     services: string[];
+    serviceCategoryNames?: string[];
 }
 
 export interface AdminBookingServiceDetail {

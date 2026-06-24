@@ -19,7 +19,7 @@ Phase 12 production launch readiness plus Phase 13 guarded Fresha import/cutover
 - Phase 7.5 calendar-first admin/barber day board, walk-in bookings, no-show workflow, booking-only drag/drop rescheduling, and repeatable Phase 7.5 calendar QA runner.
 - Phase 8 customer management tokens for public bookings, public token lookup/cancel/reschedule APIs, customer booking management UI, and repeatable Phase 8 real-route QA runner.
 - Phase 9 notification provider abstractions, mock/dev/live delivery modes, booking lifecycle dispatch, idempotent notification logging, and repeatable Phase 9 real-route QA runner.
-- Phase 10 portable reminder job CLI, customer 24-hour/2-hour reminder dispatch, duplicate prevention, stale booking re-checks, and repeatable Phase 10 real-route QA runner.
+- Phase 10 portable reminder job CLI, customer 2-hour reminder dispatch, duplicate prevention, stale booking re-checks, historical 24-hour reminder-log compatibility, and repeatable Phase 10 real-route QA runner.
 - Phase 11 read-only Fresha public/admin inspection report, including calendar, staff, schedules, locations, services, online booking surfaces, appointment report behavior, privacy notes, and launch-parity recommendations.
 
 ## Active Task
@@ -43,7 +43,7 @@ Phase 12 launch-prep status:
 - `docs/LAUNCH_PREP.md`, `docs/PRODUCTION_RUNBOOK.md`, and `docs/OWNER_SIGNOFF_CHECKLIST.md` now define launch readiness, deployment, smoke testing, rollback, cutover, and owner signoff.
 - Production seed data and local/dev sample shifts now keep Yogesh Kumar Millwood-only for launch, and Josef is added as an Eglinton-only launch barber.
 - Eglinton phone number is treated as the confirmed current value and matches env templates/static seed data: `+1 (647) 348-2200`.
-- Service reconciliation must use name/category/price/duration and owner approval, not the Fresha 38-service count alone. The repo still contains 37 services pending owner launch approval.
+- Service reconciliation must use name/category/price/duration and owner approval, not count alone. The repo seed catalog now contains 38 services after the owner-approved Men's Color Root Touchup addition.
 - Booking confirmations now notify customer SMS/email and assigned barber SMS/email when contact info exists. Owner/admin awareness is dashboard-first through the in-app Dashboard Notification Center, not outbound owner/admin email.
 - `/admin/dashboard` now presents a Fresha-inspired operating dashboard with tracked service-snapshot revenue from stored booking service price snapshots, Week/Month/Year/All time period controls, upcoming confirmed/cancelled appointment trends, compact notification health, recent appointment activity, and 30-second polling that preserves the last good snapshot on refresh failure.
 - Local dashboard visual QA can now be seeded with `npm run qa:phase12-dashboard-fixture`, which is guarded to local development databases and creates priced confirmed/completed/cancelled/no-show/rescheduled/source-varied bookings for chart tuning.
@@ -80,8 +80,8 @@ Phase 12 launch-prep status:
 - Vercel production routing is configured for `/book`, `/booking`, and `/admin` while `/api/*` remains on the Express serverless route.
 - Vercel project `owenjalalis-projects/leaside-fades` is linked and deployed. `leasidefades.com` is live on Vercel production.
 - Production PostgreSQL is connected through the Vercel Neon integration `leaside-fades-db`. Migrations and the static owner-approved seed have been applied.
-- Production `/api/booking/catalog` returns the launch catalog: 2 locations, 3 service categories, 37 services, and 5 barbers.
-- The public marketing Services section now derives from the same 37-service launch catalog source as booking: Men 15, Women 14, Boys 8, with booking prices and durations displayed.
+- Production `/api/booking/catalog` previously returned the launch catalog: 2 locations, 3 service categories, 37 services, and 5 barbers. After the Men's Color Root Touchup seed update, the next deploy/reseed smoke should verify 38 services.
+- The public marketing Services section derives from the same launch catalog source as booking. Source data now contains 38 services: Men 16, Women 14, Boys 8, with booking prices and durations displayed.
 - Production owner login has been created for `owner@leasidefades.com` and verified through the live admin auth/session API. The temporary generated password is stored only in ignored local launch output and must be rotated after owner handoff.
 - Observed launch recurring shifts from the Phase 11 Fresha inspection were entered as the initial production schedule after the Phase 13 launch "Go": 24 recurring shifts, with Yogesh remaining Millwood-only. Owner should still verify this roster before full public cutover.
 - Production availability smoke check for Men's Cut on 2026-05-02 returned bookable availability: Eglinton has Sam To slots only, and Millwood has Yogesh Kumar, Laura Nguyen, and Shayan Hussain slots.
@@ -100,7 +100,7 @@ Phase 12 launch-prep status:
 
 ## Next Recommended Task
 
-Continue Phase 12/13 by proving the active external reminder scheduler produces a real authorized run and durable heartbeat, disabling duplicate scheduler definitions once one path is healthy, monitoring external reminder scheduler history, verifying Google/social production links, completing owner password handoff/rotation, and obtaining final owner signoff.
+Continue Phase 12/13 by deploying the booking corrections, running a production catalog smoke after deploy/reseed to verify 38 services, proving the active external reminder scheduler produces a real authorized run and durable heartbeat, disabling duplicate scheduler definitions once one path is healthy, monitoring external reminder scheduler history, verifying Google/social production links, completing owner password handoff/rotation, and obtaining final owner signoff.
 
 Do not seed local/dev sample shifts in production. Production currently uses the observed Fresha launch roster as the initial recurring schedule and should be owner-verified before full public cutover.
 
@@ -115,7 +115,7 @@ Do not seed local/dev sample shifts in production. Production currently uses the
   - Mon-Sat: 10:00 AM - 7:00 PM
   - Sun: 10:00 AM - 5:00 PM
 - Time calculations should use `America/Toronto`; persisted appointment/block timestamps should be UTC.
-- Customers cannot book outside official business hours.
+- Customers can book only on open business days and only within saved barber shifts or one-off add overrides.
 - Customers pay in shop.
 - No online payment processing for MVP.
 - No tax calculation online for MVP.
@@ -156,7 +156,7 @@ Do not seed local/dev sample shifts in production. Production currently uses the
 - `npm run qa:phase7-schedule` is local/dev-only, refuses non-local database URLs, exercises real schedule routes, verifies blocked time affects availability, verifies barber scoping, and cleans up QA rows.
 - Phase 7.5 introduces a migration for `booking_source = "walk_in"` and nullable customer phone/email.
 - Public booking still requires customer contact. Staff-created appointments from the unified Add appointment workflow use `source = "manual"` and allow customer phone/email to be optional.
-- Staff-created appointments bypass public online-availability limits: 30-minute notice, 30-day public window, business-hour clipping, and shift-fit are not required for staff. They still enforce active records, 15-minute boundaries, same-local-day admin board bounds, blocked time/closures, role scope, and no-overlap rules.
+- Staff-created appointments bypass public online-availability limits: 30-minute notice, 30-day public window, open-day availability, and shift-fit are not required for staff. They still enforce active records, 15-minute boundaries, same-local-day admin board bounds, blocked time/closures, role scope, and no-overlap rules.
 - No-show is a status transition only in Phase 7.5. It sends no notifications, charges no fees, and creates no payment records.
 - Booking drag/drop is a UI shortcut over the existing reschedule endpoint; shifts, closures, and blocked time are not drag/drop editable.
 - `npm run qa:phase7-5-calendar` is local/dev-only, refuses non-local database URLs, exercises real walk-in/no-show/reschedule routes, verifies role scoping and rejection cases, and cleans up QA rows.
@@ -183,11 +183,11 @@ Do not seed local/dev sample shifts in production. Production currently uses the
 - Sent, skipped, and pending reminder notification rows remain idempotent on duplicate job runs; failed provider rows are retryable with the same idempotency key.
 - `npm run notifications:check-live-config` verifies production reminder job database/live Twilio/Resend configuration before scheduler enablement.
 - Production reminder scheduler guidance lives in `docs/PRODUCTION_REMINDER_JOBS.md`; the recommended cadence is every five minutes with the default 60-minute lookback and 15-minute lookahead.
-- `npm run qa:phase10-reminders` is local/dev-only, refuses non-local database URLs, forces mock delivery, creates real public booking fixtures through Express routes, verifies 24-hour/2-hour reminders, duplicate prevention, cancelled/rescheduled booking behavior, failed SMS retry, and cleans up QA rows.
+- `npm run qa:phase10-reminders` is local/dev-only, refuses non-local database URLs, forces mock delivery, creates real public booking fixtures through Express routes, verifies 2-hour reminders, no generated 24-hour reminder rows, duplicate prevention, cancelled/rescheduled booking behavior, failed SMS retry, and cleans up QA rows.
 - Phase 12 launch correction: Yogesh Kumar is strictly Millwood-only for launch. He must not be bookable at Eglinton, even if older Fresha notes or repo docs imply otherwise.
 - Phase 11 public/admin Fresha inspection found Millwood staff listed as Laura, Yogesh, and Shayan, matching current docs/seed data at first-name level.
 - Phase 12 launch correction: the current Eglinton phone number is correct and not a launch blocker. Repo/env/static seed data use `+1 (647) 348-2200`.
-- Phase 11 authenticated Fresha admin inspection found Service Menu has 38 services: Hair & Styling (Men) 16, Hair & Styling (Women) 14, Hair & styling (Boy 9 & Under) 8. Phase 12 reconciles services by name/category/price/duration, not count alone. The repo seed file contains 37 service rows and should stay at 37 if that matches the owner-approved launch offering.
+- Phase 11 authenticated Fresha admin inspection found Service Menu has 38 services: Hair & Styling (Men) 16, Hair & Styling (Women) 14, Hair & styling (Boy 9 & Under) 8. Phase 12 reconciles services by name/category/price/duration, not count alone. The repo seed file now contains the owner-approved 38th service, Men's Color Root Touchup.
 - Phase 11 authenticated Fresha admin inspection found the inspected service was enabled for all locations, all team members, online booking, and all genders. This supports the current MVP assumption that all services are available at both locations and all barbers can perform every service, pending owner confirmation.
 - Phase 11 authenticated Fresha admin inspection found Scheduled Shifts for Apr 26-May 2, 2026:
   - Millwood: Laura works Mon/Tue/Sat 3:30 PM-7 PM; Yogesh works Tue-Fri 10 AM-7 PM and Sat 12 PM-7 PM; Shayan works Sun 10 AM-5 PM, Mon 10 AM-7 PM, and Wed-Sat 10 AM-7 PM.
@@ -286,7 +286,7 @@ Phase 3 booking creation tests:
 - rejects requested times not present in recalculated availability
 - rejects inactive or missing services
 - rejects unavailable selected barbers
-- rejects slots outside business hours
+- rejects requested times not present in recalculated shift-driven availability
 - rejects slots inside the minimum-notice window
 - rejects slots beyond the max booking window
 - rejects overlapping confirmed bookings
@@ -467,7 +467,7 @@ Phase 9 notification infrastructure tests:
 - local Phase 9 QA verifies real public create/cancel/reschedule routes, contacted walk-in confirmation attempts, skipped staff contact, idempotency, and no raw token persistence
 
 Phase 10 reminder job tests:
-- reminder templates render 24-hour and 2-hour customer messages with appointment details and no management links
+- reminder templates retain 24-hour historical compatibility and render 2-hour customer messages with appointment details and no management links
 - reminder dispatch sends only customer SMS/email, not barber/staff SMS
 - missing or invalid reminder contacts log skipped attempts without provider calls
 - provider failures are logged as failed reminder attempts without failing the reminder job
@@ -476,7 +476,7 @@ Phase 10 reminder job tests:
 - reminder idempotency uses the current appointment start time occurrence marker
 - stale reminder candidates are skipped when the booking has been rescheduled since the scan
 - cancelled, completed, no-show, and imported bookings do not create reminder attempts; confirmed walk-ins are reminder-eligible when customer contact exists
-- due-window scanning covers both 24-hour and 2-hour reminders
+- due-window scanning generates only 2-hour reminders
 - live reminder configuration preflight reports missing production Twilio/Resend variables before scheduler enablement
 - local Phase 10 QA verifies real public booking/cancel/reschedule routes, duplicate reminder prevention, failed SMS retry, and cleanup
 
@@ -996,7 +996,7 @@ Phase 6 hardening verification:
 ## Do-Not-Break Rules
 
 - Do not allow double booking for the same barber.
-- Do not allow customer booking outside official business hours.
+- Do not allow customer booking on closed business days or outside saved open-day shift/add-override windows.
 - Do not trust client-side availability.
 - Do not bury scheduling logic in UI components.
 - Do not implement authentication before Phase 5.
@@ -1005,7 +1005,9 @@ Phase 6 hardening verification:
 
 ## Latest Session Summary
 
-Phase 12/13 launch cutover implementation is in progress. The admin calendar separates public availability from staff scheduling authority while preserving no-overlap and blocked-time checks. Josef has been added as an Eglinton-only launch barber, and production staff/catalog data has been synced to 5 barbers and 37 services. Account recovery and staff onboarding now have production Resend delivery, production-only `APP_URL` enforcement, and usable `/admin/forgot-password`, `/admin/reset-password`, and `/admin/accept-invite` screens. Public booking and customer reschedule requests now reject date-only appointment start times before scheduling validation. Verification for the account-recovery hardening passed: targeted account/booking tests (38 tests), full `npm run test` (35 files, 259 tests), `npm run build`, `npm run notifications:check-live-config` with complete production-style fake env values, `npm run qa:phase5-auth`, `npm run qa:phase9-notifications`, and `git diff --check`. Vercel production has encrypted `APP_URL`, `RESEND_API_KEY`, `EMAIL_FROM`, and `NOTIFICATION_DELIVERY_MODE` entries; the CLI can confirm the keys exist but cannot expose sensitive values for a local full preflight. Remaining launch items are owner-facing operations: owner password handoff/rotation, owner verification of shifts/services/staff contacts, live owner-approved reset/invite smoke, and final owner signoff.
+June 24, 2026 booking correction pass: public availability now treats business hours as a closed-day gate and uses saved barber shifts/one-off add overrides as the bookable window on open days, including shifts before posted opening. Booking creation has a regression test proving those generated pre-opening slots can be booked transactionally. The public booking UI now refreshes availability when entering the time step, on date/location/service/barber changes, window focus, and while the time step stays open; stale selected slots are cleared. `/admin/shifts` now has Starts/Ends/Ongoing range controls, split-shift chips, inline validation for bad ranges/overlaps, and save blocking while the weekly draft is invalid. Reminder generation and dashboard previews now create only 2-hour customer reminder work, while 24-hour reminder rows remain historical-log compatible. Calendar cards now use Men/Women/Boys/Mixed service-category tones unless cancelled/completed/no-show status overrides them. The seed catalog now includes `Men's Color Root Touchup` at 45 minutes and `from $65`; Sam's public role copy is `Head Barber`; the payment FAQ says cash, debit, Apple Pay / Google Pay, and `No credit.` Verification passed: targeted availability/booking/reminder/admin/public UI utility/seed tests (7 files, 143 tests), full `npm run test` (43 files, 334 tests), `npm run build`, affected booking/marketing tests after the TypeScript fixture correction, and `git diff --check`.
+
+Phase 12/13 launch cutover implementation is in progress. The admin calendar separates public availability from staff scheduling authority while preserving no-overlap and blocked-time checks. Josef has been added as an Eglinton-only launch barber, and production staff/catalog data was previously synced to 5 barbers and 37 services before the Men's Color Root Touchup source update. Account recovery and staff onboarding now have production Resend delivery, production-only `APP_URL` enforcement, and usable `/admin/forgot-password`, `/admin/reset-password`, and `/admin/accept-invite` screens. Public booking and customer reschedule requests now reject date-only appointment start times before scheduling validation. Verification for the account-recovery hardening passed: targeted account/booking tests (38 tests), full `npm run test` (35 files, 259 tests), `npm run build`, `npm run notifications:check-live-config` with complete production-style fake env values, `npm run qa:phase5-auth`, `npm run qa:phase9-notifications`, and `git diff --check`. Vercel production has encrypted `APP_URL`, `RESEND_API_KEY`, `EMAIL_FROM`, and `NOTIFICATION_DELIVERY_MODE` entries; the CLI can confirm the keys exist but cannot expose sensitive values for a local full preflight. Remaining launch items are owner-facing operations: owner password handoff/rotation, owner verification of shifts/services/staff contacts, live owner-approved reset/invite smoke, and final owner signoff.
 
 May 20, 2026 outage response: production `/api/booking/catalog` and valid admin login attempts returned 500 because Vercel logs showed the Neon/Postgres project exceeded compute time quota. Added DB-aware health checks, a quota-safe HTTP reminder scheduler guard, tests for these behaviors, and runbook updates. The Vercel Neon integration is now on Launch, and non-mutating production smoke passes for the booking shell, database-aware health, launch catalog, invalid admin login handling, protected admin routes, and unauthenticated reminder job protection.
 

@@ -87,6 +87,13 @@ export type WeeklyScheduleSaveOperation =
     | { type: "update"; shiftId: string; payload: WeeklyScheduleShiftPayload }
     | { type: "create"; payload: WeeklyScheduleShiftPayload };
 
+export interface WeeklyScheduleValidationIssue {
+    dayOfWeek?: number;
+    windowDraftId?: string;
+    field: "effectiveFrom" | "effectiveTo" | "startTime" | "endTime" | "locationId" | "window";
+    message: string;
+}
+
 export function getWeeklyCopyTargetDayOptions(sourceDayOfWeek: number) {
     return weeklyScheduleDisplayOrder
         .filter((dayOfWeek) => dayOfWeek !== sourceDayOfWeek)
@@ -473,6 +480,98 @@ export function calculateWeeklyScheduleHours(draft: WeeklyScheduleDraft) {
     }, 0);
 }
 
+export function validateWeeklyScheduleDraft(draft: WeeklyScheduleDraft): WeeklyScheduleValidationIssue[] {
+    const issues: WeeklyScheduleValidationIssue[] = [];
+
+    if (draft.effectiveFrom && draft.effectiveTo && draft.effectiveFrom > draft.effectiveTo) {
+        issues.push({
+            field: "effectiveTo",
+            message: "Ends must be on or after Starts.",
+        });
+    }
+
+    for (const day of draft.days) {
+        if (!day.active) {
+            continue;
+        }
+
+        if (day.windows.length === 0) {
+            issues.push({
+                dayOfWeek: day.dayOfWeek,
+                field: "window",
+                message: "Turn this day off or add working hours.",
+            });
+            continue;
+        }
+
+        const validWindows: Array<ShiftWindowDraft & { startMinutes: number; endMinutes: number }> = [];
+
+        for (const window of day.windows) {
+            const startMinutes = scheduleClockToMinutes(window.startTime);
+            const endMinutes = scheduleClockToMinutes(window.endTime);
+
+            if (!window.locationId) {
+                issues.push({
+                    dayOfWeek: day.dayOfWeek,
+                    windowDraftId: window.draftId,
+                    field: "locationId",
+                    message: "Choose a location.",
+                });
+            }
+
+            if (startMinutes === null) {
+                issues.push({
+                    dayOfWeek: day.dayOfWeek,
+                    windowDraftId: window.draftId,
+                    field: "startTime",
+                    message: "Start time must use a 15-minute increment.",
+                });
+            }
+
+            if (endMinutes === null) {
+                issues.push({
+                    dayOfWeek: day.dayOfWeek,
+                    windowDraftId: window.draftId,
+                    field: "endTime",
+                    message: "End time must use a 15-minute increment.",
+                });
+            }
+
+            if (startMinutes === null || endMinutes === null) {
+                continue;
+            }
+
+            if (startMinutes >= endMinutes) {
+                issues.push({
+                    dayOfWeek: day.dayOfWeek,
+                    windowDraftId: window.draftId,
+                    field: "endTime",
+                    message: "End time must be after start time.",
+                });
+                continue;
+            }
+
+            validWindows.push({ ...window, startMinutes, endMinutes });
+        }
+
+        const sortedWindows = [...validWindows].sort((a, b) => a.startMinutes - b.startMinutes);
+        for (let index = 1; index < sortedWindows.length; index += 1) {
+            const previous = sortedWindows[index - 1];
+            const current = sortedWindows[index];
+            if (previous.startMinutes < current.endMinutes && previous.endMinutes > current.startMinutes) {
+                issues.push({
+                    dayOfWeek: day.dayOfWeek,
+                    windowDraftId: current.draftId,
+                    field: "window",
+                    message: "Split shifts on the same day cannot overlap.",
+                });
+            }
+        }
+    }
+
+    return issues;
+}
+
 export function buildWeeklyScheduleSavePlan(
     schedule: Pick<AdminSchedule, "shifts">,
     draft: WeeklyScheduleDraft,
@@ -785,6 +884,8 @@ export function getBookingCardTone(booking: AdminBookingSummary) {
     if (booking.status === "no_show") return "no_show";
     if (booking.status === "cancelled") return "cancelled";
     if (booking.status === "completed") return "completed";
+    const categoryTone = getServiceCategoryTone(booking.serviceCategoryNames ?? []);
+    if (categoryTone) return categoryTone;
     if (booking.source === "walk_in") return "walk_in";
     return "confirmed";
 }
@@ -1042,9 +1143,39 @@ function clockToMinutes(time: string) {
     return hour * 60 + minute;
 }
 
+function scheduleClockToMinutes(time: string) {
+    if (!/^\d{2}:\d{2}$/.test(time)) {
+        return null;
+    }
+
+    const [hour, minute] = time.split(":").map(Number);
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || minute % 15 !== 0) {
+        return null;
+    }
+
+    return hour * 60 + minute;
+}
+
 function minutesToClock(totalMinutes: number) {
     const hour = Math.floor(totalMinutes / 60);
     const minute = totalMinutes % 60;
 
     return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function getServiceCategoryTone(categoryNames: string[]) {
+    const tones = new Set(
+        categoryNames
+            .map((category) => category.toLowerCase())
+            .map((category) => {
+                if (category.includes("women")) return "women";
+                if (category.includes("boy")) return "boys";
+                if (category.includes("men")) return "men";
+                return null;
+            })
+            .filter((tone): tone is "men" | "women" | "boys" => Boolean(tone)),
+    );
+
+    if (tones.size > 1) return "mixed";
+    return tones.values().next().value as "men" | "women" | "boys" | undefined;
 }

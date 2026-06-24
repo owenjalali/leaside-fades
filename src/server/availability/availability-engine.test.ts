@@ -140,6 +140,56 @@ describe("Phase 2 availability engine", () => {
         expect(starts(slots)).toContain("2026-05-04T14:00:00.000Z");
     });
 
+    test("uses saved barber shifts as public availability before posted opening hours on open days", () => {
+        const slots = barberSlots(
+            baseData({
+                shifts: [
+                    {
+                        barberId: barberAId,
+                        locationId,
+                        dayOfWeek: 1,
+                        startTime: "09:00",
+                        endTime: "19:00",
+                        active: true,
+                    },
+                ],
+            }),
+            { barberId: barberAId },
+        );
+
+        expect(starts(slots)).toContain("2026-05-04T13:00:00.000Z");
+    });
+
+    test("keeps closed business days unavailable even when a barber shift exists", () => {
+        const result = getAvailableSlots(
+            request({ date: "2026-05-05", barberId: barberAId }),
+            baseData({
+                businessHours: [
+                    ...baseData().businessHours,
+                    {
+                        locationId,
+                        dayOfWeek: 2,
+                        openTime: "10:00",
+                        closeTime: "19:00",
+                        closed: true,
+                    },
+                ],
+                shifts: [
+                    {
+                        barberId: barberAId,
+                        locationId,
+                        dayOfWeek: 2,
+                        startTime: "09:00",
+                        endTime: "12:00",
+                        active: true,
+                    },
+                ],
+            }),
+        );
+
+        expect(result.barberSlots).toEqual([{ barberId: barberAId, locationId, slots: [] }]);
+    });
+
     test("allows a slot ending exactly at closing time", () => {
         const slots = barberSlots(baseData(), { barberId: barberAId });
 
@@ -385,6 +435,27 @@ describe("Phase 2 availability engine", () => {
         );
 
         expect(starts(slots)).toContain("2026-05-04T17:00:00.000Z");
+    });
+
+    test("one-off add overrides can expand public availability before posted opening hours on open days", () => {
+        const slots = barberSlots(
+            baseData({
+                shifts: [],
+                shiftOverrides: [
+                    {
+                        barberId: barberAId,
+                        locationId,
+                        overrideDate: "2026-05-04",
+                        overrideType: "add",
+                        startTime: "09:00",
+                        endTime: "11:00",
+                    },
+                ],
+            }),
+            { barberId: barberAId },
+        );
+
+        expect(starts(slots)).toContain("2026-05-04T13:00:00.000Z");
     });
 
     test("one-off not-working overrides remove recurring availability", () => {

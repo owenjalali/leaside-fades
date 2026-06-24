@@ -26,6 +26,7 @@ import {
 import {
     bookingStepLabels,
     bookingSteps,
+    clearSlotIfUnavailable,
     formatDayNumber,
     formatDateTime,
     formatMonthYear,
@@ -42,6 +43,7 @@ import {
     isCustomerDetailsComplete,
     isPhoneComplete,
     isValidEmail,
+    resetBookingSelectionsForLocation,
     summarizeConfirmationServices,
     summarizeSelectedServices,
 } from "./booking-utils";
@@ -84,7 +86,7 @@ const barberProfiles: Record<
     "sam-to": {
         image: samImage,
         shortName: "Sam",
-        role: "Owner / Barber",
+        role: "Head Barber",
     },
     "laura-nguyen": {
         image: lauraImage,
@@ -119,6 +121,7 @@ export default function BookingPage() {
     const [selectedDate, setSelectedDate] = useState(() => getTodayLocalDate());
     const [selectedSlot, setSelectedSlot] = useState<BookingSlot | null>(null);
     const [availabilityByDate, setAvailabilityByDate] = useState<Record<string, BookingAvailability>>({});
+    const [availabilityRefreshToken, setAvailabilityRefreshToken] = useState(0);
     const [availabilityLoading, setAvailabilityLoading] = useState(false);
     const [availabilityError, setAvailabilityError] = useState("");
     const [customer, setCustomer] = useState<CustomerDetails>(emptyCustomer);
@@ -163,7 +166,29 @@ export default function BookingPage() {
 
     useEffect(() => {
         setSelectedSlot(null);
+    }, [selectedLocationId, selectedBarberId, selectedServiceIds]);
 
+    useEffect(() => {
+        if (step !== "time") {
+            return;
+        }
+
+        setAvailabilityRefreshToken((current) => current + 1);
+        const refresh = () => setAvailabilityRefreshToken((current) => current + 1);
+        window.addEventListener("focus", refresh);
+        const interval = window.setInterval(refresh, 30_000);
+
+        return () => {
+            window.removeEventListener("focus", refresh);
+            window.clearInterval(interval);
+        };
+    }, [step]);
+
+    useEffect(() => {
+        setSelectedSlot(null);
+    }, [selectedDate]);
+
+    useEffect(() => {
         if (!selectedLocationId || selectedServiceIds.length === 0 || !selectedDate) {
             setAvailabilityByDate({});
             return;
@@ -208,7 +233,12 @@ export default function BookingPage() {
                     throw failed?.reason ?? new Error("Availability is temporarily unavailable.");
                 }
 
-                setAvailabilityByDate(Object.fromEntries(payloads.map((payload) => [payload.date, payload])));
+                const nextAvailabilityByDate = Object.fromEntries(payloads.map((payload) => [payload.date, payload]));
+                setAvailabilityByDate(nextAvailabilityByDate);
+                const refreshedSlots = getUniqueSlots(
+                    nextAvailabilityByDate[selectedDate]?.barberSlots.flatMap((barberSlot) => barberSlot.slots) ?? [],
+                );
+                setSelectedSlot((current) => clearSlotIfUnavailable(current, refreshedSlots));
             })
             .catch((error) => {
                 if (active) {
@@ -225,11 +255,7 @@ export default function BookingPage() {
         return () => {
             active = false;
         };
-    }, [selectedLocationId, selectedServiceIds, selectedWeekStart, selectedBarberId, weekDates]);
-
-    useEffect(() => {
-        setSelectedSlot(null);
-    }, [selectedDate]);
+    }, [selectedLocationId, selectedServiceIds, selectedWeekStart, selectedBarberId, weekDates, availabilityRefreshToken, selectedDate]);
 
     const selectedLocation = catalog?.locations.find((location) => location.id === selectedLocationId);
     const selectedServices = useMemo(
@@ -263,6 +289,20 @@ export default function BookingPage() {
 
     function updateCustomer(field: keyof CustomerDetails, value: string) {
         setCustomer((current) => ({ ...current, [field]: value }));
+    }
+
+    function selectLocation(locationId: string) {
+        const reset = resetBookingSelectionsForLocation({
+            nextLocationId: locationId,
+            selectedBarberId,
+            selectedSlot,
+            barbers: catalog?.barbers ?? [],
+        });
+
+        setSelectedLocationId(locationId);
+        setSelectedBarberId(reset.selectedBarberId);
+        setSelectedSlot(reset.selectedSlot);
+        goToStep("services");
     }
 
     async function confirmBooking() {
@@ -333,11 +373,7 @@ export default function BookingPage() {
                                 <LocationStep
                                     locations={catalog.locations}
                                     selectedLocationId={selectedLocationId}
-                                    onSelect={(locationId) => {
-                                        setSelectedLocationId(locationId);
-                                        setSelectedBarberId(undefined);
-                                        goToStep("services");
-                                    }}
+                                    onSelect={selectLocation}
                                 />
                             )}
 
@@ -371,6 +407,8 @@ export default function BookingPage() {
                                     onDateChange={setSelectedDate}
                                     slots={flattenedSlots}
                                     selectedSlot={selectedSlot}
+                                    selectedLocation={selectedLocation}
+                                    selectedServices={selectedServices}
                                     selectedBarberId={selectedBarberId}
                                     selectedBarber={selectedBarber}
                                     barbers={catalog.barbers}
@@ -378,6 +416,7 @@ export default function BookingPage() {
                                     error={availabilityError}
                                     emptyMessage={selectedAvailability?.emptyMessage}
                                     onSelectSlot={setSelectedSlot}
+                                    onSwitchLocation={() => goToStep("location")}
                                 />
                             )}
 
@@ -711,6 +750,8 @@ function TimeStep({
     onDateChange,
     slots,
     selectedSlot,
+    selectedLocation,
+    selectedServices,
     selectedBarberId,
     selectedBarber,
     barbers,
@@ -718,6 +759,7 @@ function TimeStep({
     error,
     emptyMessage,
     onSelectSlot,
+    onSwitchLocation,
 }: {
     date: string;
     weekDates: string[];
@@ -725,6 +767,8 @@ function TimeStep({
     onDateChange: (date: string) => void;
     slots: BookingSlot[];
     selectedSlot: BookingSlot | null;
+    selectedLocation?: BookingLocation;
+    selectedServices: BookingService[];
     selectedBarberId?: string;
     selectedBarber?: BookingBarber;
     barbers: BookingBarber[];
@@ -732,6 +776,7 @@ function TimeStep({
     error: string;
     emptyMessage?: string;
     onSelectSlot: (slot: BookingSlot) => void;
+    onSwitchLocation: () => void;
 }) {
     const nextAvailableDate = weekDates.find(
         (candidate) => candidate !== date && getSlotCountForDate(availabilityByDate, candidate) > 0,
@@ -742,6 +787,26 @@ function TimeStep({
     return (
         <div className="space-y-6">
             <StepHeading icon={Clock} title="Pick a date and time" />
+            <section className="grid gap-3 rounded-lg border border-green/20 bg-[#fbfdfb] p-4 text-sm md:grid-cols-[1.1fr_1fr_auto] md:items-center">
+                <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-widest text-charcoal/45">Selected location</p>
+                    <p className="mt-1 truncate text-base font-bold text-forest">{selectedLocation?.name ?? "Choose a location"}</p>
+                </div>
+                <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-widest text-charcoal/45">Services and barber</p>
+                    <p className="mt-1 truncate font-semibold text-charcoal">
+                        {selectedServices.map((service) => service.name).join(", ") || "Choose services"} |{" "}
+                        {selectedBarber ? selectedBarber.displayName : "Any available barber"}
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={onSwitchLocation}
+                    className="inline-flex min-h-[40px] items-center justify-center rounded-full border border-green/30 bg-white px-4 text-sm font-semibold text-forest transition-colors hover:bg-green hover:text-white"
+                >
+                    Switch location
+                </button>
+            </section>
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="inline-flex w-fit items-center gap-3 rounded-full border border-charcoal/10 bg-white py-2 pl-2 pr-4">
                     <BarberAvatar barber={selectedBarber} size="sm" />

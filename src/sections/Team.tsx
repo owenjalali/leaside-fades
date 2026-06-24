@@ -15,7 +15,7 @@ interface TeamMember {
 const team: TeamMember[] = [
     {
         name: "Sam",
-        role: "Owner / Head Barber",
+        role: "Head Barber",
         image: samImage,
         specialty: "Fades & Beard Sculpting",
     },

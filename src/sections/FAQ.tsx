@@ -17,7 +17,7 @@ const faqs: FAQItem[] = [
     {
         question: "What payment methods do you accept?",
         answer:
-            "We accept cash, debit, Visa, Mastercard, and Apple Pay / Google Pay.",
+            "We accept cash, debit, and Apple Pay / Google Pay. No credit.",
     },
     {
         question: "Is there parking nearby?",

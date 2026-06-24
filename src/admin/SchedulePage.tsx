@@ -32,8 +32,9 @@ import {
     formatScheduleWindow,
     getWeeklyCopyTargetDayOptions,
     todayLocalDate,
+    validateWeeklyScheduleDraft,
 } from "./admin-utils";
-import type { DayScheduleDraft, ShiftWindowDraft, WeeklyScheduleDraft } from "./admin-utils";
+import type { DayScheduleDraft, ShiftWindowDraft, WeeklyScheduleDraft, WeeklyScheduleValidationIssue } from "./admin-utils";
 import type {
     AdminBarberOption,
     AdminBlockedTime,
@@ -156,10 +157,12 @@ function ShiftWorkspace({
         () => buildWeeklyScheduleSavePlan(schedule, weeklyDraft),
         [schedule, weeklyDraft],
     );
+    const validationIssues = useMemo(() => validateWeeklyScheduleDraft(weeklyDraft), [weeklyDraft]);
     const weeklyHours = calculateWeeklyScheduleHours(weeklyDraft);
     const filteredBarbers = visibleBarbers.filter((barber) =>
         barber.displayName.toLowerCase().includes(staffSearch.trim().toLowerCase()),
     );
+    const effectiveDateIssues = validationIssues.filter((issue) => issue.field === "effectiveFrom" || issue.field === "effectiveTo");
 
     useEffect(() => {
         if (!selectedBarber || selectedBarber.id === selectedBarberId) {
@@ -185,6 +188,10 @@ function ShiftWorkspace({
 
     async function saveWeeklySchedule() {
         if (!weeklyDraft || savePlan.length === 0) {
+            return;
+        }
+        if (validationIssues.length > 0) {
+            setNotice("Fix highlighted weekly schedule items before saving.");
             return;
         }
 
@@ -270,23 +277,48 @@ function ShiftWorkspace({
                             <div className="grid gap-3 sm:grid-cols-[auto_1fr_auto] xl:min-w-[560px]">
                                 <Metric label="Weekly hours" value={formatWeeklyHours(weeklyHours)} />
                                 <div className="rounded-md border border-forest/10 bg-white p-3">
-                                    <p className="mb-2 text-xs font-black uppercase tracking-[0.14em] text-charcoal/45">Effective dates</p>
-                                    <div className="grid gap-2 sm:grid-cols-2">
-                                        <input
-                                            className="input !min-h-11 !py-2 text-sm"
-                                            type="date"
-                                            value={weeklyDraft.effectiveFrom}
-                                            onChange={(event) => setWeeklyDraft({ ...weeklyDraft, effectiveFrom: event.target.value, effectiveDatesTouched: true })}
-                                            disabled={!canManageShifts}
-                                        />
-                                        <input
-                                            className="input !min-h-11 !py-2 text-sm"
-                                            type="date"
-                                            value={weeklyDraft.effectiveTo}
-                                            onChange={(event) => setWeeklyDraft({ ...weeklyDraft, effectiveTo: event.target.value, effectiveDatesTouched: true })}
-                                            disabled={!canManageShifts}
-                                        />
+                                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                        <p className="text-xs font-black uppercase tracking-[0.14em] text-charcoal/45">Schedule range</p>
+                                        <label className="inline-flex items-center gap-2 text-xs font-black text-forest">
+                                            <input
+                                                className="h-4 w-4 accent-forest"
+                                                type="checkbox"
+                                                checked={!weeklyDraft.effectiveTo}
+                                                onChange={(event) => setWeeklyDraft({
+                                                    ...weeklyDraft,
+                                                    effectiveTo: event.target.checked ? "" : weeklyDraft.effectiveTo || weeklyDraft.effectiveFrom || todayLocalDate(),
+                                                    effectiveDatesTouched: true,
+                                                })}
+                                                disabled={!canManageShifts}
+                                            />
+                                            Ongoing
+                                        </label>
                                     </div>
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                        <label className="grid gap-1">
+                                            <span className="text-[11px] font-black uppercase tracking-[0.12em] text-charcoal/45">Starts</span>
+                                            <input
+                                                className="input !min-h-11 !py-2 text-sm"
+                                                type="date"
+                                                value={weeklyDraft.effectiveFrom}
+                                                onChange={(event) => setWeeklyDraft({ ...weeklyDraft, effectiveFrom: event.target.value, effectiveDatesTouched: true })}
+                                                disabled={!canManageShifts}
+                                            />
+                                        </label>
+                                        <label className="grid gap-1">
+                                            <span className="text-[11px] font-black uppercase tracking-[0.12em] text-charcoal/45">Ends</span>
+                                            <input
+                                                className={`input !min-h-11 !py-2 text-sm ${effectiveDateIssues.length > 0 ? "!border-red-400 !bg-red-50" : ""}`}
+                                                type="date"
+                                                value={weeklyDraft.effectiveTo}
+                                                onChange={(event) => setWeeklyDraft({ ...weeklyDraft, effectiveTo: event.target.value, effectiveDatesTouched: true })}
+                                                disabled={!canManageShifts || !weeklyDraft.effectiveTo}
+                                            />
+                                        </label>
+                                    </div>
+                                    {effectiveDateIssues.map((issue) => (
+                                        <p key={`${issue.field}-${issue.message}`} className="mt-2 text-xs font-bold text-red-700">{issue.message}</p>
+                                    ))}
                                 </div>
                                 <button className="icon-button self-start" onClick={onRefresh} title="Refresh schedule">
                                     <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
@@ -316,6 +348,7 @@ function ShiftWorkspace({
                             onSave={saveWeeklySchedule}
                             saving={saving}
                             pendingChanges={savePlan.length}
+                            validationIssues={validationIssues}
                         />
                     )}
 
@@ -337,6 +370,7 @@ function WeeklyScheduleBuilder({
     expandedDay,
     saving,
     pendingChanges,
+    validationIssues,
     onExpandedDay,
     onDraftChange,
     onDiscard,
@@ -348,6 +382,7 @@ function WeeklyScheduleBuilder({
     expandedDay: number;
     saving: boolean;
     pendingChanges: number;
+    validationIssues: WeeklyScheduleValidationIssue[];
     onExpandedDay: (dayOfWeek: number) => void;
     onDraftChange: (draft: WeeklyScheduleDraft) => void;
     onDiscard: () => void;
@@ -447,18 +482,23 @@ function WeeklyScheduleBuilder({
                             onRemoveWindow={(index) => removeWindow(day.dayOfWeek, index)}
                             onClearDay={() => clearDay(day.dayOfWeek)}
                             onCopyDay={(targetDay) => copyDay(day.dayOfWeek, targetDay)}
+                            validationIssues={validationIssues.filter((issue) => issue.dayOfWeek === day.dayOfWeek)}
                         />
                     ))}
                 </div>
             </div>
             <div className="mt-auto flex flex-col gap-3 border-t border-forest/10 bg-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-                <p className="text-xs font-bold text-charcoal/50">Weekly hours are calculated from this schedule and effective date range.</p>
+                <p className={`text-xs font-bold ${validationIssues.length > 0 ? "text-red-700" : "text-charcoal/50"}`}>
+                    {validationIssues.length > 0
+                        ? `${validationIssues.length} schedule ${validationIssues.length === 1 ? "item needs" : "items need"} attention before saving.`
+                        : `${pendingChanges} ${pendingChanges === 1 ? "change" : "changes"} pending. Weekly hours are calculated from this schedule and range.`}
+                </p>
                 {canManage && (
                     <div className="flex flex-wrap gap-2 sm:justify-end">
                         <button className="text-button !min-h-11 !px-3 !py-2" type="button" onClick={onDiscard} disabled={pendingChanges === 0 || saving}>
                             Discard
                         </button>
-                        <button className="primary-button inline-flex !min-h-11 items-center gap-2 !px-4 !py-2" type="button" onClick={onSave} disabled={pendingChanges === 0 || saving}>
+                        <button className="primary-button inline-flex !min-h-11 items-center gap-2 !px-4 !py-2" type="button" onClick={onSave} disabled={pendingChanges === 0 || saving || validationIssues.length > 0}>
                             {saving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
                             Save changes
                         </button>
@@ -481,6 +521,7 @@ function WeeklyDayRow({
     onRemoveWindow,
     onClearDay,
     onCopyDay,
+    validationIssues,
 }: {
     day: DayScheduleDraft;
     schedule: AdminSchedule;
@@ -493,9 +534,11 @@ function WeeklyDayRow({
     onRemoveWindow: (index: number) => void;
     onClearDay: () => void;
     onCopyDay: (targetDay: number) => void;
+    validationIssues: WeeklyScheduleValidationIssue[];
 }) {
     const copyTargetOptions = useMemo(() => getWeeklyCopyTargetDayOptions(day.dayOfWeek), [day.dayOfWeek]);
     const [copyTarget, setCopyTarget] = useState(String(copyTargetOptions[0]?.dayOfWeek ?? ""));
+    const dayLevelIssues = validationIssues.filter((issue) => !issue.windowDraftId);
 
     return (
         <div className={`border-b border-forest/10 last:border-b-0 ${expanded ? "bg-mint/25" : "bg-white"}`}>
@@ -507,43 +550,29 @@ function WeeklyDayRow({
                 <div className="min-w-0">
                     {day.active ? (
                         <div className="grid gap-2">
-                            {day.windows.map((window, index) => (
-                                <div key={window.draftId} className="grid grid-cols-[minmax(0,1fr)_18px_minmax(0,1fr)_36px] items-center gap-2 md:grid-cols-[130px_18px_130px_minmax(150px,1fr)_40px]">
-                                    <input
-                                        className="input min-w-0 !min-h-10 !py-2 text-sm"
-                                        type="time"
-                                        step="900"
-                                        value={window.startTime}
-                                        onChange={(event) => onWindowChange(index, { startTime: event.target.value })}
-                                        disabled={!canManage}
-                                    />
-                                    <span className="text-center text-charcoal/35">-</span>
-                                    <input
-                                        className="input min-w-0 !min-h-10 !py-2 text-sm"
-                                        type="time"
-                                        step="900"
-                                        value={window.endTime}
-                                        onChange={(event) => onWindowChange(index, { endTime: event.target.value })}
-                                        disabled={!canManage}
-                                    />
-                                    <select
-                                        className="input order-5 col-span-4 min-w-0 !min-h-10 !py-2 text-sm md:order-none md:col-span-1"
-                                        value={window.locationId}
-                                        onChange={(event) => onWindowChange(index, { locationId: event.target.value })}
-                                        disabled={!canManage}
-                                    >
-                                        {schedule.locations.map((location) => (
-                                            <option key={location.id} value={location.id}>{locationName(schedule, location.id)}</option>
-                                        ))}
-                                    </select>
-                                    {canManage ? (
-                                        <IconMini className="order-4 md:order-none" title="Remove window" onClick={() => onRemoveWindow(index)}>
-                                            <Trash2 size={14} />
-                                        </IconMini>
-                                    ) : (
-                                        <span className="order-4 md:order-none" />
-                                    )}
+                            {day.windows.length > 1 && (
+                                <div className="flex flex-wrap gap-1.5">
+                                    {day.windows.map((window, index) => (
+                                        <span key={`${window.draftId}-chip`} className="rounded-md bg-forest/5 px-2 py-1 text-xs font-black text-forest">
+                                            Split {index + 1}: {safeScheduleWindowLabel(window.startTime, window.endTime)}
+                                        </span>
+                                    ))}
                                 </div>
+                            )}
+                            {dayLevelIssues.map((issue) => (
+                                <p key={`${issue.field}-${issue.message}`} className="text-xs font-bold text-red-700">{issue.message}</p>
+                            ))}
+                            {day.windows.map((window, index) => (
+                                <WeeklyWindowEditor
+                                    key={window.draftId}
+                                    index={index}
+                                    window={window}
+                                    schedule={schedule}
+                                    canManage={canManage}
+                                    issues={validationIssues.filter((issue) => issue.windowDraftId === window.draftId)}
+                                    onWindowChange={onWindowChange}
+                                    onRemoveWindow={onRemoveWindow}
+                                />
                             ))}
                             {canManage && (
                                 <button className="text-button inline-flex !min-h-8 items-center gap-1.5 justify-self-start !px-2 !py-1 text-sm" type="button" onClick={onAddWindow}>
@@ -587,6 +616,81 @@ function WeeklyDayRow({
                     </IconMini>
                 </div>
             </div>
+        </div>
+    );
+}
+
+function WeeklyWindowEditor({
+    index,
+    window,
+    schedule,
+    canManage,
+    issues,
+    onWindowChange,
+    onRemoveWindow,
+}: {
+    index: number;
+    window: ShiftWindowDraft;
+    schedule: AdminSchedule;
+    canManage: boolean;
+    issues: WeeklyScheduleValidationIssue[];
+    onWindowChange: (index: number, patch: Partial<ShiftWindowDraft>) => void;
+    onRemoveWindow: (index: number) => void;
+}) {
+    const issueMessages = Array.from(new Set(issues.map((issue) => issue.message)));
+    const hasStartIssue = issues.some((issue) => issue.field === "startTime" || issue.field === "window");
+    const hasEndIssue = issues.some((issue) => issue.field === "endTime" || issue.field === "window");
+    const hasLocationIssue = issues.some((issue) => issue.field === "locationId");
+
+    return (
+        <div className={`rounded-md border p-2 ${issues.length > 0 ? "border-red-300 bg-red-50/60" : "border-forest/10 bg-white/80"}`}>
+            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_36px] items-end gap-2 md:grid-cols-[128px_128px_minmax(150px,1fr)_40px]">
+                <label className="grid min-w-0 gap-1">
+                    <span className="text-[11px] font-black uppercase tracking-[0.12em] text-charcoal/45">Starts</span>
+                    <input
+                        className={scheduleFieldClass(hasStartIssue)}
+                        type="time"
+                        step="900"
+                        value={window.startTime}
+                        onChange={(event) => onWindowChange(index, { startTime: event.target.value })}
+                        disabled={!canManage}
+                    />
+                </label>
+                <label className="grid min-w-0 gap-1">
+                    <span className="text-[11px] font-black uppercase tracking-[0.12em] text-charcoal/45">Ends</span>
+                    <input
+                        className={scheduleFieldClass(hasEndIssue)}
+                        type="time"
+                        step="900"
+                        value={window.endTime}
+                        onChange={(event) => onWindowChange(index, { endTime: event.target.value })}
+                        disabled={!canManage}
+                    />
+                </label>
+                <label className="order-4 col-span-3 grid min-w-0 gap-1 md:order-none md:col-span-1">
+                    <span className="text-[11px] font-black uppercase tracking-[0.12em] text-charcoal/45">Location</span>
+                    <select
+                        className={scheduleFieldClass(hasLocationIssue)}
+                        value={window.locationId}
+                        onChange={(event) => onWindowChange(index, { locationId: event.target.value })}
+                        disabled={!canManage}
+                    >
+                        {schedule.locations.map((location) => (
+                            <option key={location.id} value={location.id}>{locationName(schedule, location.id)}</option>
+                        ))}
+                    </select>
+                </label>
+                {canManage ? (
+                    <IconMini className="order-3 md:order-none" title="Remove window" onClick={() => onRemoveWindow(index)}>
+                        <Trash2 size={14} />
+                    </IconMini>
+                ) : (
+                    <span className="order-3 md:order-none" />
+                )}
+            </div>
+            {issueMessages.map((message) => (
+                <p key={message} className="mt-2 text-xs font-bold text-red-700">{message}</p>
+            ))}
         </div>
     );
 }
@@ -1022,6 +1126,18 @@ function formatWeeklyHours(hours: number) {
     const wholeHours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
     return `${wholeHours}h ${String(minutes).padStart(2, "0")}m`;
+}
+
+function scheduleFieldClass(hasIssue: boolean) {
+    return `input min-w-0 !min-h-10 !py-2 text-sm ${hasIssue ? "!border-red-400 !bg-red-50" : ""}`;
+}
+
+function safeScheduleWindowLabel(startTime: string, endTime: string) {
+    if (/^\d{2}:\d{2}$/.test(startTime) && /^\d{2}:\d{2}$/.test(endTime)) {
+        return formatScheduleWindow(startTime, endTime);
+    }
+
+    return `${startTime || "Start"} - ${endTime || "End"}`;
 }
 
 function locationColorClass(locationId: string) {

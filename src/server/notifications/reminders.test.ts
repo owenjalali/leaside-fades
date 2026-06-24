@@ -181,7 +181,7 @@ function setupRepository() {
 }
 
 describe("Phase 10 reminder job", () => {
-    test("sends due 24-hour and 2-hour reminders within the configured window", async () => {
+    test("sends only 2-hour reminders and ignores 24-hour candidates", async () => {
         const repository = setupRepository();
         const providerSet = providers() as NotificationProviderSet & { calls: Array<{ channel: NotificationChannel }> };
 
@@ -194,22 +194,45 @@ describe("Phase 10 reminder job", () => {
         });
 
         expect(result).toEqual({
-            scanned: 2,
-            totalAttempts: 4,
-            sent: 4,
+            scanned: 1,
+            totalAttempts: 2,
+            sent: 2,
+            failed: 0,
+            skipped: 0,
+            duplicate: 0,
+        });
+        expect(repository.attempts.map((attempt) => attempt.eventType)).toEqual([
+            "reminder_2h",
+            "reminder_2h",
+        ]);
+        expect(repository.attempts.every((attempt) => attempt.scheduledFor?.toISOString() === "2026-05-03T14:00:00.000Z")).toBe(true);
+    });
+
+    test("sends due 2-hour reminders within the configured window", async () => {
+        const repository = setupRepository();
+        const providerSet = providers() as NotificationProviderSet & { calls: Array<{ channel: NotificationChannel }> };
+
+        const result = await runBookingReminderJob({
+            repository,
+            providers: providerSet,
+            now: new Date("2026-05-03T14:00:00.000Z"),
+            lookBackMinutes: 60,
+            lookAheadMinutes: 15,
+        });
+
+        expect(result).toEqual({
+            scanned: 1,
+            totalAttempts: 2,
+            sent: 2,
             failed: 0,
             skipped: 0,
             duplicate: 0,
         });
         expect(providerSet.calls.map((call) => call.channel).sort()).toEqual([
             "email",
-            "email",
-            "sms",
             "sms",
         ]);
         expect(repository.attempts.map((attempt) => attempt.eventType).sort()).toEqual([
-            "reminder_24h",
-            "reminder_24h",
             "reminder_2h",
             "reminder_2h",
         ]);
@@ -225,14 +248,14 @@ describe("Phase 10 reminder job", () => {
         const second = await runBookingReminderJob({ repository, providers: providerSet, now });
 
         expect(second).toMatchObject({
-            scanned: 2,
-            totalAttempts: 4,
+            scanned: 1,
+            totalAttempts: 2,
             sent: 0,
             failed: 0,
             skipped: 0,
-            duplicate: 4,
+            duplicate: 2,
         });
-        expect(providerSet.calls).toHaveLength(4);
+        expect(providerSet.calls).toHaveLength(2);
         expect(repository.attempts.every((attempt) => attempt.attemptCount === 2)).toBe(true);
     });
 
@@ -246,12 +269,12 @@ describe("Phase 10 reminder job", () => {
         });
 
         expect(result).toMatchObject({
-            scanned: 2,
-            totalAttempts: 4,
-            sent: 2,
-            failed: 2,
+            scanned: 1,
+            totalAttempts: 2,
+            sent: 1,
+            failed: 1,
         });
-        expect(repository.attempts.filter((attempt) => attempt.status === "failed")).toHaveLength(2);
+        expect(repository.attempts.filter((attempt) => attempt.status === "failed")).toHaveLength(1);
     });
 
     test("retries failed reminder sends on the next run without resending successful channels", async () => {
@@ -276,14 +299,14 @@ describe("Phase 10 reminder job", () => {
         });
 
         expect(retry).toMatchObject({
-            scanned: 2,
-            totalAttempts: 4,
-            sent: 2,
+            scanned: 1,
+            totalAttempts: 2,
+            sent: 1,
             failed: 0,
             skipped: 0,
-            duplicate: 2,
+            duplicate: 1,
         });
-        expect(recoveredProviderSet.calls.map((call) => call.channel)).toEqual(["sms", "sms"]);
+        expect(recoveredProviderSet.calls.map((call) => call.channel)).toEqual(["sms"]);
         expect(repository.attempts.filter((attempt) => attempt.channel === "sms").every((attempt) => attempt.status === "sent")).toBe(true);
         expect(repository.attempts.every((attempt) => attempt.attemptCount === 2)).toBe(true);
     });

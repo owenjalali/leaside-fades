@@ -1,16 +1,18 @@
 import { describe, expect, test } from "vitest";
 
 import {
+    clearSlotIfUnavailable,
     formatPhoneForSubmit,
     formatPhoneNumber,
     getWeekDates,
     getStepFromPath,
     isCustomerDetailsComplete,
+    resetBookingSelectionsForLocation,
     isValidEmail,
     summarizeConfirmationServices,
     summarizeSelectedServices,
 } from "./booking-utils";
-import type { BookingService } from "./types";
+import type { BookingService, BookingSlot } from "./types";
 
 const cut: BookingService = {
     id: "cut",
@@ -123,5 +125,55 @@ describe("booking wizard utilities", () => {
                 { serviceName: "Beard Trim" },
             ]),
         ).toBe("Men's Cut, Beard Trim");
+    });
+
+    test("clears a selected slot when refreshed availability no longer contains it", () => {
+        const selectedSlot: BookingSlot = {
+            barberId: "sam",
+            locationId: "eglinton",
+            startTime: "2026-05-04T13:00:00.000Z",
+            endTime: "2026-05-04T13:30:00.000Z",
+            totalDurationMinutes: 30,
+        };
+
+        expect(clearSlotIfUnavailable(selectedSlot, [selectedSlot])).toBe(selectedSlot);
+        expect(clearSlotIfUnavailable(selectedSlot, [])).toBeNull();
+        expect(clearSlotIfUnavailable({ ...selectedSlot, barberId: "laura" }, [selectedSlot])).toBeNull();
+    });
+
+    test("changing location clears incompatible barber and slot selections", () => {
+        const selectedSlot: BookingSlot = {
+            barberId: "sam",
+            locationId: "eglinton",
+            startTime: "2026-05-04T13:00:00.000Z",
+            endTime: "2026-05-04T13:30:00.000Z",
+            totalDurationMinutes: 30,
+        };
+
+        expect(
+            resetBookingSelectionsForLocation({
+                nextLocationId: "millwood",
+                selectedBarberId: "sam",
+                selectedSlot,
+                barbers: [
+                    { id: "sam", locationIds: ["eglinton"] },
+                    { id: "laura", locationIds: ["eglinton", "millwood"] },
+                ],
+            }),
+        ).toEqual({ selectedBarberId: undefined, selectedSlot: null });
+
+        expect(
+            resetBookingSelectionsForLocation({
+                nextLocationId: "millwood",
+                selectedBarberId: "laura",
+                selectedSlot: { ...selectedSlot, barberId: "laura", locationId: "millwood" },
+                barbers: [
+                    { id: "laura", locationIds: ["eglinton", "millwood"] },
+                ],
+            }),
+        ).toEqual({
+            selectedBarberId: "laura",
+            selectedSlot: { ...selectedSlot, barberId: "laura", locationId: "millwood" },
+        });
     });
 });

@@ -853,23 +853,28 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
     ): Promise<AdminBookingRecord[]> {
         const serviceDetails = await this.loadBookingServiceDetails(bookingRows.map((booking) => booking.id));
 
-        return bookingRows.map<AdminBookingRecord>((booking) => ({
-            id: booking.id,
-            barberId: booking.barberId,
-            barberName: booking.barberName,
-            locationId: booking.locationId,
-            locationName: booking.locationName,
-            customerName: `${booking.customerFirstName} ${booking.customerLastName}`.trim(),
-            customerEmail: booking.customerEmail,
-            customerPhone: booking.customerPhone,
-            status: booking.status,
-            source: booking.source,
-            startTime: booking.startTime,
-            endTime: booking.endTime,
-            totalDurationMinutes: booking.totalDurationMinutes,
-            services: serviceDetails[booking.id]?.map((service) => service.serviceName) ?? [],
-            serviceDetails: serviceDetails[booking.id] ?? [],
-        }));
+        return bookingRows.map<AdminBookingRecord>((booking) => {
+            const details = serviceDetails[booking.id] ?? [];
+
+            return {
+                id: booking.id,
+                barberId: booking.barberId,
+                barberName: booking.barberName,
+                locationId: booking.locationId,
+                locationName: booking.locationName,
+                customerName: `${booking.customerFirstName} ${booking.customerLastName}`.trim(),
+                customerEmail: booking.customerEmail,
+                customerPhone: booking.customerPhone,
+                status: booking.status,
+                source: booking.source,
+                startTime: booking.startTime,
+                endTime: booking.endTime,
+                totalDurationMinutes: booking.totalDurationMinutes,
+                services: details.map((service) => service.serviceName),
+                serviceCategoryNames: Array.from(new Set(details.map((service) => service.categoryName))),
+                serviceDetails: details,
+            };
+        });
     }
 
     private async loadBookingServiceDetails(bookingIds: string[]) {

@@ -2,7 +2,6 @@ import {
     addMinutes,
     ceilMinutesToInterval,
     getLocalDate,
-    intersectWindows,
     localDateDifferenceInDays,
     localDateTimeToUtc,
     localDateToDayOfWeek,
@@ -88,11 +87,6 @@ export function getAvailableSlots(
         };
     }
 
-    const businessWindow = {
-        start: localDateTimeToUtc(request.date, businessHours.openTime, timeZone),
-        end: localDateTimeToUtc(request.date, businessHours.closeTime, timeZone),
-    };
-
     return {
         date: request.date,
         locationId: request.locationId,
@@ -106,7 +100,6 @@ export function getAvailableSlots(
                 request,
                 data,
                 dayOfWeek,
-                businessWindow,
                 totalDurationMinutes,
                 slotIntervalMinutes,
                 threshold,
@@ -138,7 +131,6 @@ function buildSlotsForBarber({
     request,
     data,
     dayOfWeek,
-    businessWindow,
     totalDurationMinutes,
     slotIntervalMinutes,
     threshold,
@@ -148,7 +140,6 @@ function buildSlotsForBarber({
     request: AvailabilityRequest;
     data: AvailabilityData;
     dayOfWeek: number;
-    businessWindow: TimeWindow;
     totalDurationMinutes: number;
     slotIntervalMinutes: number;
     threshold: Date;
@@ -159,7 +150,6 @@ function buildSlotsForBarber({
         request,
         data,
         dayOfWeek,
-        businessWindow,
         timeZone,
     });
     const blockingBookings = (data.bookings ?? []).filter(
@@ -226,23 +216,17 @@ function getShiftWindowsForBarber({
     request,
     data,
     dayOfWeek,
-    businessWindow,
     timeZone,
 }: {
     barberId: string;
     request: AvailabilityRequest;
     data: AvailabilityData;
     dayOfWeek: number;
-    businessWindow: TimeWindow;
     timeZone: string;
 }) {
     const recurringWindows = data.shifts
         .filter((shift) => shiftApplies(shift, barberId, request.locationId, request.date, dayOfWeek))
-        .map((shift) => shiftToWindow(shift, request.date, timeZone))
-        .flatMap((window) => {
-            const clipped = intersectWindows(window, businessWindow);
-            return clipped ? [clipped] : [];
-        });
+        .map((shift) => shiftToWindow(shift, request.date, timeZone));
 
     const adjustedWindows = applyShiftOverrides(
         recurringWindows,
@@ -254,7 +238,6 @@ function getShiftWindowsForBarber({
         ),
         request.date,
         request.locationId,
-        businessWindow,
         timeZone,
     );
 
@@ -266,7 +249,6 @@ function applyShiftOverrides(
     overrides: ShiftOverrideRecord[],
     localDate: string,
     locationId: string,
-    businessWindow: TimeWindow,
     timeZone: string,
 ) {
     let windows = initialWindows;
@@ -292,11 +274,7 @@ function applyShiftOverrides(
         }
 
         if (override.overrideType === "add" && override.locationId === locationId) {
-            const clipped = intersectWindows(overrideWindow, businessWindow);
-
-            if (clipped) {
-                windows = [...windows, clipped];
-            }
+            windows = [...windows, overrideWindow];
         }
     }
 

@@ -28,7 +28,6 @@ const QA_EMAIL_PATTERN = `phase10-qa-%@${QA_EMAIL_DOMAIN}`;
 const QA_NOTE_PREFIX = "Phase 10 reminders QA";
 const TIME_ZONE = "America/Toronto";
 const REMINDER_OFFSETS = {
-    reminder_24h: 24 * 60,
     reminder_2h: 2 * 60,
 } as const;
 
@@ -77,29 +76,6 @@ async function main() {
         const { default: app } = await import(new URL("../../../server.js", import.meta.url).href);
         logStep("Notification delivery mode is forced to mock for reminder QA.");
 
-        const reminder24Slot = await findFirstAvailableSlot(app, seedRows, usedStarts);
-        const reminder24Booking = await createPublicQaBooking(app, seedRows, reminder24Slot, {
-            email: `phase10-qa-24h-${runId}@${QA_EMAIL_DOMAIN}`,
-            firstName: "Phase10",
-            lastName: "Reminder24",
-        });
-        usedStarts.add(reminder24Slot.startTime);
-        await runReminderJobForSlot(db, reminder24Slot.startTime, "reminder_24h");
-        await assertReminderRows(db, reminder24Booking.body.id, "reminder_24h", {
-            sent: 2,
-            failed: 0,
-            skipped: 0,
-            attemptCount: 1,
-        });
-        await runReminderJobForSlot(db, reminder24Slot.startTime, "reminder_24h");
-        await assertReminderRows(db, reminder24Booking.body.id, "reminder_24h", {
-            sent: 2,
-            failed: 0,
-            skipped: 0,
-            attemptCount: 2,
-        });
-        logStep("24-hour reminders send customer SMS/email once and duplicate runs increment attempts only.");
-
         const reminder2Slot = await findFirstAvailableSlot(app, seedRows, usedStarts);
         const reminder2Booking = await createPublicQaBooking(app, seedRows, reminder2Slot, {
             email: `phase10-qa-2h-${runId}@${QA_EMAIL_DOMAIN}`,
@@ -114,7 +90,15 @@ async function main() {
             skipped: 0,
             attemptCount: 1,
         });
-        logStep("2-hour reminders send customer SMS/email.");
+        await runReminderJobForSlot(db, reminder2Slot.startTime, "reminder_2h");
+        await assertReminderRows(db, reminder2Booking.body.id, "reminder_2h", {
+            sent: 2,
+            failed: 0,
+            skipped: 0,
+            attemptCount: 2,
+        });
+        await assertNoReminderRows(db, reminder2Booking.body.id, "reminder_24h");
+        logStep("2-hour reminders send customer SMS/email and duplicate runs increment attempts only.");
 
         const cancelledSlot = await findFirstAvailableSlot(app, seedRows, usedStarts);
         const cancelledBooking = await createPublicQaBooking(app, seedRows, cancelledSlot, {
@@ -125,8 +109,8 @@ async function main() {
         usedStarts.add(cancelledSlot.startTime);
         const cancellationToken = tokenFromActionUrl(cancelledBooking.body.cancelUrl, "cancel");
         await request(app).post(`/api/booking/manage/${cancellationToken}/cancel`).expect(200);
-        await runReminderJobForSlot(db, cancelledSlot.startTime, "reminder_24h");
-        await assertNoReminderRows(db, cancelledBooking.body.id, "reminder_24h");
+        await runReminderJobForSlot(db, cancelledSlot.startTime, "reminder_2h");
+        await assertNoReminderRows(db, cancelledBooking.body.id, "reminder_2h");
         logStep("Cancelled bookings do not receive reminders.");
 
         const rescheduleSourceSlot = await findFirstAvailableSlot(app, seedRows, usedStarts);
@@ -147,10 +131,10 @@ async function main() {
                 startTime: rescheduleTargetSlot.startTime,
             })
             .expect(200);
-        await runReminderJobForSlot(db, rescheduleSourceSlot.startTime, "reminder_24h");
-        await assertNoReminderRows(db, rescheduleBooking.body.id, "reminder_24h");
-        await runReminderJobForSlot(db, rescheduleTargetSlot.startTime, "reminder_24h");
-        await assertReminderRows(db, rescheduleBooking.body.id, "reminder_24h", {
+        await runReminderJobForSlot(db, rescheduleSourceSlot.startTime, "reminder_2h");
+        await assertNoReminderRows(db, rescheduleBooking.body.id, "reminder_2h");
+        await runReminderJobForSlot(db, rescheduleTargetSlot.startTime, "reminder_2h");
+        await assertReminderRows(db, rescheduleBooking.body.id, "reminder_2h", {
             sent: 2,
             failed: 0,
             skipped: 0,
@@ -396,7 +380,7 @@ async function assertReminderKeysIncludeStart(
     bookingId: string,
     startTime: string,
 ) {
-    const rows = await loadReminderRows(db, bookingId, "reminder_24h");
+    const rows = await loadReminderRows(db, bookingId, "reminder_2h");
     assert.ok(rows.length > 0, "Expected reminder rows.");
     assert.ok(
         rows.every((row) => row.metadata.appointmentStartTime === startTime),

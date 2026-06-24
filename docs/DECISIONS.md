@@ -386,7 +386,7 @@ A portable CLI runner works with hosting cron, Windows Task Scheduler, and manua
 ### 2026-04-29 - Send Customer-Only Reminder Notifications
 
 Decision:
-Phase 10 sends 24-hour and 2-hour reminders only to customers by SMS/email for confirmed public/manual/walk-in bookings. Imported bookings, cancelled bookings, completed bookings, no-shows, and staff reminder SMS are excluded.
+Phase 10 sends 24-hour and 2-hour reminders only to customers by SMS/email for confirmed public/manual/walk-in bookings. Imported bookings, cancelled bookings, completed bookings, no-shows, and staff reminder SMS are excluded. Superseded on 2026-06-24: new reminder generation sends only one SMS and one email exactly 2 hours before the appointment, while 24-hour rows remain historical/read compatibility only.
 
 Reason:
 The MVP reminder goal is reducing customer no-shows without adding unapproved staff alert volume. Contacted walk-ins are real customer appointments, while imported bookings remain excluded to avoid accidental cutover messaging.
@@ -442,7 +442,7 @@ The owner-provided launch correction overrides older repo notes and the read-onl
 ### 2026-04-30 - Reconcile Services By Details, Not Count Alone
 
 Decision:
-Do not add a 38th service only because Fresha admin showed 38 services in a prior inspection. Reconcile by service name, category, price, and duration. Keep the repo's 37 services if they match the owner-approved launch offering.
+Do not add a 38th service only because Fresha admin showed 38 services in a prior inspection. Reconcile by service name, category, price, and duration. Keep the repo's 37 services if they match the owner-approved launch offering. Superseded on 2026-06-24 for `Men's Color Root Touchup`, which is now owner-approved by name, category, price, and duration.
 
 Reason:
 Launch data accuracy matters more than matching a count. Adding an unidentified service would risk exposing an unapproved service.
@@ -549,7 +549,7 @@ Decision:
 Use cron-job.org job `7551064` as the production five-minute scheduler for `GET https://www.leasidefades.com/api/jobs/send-reminders`, secured with `Authorization: Bearer <CRON_SECRET>`. Rotate `CRON_SECRET` in Vercel Production and in cron-job.org together.
 
 Reason:
-The current Vercel Hobby plan blocks five-minute Vercel Cron schedules. An external scheduler keeps 24-hour and 2-hour reminders operational without upgrading immediately, while the secret-gated endpoint prevents public reminder triggers.
+The current Vercel Hobby plan blocks five-minute Vercel Cron schedules. An external scheduler keeps reminder delivery operational without upgrading immediately, while the secret-gated endpoint prevents public reminder triggers. Superseded on 2026-06-24 for cadence content: reminder generation is now 2-hour only.
 
 ### 2026-05-02 - Make Admin Calendar Columns Shift-Based And Contacted Walk-Ins Notifying
 
@@ -641,7 +641,7 @@ Decision:
 Add Josef to the launch barber roster as an Eglinton-only barber, replace the old Fawad-facing profile asset with Josef's profile asset in the React marketing/booking surfaces, and sync Josef with recurring 11:00 AM-7:00 PM shifts. The launch staff sync also enforces the existing Yogesh Millwood-only override so stale barber-location rows cannot leak into public booking.
 
 Reason:
-The owner explicitly added Josef for Eglinton and wants clients to book with him immediately. Because public availability is location and shift driven, the data sync must update the catalog, service capabilities, location assignment, and recurring shifts while preserving official business-hour clipping and the existing Yogesh launch override.
+The owner explicitly added Josef for Eglinton and wants clients to book with him immediately. Because public availability is location and shift driven, the data sync must update the catalog, service capabilities, location assignment, and recurring shifts while preserving the open-day availability boundary and the existing Yogesh launch override. The earlier business-hour clipping rule was superseded on 2026-06-24 by saved-shift-driven open-day public availability.
 
 ### 2026-05-11 - Use Resend For Production Account Recovery And Barber Invites
 
@@ -706,3 +706,27 @@ Decision:
 
 Reason:
 The owner needs a cleaner revenue dashboard than the previous estimated appointment-value card, including a single all-time total for imported and historical appointment data. The existing database history was not consistently marked `completed`, so completed-only reporting showed `$0` despite stored price snapshots. Service snapshots are the durable price record the booking system already owns, so happened appointment totals provide useful operating revenue without adding payment, payroll, or editable cash/card tracking.
+
+### 2026-06-24 - Let Saved Shifts Define Open-Day Public Availability
+
+Decision:
+Location business hours now act as a closed-day gate for public availability. If the location is open, saved recurring barber shifts and one-off add overrides define the customer bookable windows and may intentionally start before posted opening or end after posted close. Closed business days still return no availability even if a shift row exists.
+
+Reason:
+The owner needs the saved roster to be the source of truth for bookable hours, including legitimate early/late shifts. Clipping every shift to posted location hours hid valid appointment times and made the shift editor less authoritative.
+
+### 2026-06-24 - Generate Only 2-Hour Customer Reminders
+
+Decision:
+Reminder jobs now generate/send only `reminder_2h`, one SMS and one email exactly 2 hours before the appointment when customer contact exists. Historical `reminder_24h` event types remain readable in notification logs, templates, dashboard labels, and schema compatibility, but the job and preview generation no longer create new 24-hour reminder work.
+
+Reason:
+The owner wants a single reminder cadence. Keeping historical compatibility avoids breaking existing audit rows while removing duplicate customer reminder traffic.
+
+### 2026-06-24 - Apply Launch Catalog And Copy Corrections
+
+Decision:
+Add `Men's Color Root Touchup` to the Men service catalog as a 45-minute from-price service displayed as `from $65`, update Sam's public role copy to `Head Barber`, clarify the payment FAQ as cash/debit/Apple Pay/Google Pay with `No credit.`, and color admin calendar booking cards by service category snapshots for Men, Women, Boys, or Mixed unless status is cancelled, completed, or no-show.
+
+Reason:
+These are owner-facing launch corrections. Service-category colors make the calendar easier to scan without changing booking rules, while copy/catalog corrections remove public mismatches before cutover.

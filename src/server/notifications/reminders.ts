@@ -15,7 +15,6 @@ const REMINDER_DEFINITIONS: Array<{
     eventType: BookingReminderNotificationEventType;
     offsetMinutes: number;
 }> = [
-    { eventType: "reminder_24h", offsetMinutes: 24 * 60 },
     { eventType: "reminder_2h", offsetMinutes: 2 * 60 },
 ];
 

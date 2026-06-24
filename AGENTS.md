@@ -129,6 +129,8 @@ startA < endB AND endA > startB
 
 Use this consistently.
 
+Business hours are a closed-day gate for public availability. On an open business day, saved barber shifts and one-off add overrides define the public bookable window and may intentionally start before posted opening or end after posted close.
+
 Cancelled bookings do not block availability.
 
 ## Database Rules
@@ -204,7 +206,7 @@ Do not break:
 - 15-minute slot interval
 - 30-minute minimum notice
 - 30-day max booking window
-- official business-hour boundary
+- closed business days remain unavailable while saved shifts can extend open-day public availability
 - customer cancellation/rescheduling tokens
 - owner/admin permissions
 - barber ownership permissions

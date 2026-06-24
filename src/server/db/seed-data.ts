@@ -266,6 +266,17 @@ export const serviceSeeds: readonly ServiceSeed[] = [
         isFeatured: false,
     },
     {
+        slug: "mens-color-root-touchup",
+        categorySlug: "hair-styling-men",
+        name: "Men's Color Root Touchup",
+        durationMinutes: 45,
+        priceCents: 6500,
+        priceType: "from",
+        displayPrice: "from $65",
+        sortOrder: 160,
+        isFeatured: false,
+    },
+    {
         slug: "womens-medium-haircut-blowdry",
         categorySlug: "hair-styling-women",
         name: "Women's Medium Haircut & Blowdry",

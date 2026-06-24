@@ -1367,6 +1367,29 @@ describe("Phase 6 admin calendar and booking management service", () => {
         expect(dashboard.notificationHealth.reminderQueueCount).toBeGreaterThan(0);
     });
 
+    test("dashboard previews only 2-hour reminder work", async () => {
+        const repository = new InMemoryPhase6Repository();
+        repository.bookings = [
+            dashboardBookingFixture({
+                id: "future-contacted",
+                status: "confirmed",
+                startTime: new Date("2026-05-05T19:00:00.000Z"),
+                customerPhone: "+16475550199",
+                customerEmail: "future@example.com",
+            }),
+        ];
+
+        const dashboard = await getAdminDashboard(
+            { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+            repository,
+            { now: new Date("2026-05-03T14:00:00.000Z") },
+        );
+
+        expect(dashboard.upcomingReminders).toHaveLength(2);
+        expect(dashboard.upcomingReminders.every((reminder) => reminder.eventType === "reminder_2h")).toBe(true);
+        expect(dashboard.upcomingReminders.every((reminder) => reminder.scheduledFor.toISOString() === "2026-05-05T17:00:00.000Z")).toBe(true);
+    });
+
     test("dashboard reports reminder scheduler heartbeat state", async () => {
         const repository = new InMemoryPhase6Repository();
         const currentTime = new Date("2026-05-20T17:30:00.000Z");

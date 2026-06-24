@@ -1,4 +1,4 @@
-import type { BookingService, BookingStep, CustomerDetails } from "./types";
+import type { BookingBarber, BookingService, BookingSlot, BookingStep, CustomerDetails } from "./types";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -104,6 +104,43 @@ export function summarizeConfirmationServices(
         .join(", ");
 }
 
+export function clearSlotIfUnavailable(
+    selectedSlot: BookingSlot | null,
+    availableSlots: BookingSlot[],
+) {
+    if (!selectedSlot) {
+        return null;
+    }
+
+    return availableSlots.some((slot) => sameBookingSlot(slot, selectedSlot)) ? selectedSlot : null;
+}
+
+export function resetBookingSelectionsForLocation({
+    nextLocationId,
+    selectedBarberId,
+    selectedSlot,
+    barbers,
+}: {
+    nextLocationId: string;
+    selectedBarberId?: string;
+    selectedSlot: BookingSlot | null;
+    barbers: Pick<BookingBarber, "id" | "locationIds">[];
+}) {
+    const barberStillAvailable = selectedBarberId
+        ? barbers.some((barber) => barber.id === selectedBarberId && barber.locationIds.includes(nextLocationId))
+        : true;
+    const nextBarberId = barberStillAvailable ? selectedBarberId : undefined;
+    const slotStillCompatible =
+        Boolean(selectedSlot) &&
+        selectedSlot?.locationId === nextLocationId &&
+        (!nextBarberId || selectedSlot.barberId === nextBarberId);
+
+    return {
+        selectedBarberId: nextBarberId,
+        selectedSlot: slotStillCompatible ? selectedSlot : null,
+    };
+}
+
 export function formatDateTime(value: string, timeZone = "America/Toronto") {
     return new Intl.DateTimeFormat("en-CA", {
         weekday: "short",
@@ -187,6 +224,15 @@ function localDateFromOffset(offsetDays: number, timeZone: string) {
 function formatCents(cents: number) {
     const dollars = cents / 100;
     return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
+}
+
+function sameBookingSlot(left: BookingSlot, right: BookingSlot) {
+    return (
+        left.startTime === right.startTime &&
+        left.endTime === right.endTime &&
+        left.barberId === right.barberId &&
+        left.locationId === right.locationId
+    );
 }
 
 function parseLocalDate(localDate: string) {

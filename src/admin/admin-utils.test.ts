@@ -39,6 +39,7 @@ import {
     notificationFilterMatches,
     seriesHasDashboardData,
     summarizeNotificationHealth,
+    validateWeeklyScheduleDraft,
 } from "./admin-utils";
 import type {
     AdminBookingSummary,
@@ -408,6 +409,64 @@ describe("Phase 7 schedule UI utilities", () => {
         expect(calculateWeeklyScheduleHours(draft)).toBe(14.5);
     });
 
+    test("validates weekly schedule draft time ranges, overlaps, and effective dates", () => {
+        const draft = buildWeeklyScheduleDraft({
+            locations: [{ id: "location-a", name: "Eglinton", sortOrder: 1 }],
+            barbers: [{ id: "barber-a", displayName: "Laura Nguyen", locationIds: ["location-a"], sortOrder: 1 }],
+            shifts: [shiftA, shiftB],
+            shiftOverrides: [],
+            blockedTimes: [],
+        }, "barber-a");
+        draft.effectiveFrom = "2026-09-01";
+        draft.effectiveTo = "2026-08-31";
+        draft.effectiveDatesTouched = true;
+        draft.days[1].windows[0].startTime = "13:00";
+        draft.days[1].windows[0].endTime = "13:00";
+        draft.days[3].windows.push({
+            draftId: "overlap-wed",
+            locationId: "location-a",
+            startTime: "18:00",
+            endTime: "20:00",
+        });
+
+        expect(validateWeeklyScheduleDraft(draft)).toEqual(expect.arrayContaining([
+            {
+                field: "effectiveTo",
+                message: "Ends must be on or after Starts.",
+            },
+            {
+                dayOfWeek: 1,
+                field: "endTime",
+                message: "End time must be after start time.",
+                windowDraftId: "shift-a",
+            },
+            {
+                dayOfWeek: 3,
+                field: "window",
+                message: "Split shifts on the same day cannot overlap.",
+                windowDraftId: "overlap-wed",
+            },
+        ]));
+    });
+
+    test("allows ongoing effective dates and non-overlapping split shifts", () => {
+        const draft = buildWeeklyScheduleDraft({
+            locations: [{ id: "location-a", name: "Eglinton", sortOrder: 1 }],
+            barbers: [{ id: "barber-a", displayName: "Laura Nguyen", locationIds: ["location-a"], sortOrder: 1 }],
+            shifts: [
+                shiftA,
+                { ...shiftA, id: "shift-a-2", startTime: "15:00", endTime: "19:00" },
+            ],
+            shiftOverrides: [],
+            blockedTimes: [],
+        }, "barber-a");
+        draft.effectiveFrom = "2026-06-01";
+        draft.effectiveTo = "";
+        draft.effectiveDatesTouched = true;
+
+        expect(validateWeeklyScheduleDraft(draft)).toEqual([]);
+    });
+
     test("diffs weekly draft changes into deactivate, update, and create operations", () => {
         const schedule: AdminSchedule = {
             locations: [
@@ -542,6 +601,21 @@ describe("Phase 7.5 calendar-first UI utilities", () => {
         expect(getBookingCardTone({ ...bookingA, status: "no_show", source: "manual" })).toBe("no_show");
         expect(getBookingCardTone({ ...bookingA, status: "cancelled", source: "manual" })).toBe("cancelled");
         expect(getBookingCardTone({ ...bookingA, status: "completed", source: "manual" })).toBe("completed");
+    });
+
+    test("uses service category tones for active calendar bookings while keeping statuses dominant", () => {
+        expect(getBookingCardTone({ ...bookingA, serviceCategoryNames: ["Hair & Styling (Men)"] } as AdminBookingSummary)).toBe("men");
+        expect(getBookingCardTone({ ...bookingA, serviceCategoryNames: ["Hair & Styling (Women)"] } as AdminBookingSummary)).toBe("women");
+        expect(getBookingCardTone({ ...bookingA, serviceCategoryNames: ["Hair & Styling (Boy 9 & Under)"] } as AdminBookingSummary)).toBe("boys");
+        expect(
+            getBookingCardTone({
+                ...bookingA,
+                serviceCategoryNames: ["Hair & Styling (Men)", "Hair & Styling (Women)"],
+            } as AdminBookingSummary),
+        ).toBe("mixed");
+        expect(getBookingCardTone({ ...bookingA, status: "cancelled", serviceCategoryNames: ["Hair & Styling (Men)"] } as AdminBookingSummary)).toBe("cancelled");
+        expect(getBookingCardTone({ ...bookingA, status: "completed", serviceCategoryNames: ["Hair & Styling (Women)"] } as AdminBookingSummary)).toBe("completed");
+        expect(getBookingCardTone({ ...bookingA, status: "no_show", serviceCategoryNames: ["Hair & Styling (Boy 9 & Under)"] } as AdminBookingSummary)).toBe("no_show");
     });
 
     test("builds reschedule payloads for authorized booking drag drops and rejects unsafe drops", () => {

@@ -301,6 +301,27 @@ describe("Phase 3 booking creation service", () => {
         ]);
     });
 
+    test("creates a public booking from shift-driven availability before posted opening", async () => {
+        repository.availabilityData = baseAvailability({
+            shifts: [
+                {
+                    barberId: barberAId,
+                    locationId,
+                    dayOfWeek: 1,
+                    startTime: "09:00",
+                    endTime: "11:00",
+                    active: true,
+                },
+            ],
+        });
+
+        const result = await createBooking(request({ startTime: utc(9) }), repository);
+
+        expect(result.booking.startTime.toISOString()).toBe("2026-05-04T13:00:00.000Z");
+        expect(result.booking.endTime.toISOString()).toBe("2026-05-04T13:30:00.000Z");
+        expect(result.booking.barberId).toBe(barberAId);
+    });
+
     test("generates customer management token hashes for public bookings by default", async () => {
         const result = await createBooking(request(), repository);
 

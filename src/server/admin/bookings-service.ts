@@ -37,6 +37,7 @@ export interface AdminBookingRecord {
     endTime: Date;
     totalDurationMinutes: number;
     services: string[];
+    serviceCategoryNames?: string[];
     serviceDetails?: BookingServiceSnapshot[];
 }
 
@@ -1706,8 +1707,7 @@ function buildUpcomingReminderPreviews(bookings: AdminBookingRecord[], now: Date
             continue;
         }
 
-        const reminders: Array<{ eventType: "reminder_24h" | "reminder_2h"; offsetMs: number }> = [
-            { eventType: "reminder_24h", offsetMs: 24 * 60 * 60 * 1000 },
+        const reminders: Array<{ eventType: "reminder_2h"; offsetMs: number }> = [
             { eventType: "reminder_2h", offsetMs: 2 * 60 * 60 * 1000 },
         ];
         const channels: Array<{ channel: "sms" | "email"; recipientLabel: string; enabled: boolean }> = [
