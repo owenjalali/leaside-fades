@@ -56,7 +56,22 @@ async function assertCatalogShape(baseUrl: string) {
         assert.ok(Array.isArray(category.services), "Catalog service category must include a services array.");
         serviceCount += category.services.length;
     }
-    assert.equal(serviceCount, 37, "Catalog services count mismatch.");
+    assert.equal(serviceCount, 38, "Catalog services count mismatch.");
+    assert.ok(
+        serviceCategories.some((category) => {
+            assertRecord(category, "Catalog service category");
+            return Array.isArray(category.services) && category.services.some((service) => {
+                assertRecord(service, "Catalog service");
+                return (
+                    service.slug === "mens-color-root-touchup" &&
+                    service.name === "Men's Color Root Touchup" &&
+                    service.durationMinutes === 45 &&
+                    service.displayPrice === "from $65"
+                );
+            });
+        }),
+        "Catalog must include owner-approved Men's Color Root Touchup.",
+    );
     assertArrayLength(response.body.barbers, 5, "barbers");
     logStep("/api/booking/catalog returns the launch catalog.");
 }

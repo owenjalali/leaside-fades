@@ -355,7 +355,22 @@ function assertCatalogShape(value: unknown): asserts value is Record<string, unk
         assertRecord(category, "Catalog service category");
         return count + assertArray(category.services, "Catalog category services").length;
     }, 0);
-    assert.equal(serviceCount, 37, "Catalog service count mismatch.");
+    assert.equal(serviceCount, 38, "Catalog service count mismatch.");
+    assert.ok(
+        categories.some((category) => {
+            assertRecord(category, "Catalog service category");
+            return assertArray(category.services, "Catalog category services").some((service) => {
+                assertRecord(service, "Catalog service");
+                return (
+                    service.slug === "mens-color-root-touchup" &&
+                    service.name === "Men's Color Root Touchup" &&
+                    service.durationMinutes === 45 &&
+                    service.displayPrice === "from $65"
+                );
+            });
+        }),
+        "Catalog must include owner-approved Men's Color Root Touchup.",
+    );
     assert.equal(assertArray(value.barbers, "Catalog barbers").length, 5, "Catalog barber count mismatch.");
 }
 
