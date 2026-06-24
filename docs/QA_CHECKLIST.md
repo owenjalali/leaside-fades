@@ -357,7 +357,9 @@
 - [x] Vercel Neon production database integration `leaside-fades-db` is attached
 - [x] `https://leasidefades.com/api/booking/catalog` returns catalog data
 - [x] Production `/api/booking/catalog` previously returned 2 locations, 3 categories, 37 services, and 5 barbers before the Men's Color Root Touchup source update
-- [ ] Production `/api/booking/catalog` re-smoked after deploy/reseed for the 38-service catalog
+- [x] Production `/api/booking/catalog` re-smoked after deploy/reseed for the 38-service catalog, including Men's Color Root Touchup
+- [x] Owner-authenticated production admin APIs show 38 services, root-touchup service visibility, active recurring shifts, and zero Yogesh Eglinton active shifts
+- [x] Production 2-hour reminder scheduler heartbeat verified after deployment with `npm run qa:production-reminder-heartbeat`
 - [x] Marketing service list has regression coverage against booking seed names, prices, durations, and order
 - [x] Production availability smoke test returns launch slots while keeping Yogesh out of Eglinton
 - [x] Production admin owner login API/session verified for `owner@leasidefades.com`
