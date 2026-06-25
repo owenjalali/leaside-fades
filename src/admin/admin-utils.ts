@@ -572,6 +572,172 @@ export function validateWeeklyScheduleDraft(draft: WeeklyScheduleDraft): WeeklyS
     return issues;
 }
 
+export function snapWeeklyScheduleClock(time: string) {
+    const minutes = looseClockToMinutes(time);
+    if (minutes === null) {
+        return null;
+    }
+
+    return minutesToClock(clampScheduleMinutes(Math.round(minutes / 15) * 15));
+}
+
+export function moveWeeklyScheduleWindow(
+    draft: WeeklyScheduleDraft,
+    input: {
+        windowDraftId: string;
+        targetDayOfWeek: number;
+        targetStartTime: string;
+    },
+) {
+    const targetStartTime = snapWeeklyScheduleClock(input.targetStartTime);
+    const targetDay = normalizedDayOfWeek(input.targetDayOfWeek);
+    if (!targetStartTime || targetDay === null) {
+        return cloneWeeklyScheduleDraft(draft);
+    }
+
+    const next = cloneWeeklyScheduleDraft(draft);
+    const located = findWeeklyScheduleWindow(next, input.windowDraftId);
+    if (!located) {
+        return next;
+    }
+
+    const [window] = located.day.windows.splice(located.windowIndex, 1);
+    if (located.day.windows.length === 0) {
+        located.day.active = false;
+    }
+
+    const duration = validWindowDurationMinutes(window) ?? 60;
+    const targetStartMinutes = fitWindowStartMinutes(targetStartTime, duration);
+    const movedWindow = {
+        ...window,
+        startTime: minutesToClock(targetStartMinutes),
+        endTime: minutesToClock(targetStartMinutes + duration),
+    };
+    const targetDayDraft = next.days[targetDay];
+    targetDayDraft.active = true;
+    targetDayDraft.windows = [...targetDayDraft.windows, movedWindow].sort(compareShiftWindowDrafts);
+
+    return next;
+}
+
+export function resizeWeeklyScheduleWindow(
+    draft: WeeklyScheduleDraft,
+    input: {
+        windowDraftId: string;
+        edge: "start" | "end";
+        targetTime: string;
+    },
+) {
+    const targetTime = snapWeeklyScheduleClock(input.targetTime);
+    const next = cloneWeeklyScheduleDraft(draft);
+    const located = findWeeklyScheduleWindow(next, input.windowDraftId);
+    if (!located || !targetTime) {
+        return next;
+    }
+
+    const startMinutes = looseClockToMinutes(located.window.startTime);
+    const endMinutes = looseClockToMinutes(located.window.endTime);
+    const targetMinutes = looseClockToMinutes(targetTime);
+    if (startMinutes === null || endMinutes === null || targetMinutes === null) {
+        return next;
+    }
+
+    if (input.edge === "start") {
+        located.window.startTime = minutesToClock(Math.min(targetMinutes, endMinutes - 15));
+    } else {
+        located.window.endTime = minutesToClock(Math.max(targetMinutes, startMinutes + 15));
+    }
+    located.day.windows.sort(compareShiftWindowDrafts);
+
+    return next;
+}
+
+export function duplicateWeeklyScheduleWindow(
+    draft: WeeklyScheduleDraft,
+    input: {
+        windowDraftId: string;
+        targetDayOfWeek?: number;
+        targetStartTime?: string;
+    },
+) {
+    const next = cloneWeeklyScheduleDraft(draft);
+    const located = findWeeklyScheduleWindow(next, input.windowDraftId);
+    if (!located) {
+        return next;
+    }
+
+    const targetDay = normalizedDayOfWeek(input.targetDayOfWeek ?? located.day.dayOfWeek);
+    if (targetDay === null) {
+        return next;
+    }
+
+    const duration = validWindowDurationMinutes(located.window) ?? 60;
+    const desiredStart = snapWeeklyScheduleClock(input.targetStartTime ?? located.window.startTime);
+    if (!desiredStart) {
+        return next;
+    }
+
+    const targetStartMinutes = fitWindowStartMinutes(desiredStart, duration);
+    const duplicate: ShiftWindowDraft = {
+        ...located.window,
+        draftId: createWeeklyScheduleDraftWindowId(targetDay),
+        shiftId: undefined,
+        startTime: minutesToClock(targetStartMinutes),
+        endTime: minutesToClock(targetStartMinutes + duration),
+    };
+    const targetDayDraft = next.days[targetDay];
+    targetDayDraft.active = true;
+    targetDayDraft.windows = [...targetDayDraft.windows, duplicate].sort(compareShiftWindowDrafts);
+
+    return next;
+}
+
+export function copyWeeklyScheduleDay(
+    draft: WeeklyScheduleDraft,
+    input: {
+        fromDayOfWeek: number;
+        toDayOfWeek: number;
+    },
+) {
+    const sourceDay = normalizedDayOfWeek(input.fromDayOfWeek);
+    const targetDay = normalizedDayOfWeek(input.toDayOfWeek);
+    const next = cloneWeeklyScheduleDraft(draft);
+    if (sourceDay === null || targetDay === null) {
+        return next;
+    }
+
+    const source = next.days[sourceDay];
+    next.days[targetDay] = {
+        ...next.days[targetDay],
+        active: source.active,
+        windows: source.active
+            ? source.windows.map((window) => ({
+                ...window,
+                draftId: createWeeklyScheduleDraftWindowId(targetDay),
+                shiftId: undefined,
+            }))
+            : [],
+    };
+
+    return next;
+}
+
+export function clearWeeklyScheduleDay(draft: WeeklyScheduleDraft, dayOfWeek: number) {
+    const targetDay = normalizedDayOfWeek(dayOfWeek);
+    const next = cloneWeeklyScheduleDraft(draft);
+    if (targetDay === null) {
+        return next;
+    }
+
+    next.days[targetDay] = {
+        ...next.days[targetDay],
+        active: false,
+        windows: [],
+    };
+
+    return next;
+}
+
 export function buildWeeklyScheduleSavePlan(
     schedule: Pick<AdminSchedule, "shifts">,
     draft: WeeklyScheduleDraft,
@@ -890,6 +1056,20 @@ export function getBookingCardTone(booking: AdminBookingSummary) {
     return "confirmed";
 }
 
+export type BookingCardTone = ReturnType<typeof getBookingCardTone>;
+
+export function getBookingToneClasses(tone: BookingCardTone) {
+    if (tone === "men") return "border-blue-700 bg-blue-100 text-blue-950 shadow-[inset_4px_0_0_rgba(29,78,216,0.95)]";
+    if (tone === "women") return "border-pink-700 bg-pink-100 text-pink-950 shadow-[inset_4px_0_0_rgba(190,24,93,0.95)]";
+    if (tone === "boys") return "border-yellow-700 bg-yellow-100 text-yellow-950 shadow-[inset_4px_0_0_rgba(161,98,7,0.95)]";
+    if (tone === "mixed") return "border-violet-700 bg-violet-100 text-violet-950 shadow-[inset_4px_0_0_rgba(109,40,217,0.95)]";
+    if (tone === "walk_in") return "border-violet-700 bg-violet-100 text-violet-950 shadow-[inset_4px_0_0_rgba(109,40,217,0.95)]";
+    if (tone === "no_show") return "border-red-800 bg-red-600 text-white shadow-[inset_4px_0_0_rgba(127,29,29,1)]";
+    if (tone === "cancelled") return "border-stone-500 bg-stone-200 text-stone-800 shadow-[inset_4px_0_0_rgba(87,83,78,0.9)]";
+    if (tone === "completed") return "border-emerald-700 bg-emerald-100 text-emerald-950 shadow-[inset_4px_0_0_rgba(4,120,87,0.95)]";
+    return "border-blue-700 bg-blue-100 text-blue-950 shadow-[inset_4px_0_0_rgba(29,78,216,0.95)]";
+}
+
 export function buildBookingDragPayload({
     user,
     booking,
@@ -1143,6 +1323,19 @@ function clockToMinutes(time: string) {
     return hour * 60 + minute;
 }
 
+function looseClockToMinutes(time: string) {
+    if (!/^\d{2}:\d{2}$/.test(time)) {
+        return null;
+    }
+
+    const [hour, minute] = time.split(":").map(Number);
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+        return null;
+    }
+
+    return hour * 60 + minute;
+}
+
 function scheduleClockToMinutes(time: string) {
     if (!/^\d{2}:\d{2}$/.test(time)) {
         return null;
@@ -1161,6 +1354,68 @@ function minutesToClock(totalMinutes: number) {
     const minute = totalMinutes % 60;
 
     return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function clampScheduleMinutes(minutes: number) {
+    return Math.max(0, Math.min(23 * 60 + 45, minutes));
+}
+
+function fitWindowStartMinutes(startTime: string, durationMinutes: number) {
+    const startMinutes = looseClockToMinutes(startTime) ?? 0;
+    const latestStartMinutes = Math.max(0, 23 * 60 + 45 - Math.max(15, durationMinutes));
+    return Math.max(0, Math.min(latestStartMinutes, startMinutes));
+}
+
+function normalizedDayOfWeek(dayOfWeek: number) {
+    if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
+        return null;
+    }
+
+    return dayOfWeek;
+}
+
+function createWeeklyScheduleDraftWindowId(dayOfWeek: number) {
+    return `day-${dayOfWeek}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function cloneWeeklyScheduleDraft(draft: WeeklyScheduleDraft): WeeklyScheduleDraft {
+    return {
+        ...draft,
+        sourceShiftIds: [...draft.sourceShiftIds],
+        days: draft.days.map((day) => ({
+            ...day,
+            windows: day.windows.map((window) => ({ ...window })),
+        })),
+    };
+}
+
+function findWeeklyScheduleWindow(draft: WeeklyScheduleDraft, windowDraftId: string) {
+    for (const day of draft.days) {
+        const windowIndex = day.windows.findIndex((window) => window.draftId === windowDraftId);
+        if (windowIndex >= 0) {
+            return {
+                day,
+                window: day.windows[windowIndex],
+                windowIndex,
+            };
+        }
+    }
+
+    return null;
+}
+
+function validWindowDurationMinutes(window: Pick<ShiftWindowDraft, "startTime" | "endTime">) {
+    const startMinutes = scheduleClockToMinutes(window.startTime);
+    const endMinutes = scheduleClockToMinutes(window.endTime);
+    if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) {
+        return null;
+    }
+
+    return endMinutes - startMinutes;
+}
+
+function compareShiftWindowDrafts(left: ShiftWindowDraft, right: ShiftWindowDraft) {
+    return left.startTime.localeCompare(right.startTime) || left.endTime.localeCompare(right.endTime) || left.draftId.localeCompare(right.draftId);
 }
 
 function getServiceCategoryTone(categoryNames: string[]) {

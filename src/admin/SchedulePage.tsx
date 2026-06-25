@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
     Ban,
+    CalendarDays,
     ChevronDown,
+    Clock,
     Copy,
     Edit3,
+    GripVertical,
     Plus,
     RefreshCw,
     Save,
@@ -28,9 +31,15 @@ import {
     buildWeeklyScheduleSavePlan,
     buildBlockedTimePayload,
     calculateWeeklyScheduleHours,
+    clearWeeklyScheduleDay,
+    copyWeeklyScheduleDay,
+    duplicateWeeklyScheduleWindow,
     formatLocalDateTime,
     formatScheduleWindow,
     getWeeklyCopyTargetDayOptions,
+    moveWeeklyScheduleWindow,
+    resizeWeeklyScheduleWindow,
+    snapWeeklyScheduleClock,
     todayLocalDate,
     validateWeeklyScheduleDraft,
 } from "./admin-utils";
@@ -392,6 +401,36 @@ function WeeklyScheduleBuilder({
         const day = draft.days.find((candidate) => candidate.dayOfWeek === dayOfWeek);
         return day ? [day] : [];
     });
+    const allWindowIds = orderedDays.flatMap((day) => day.windows.map((window) => window.draftId));
+    const timelineBounds = useMemo(() => weeklyTimelineBounds(orderedDays), [orderedDays]);
+    const timelineHourMarks = useMemo(() => weeklyTimelineHourMarks(timelineBounds.startMinutes, timelineBounds.endMinutes), [timelineBounds]);
+    const timelineSpanMinutes = timelineBounds.endMinutes - timelineBounds.startMinutes;
+    const dragWindowIdRef = useRef<string | null>(null);
+    const [selectedWindowId, setSelectedWindowId] = useState(allWindowIds[0] ?? "");
+    const [inspectorCopyTarget, setInspectorCopyTarget] = useState("");
+    const selectedContext = findWindowContext(orderedDays, selectedWindowId);
+    const selectedIssues = selectedContext
+        ? validationIssues.filter((issue) => issue.dayOfWeek === selectedContext.day.dayOfWeek && issue.windowDraftId === selectedContext.window.draftId)
+        : [];
+    const selectedCopyOptions = selectedContext ? getWeeklyCopyTargetDayOptions(selectedContext.day.dayOfWeek) : [];
+
+    useEffect(() => {
+        if (selectedWindowId && allWindowIds.includes(selectedWindowId)) {
+            return;
+        }
+
+        setSelectedWindowId(allWindowIds[0] ?? "");
+    }, [allWindowIds, selectedWindowId]);
+
+    useEffect(() => {
+        if (!selectedContext) {
+            setInspectorCopyTarget("");
+            return;
+        }
+
+        const firstOption = getWeeklyCopyTargetDayOptions(selectedContext.day.dayOfWeek)[0]?.dayOfWeek;
+        setInspectorCopyTarget(firstOption === undefined ? "" : String(firstOption));
+    }, [selectedContext?.day.dayOfWeek, selectedWindowId]);
 
     function changeDay(dayOfWeek: number, updater: (day: DayScheduleDraft) => DayScheduleDraft) {
         onDraftChange({
@@ -401,14 +440,18 @@ function WeeklyScheduleBuilder({
     }
 
     function setDayActive(dayOfWeek: number, active: boolean) {
+        const window = defaultWindow(schedule, draft.barberId, dayOfWeek);
         changeDay(dayOfWeek, (day) => ({
             ...day,
             active,
             windows: active
-                ? day.windows.length > 0 ? day.windows : [defaultWindow(schedule, draft.barberId, dayOfWeek)]
+                ? day.windows.length > 0 ? day.windows : [window]
                 : [],
         }));
         onExpandedDay(dayOfWeek);
+        if (active && !selectedWindowId) {
+            setSelectedWindowId(window.draftId);
+        }
     }
 
     function updateWindow(dayOfWeek: number, index: number, patch: Partial<ShiftWindowDraft>) {
@@ -419,73 +462,355 @@ function WeeklyScheduleBuilder({
         }));
     }
 
-    function addWindow(dayOfWeek: number) {
+    function addWindow(dayOfWeek: number, startTime = "15:00", endTime = "19:00") {
+        const window = defaultWindow(schedule, draft.barberId, dayOfWeek, startTime, endTime);
         changeDay(dayOfWeek, (day) => ({
             ...day,
             active: true,
-            windows: [...day.windows, defaultWindow(schedule, draft.barberId, dayOfWeek, "15:00", "19:00")],
+            windows: [...day.windows, window],
         }));
         onExpandedDay(dayOfWeek);
+        setSelectedWindowId(window.draftId);
     }
 
     function removeWindow(dayOfWeek: number, index: number) {
+        const removedId = draft.days.find((day) => day.dayOfWeek === dayOfWeek)?.windows[index]?.draftId;
         changeDay(dayOfWeek, (day) => {
             const windows = day.windows.filter((_, item) => item !== index);
             return { ...day, active: windows.length > 0, windows };
         });
+        if (removedId === selectedWindowId) {
+            setSelectedWindowId("");
+        }
     }
 
     function clearDay(dayOfWeek: number) {
-        changeDay(dayOfWeek, (day) => ({ ...day, active: false, windows: [] }));
+        onDraftChange(clearWeeklyScheduleDay(draft, dayOfWeek));
         onExpandedDay(dayOfWeek);
+        const clearedWindowIds = draft.days.find((day) => day.dayOfWeek === dayOfWeek)?.windows.map((window) => window.draftId) ?? [];
+        if (clearedWindowIds.includes(selectedWindowId)) {
+            setSelectedWindowId("");
+        }
     }
 
     function copyDay(fromDayOfWeek: number, toDayOfWeek: number) {
-        const source = draft.days.find((day) => day.dayOfWeek === fromDayOfWeek);
-        if (!source) {
+        const next = copyWeeklyScheduleDay(draft, { fromDayOfWeek, toDayOfWeek });
+        onDraftChange(next);
+        onExpandedDay(toDayOfWeek);
+        setSelectedWindowId(next.days[toDayOfWeek]?.windows[0]?.draftId ?? "");
+    }
+
+    function duplicateWindow(windowDraftId: string, targetDayOfWeek?: number, targetStartTime?: string) {
+        const next = duplicateWeeklyScheduleWindow(draft, { windowDraftId, targetDayOfWeek, targetStartTime });
+        onDraftChange(next);
+        const duplicatedWindow = findNewWindow(draft, next);
+        if (duplicatedWindow) {
+            setSelectedWindowId(duplicatedWindow.draftId);
+        }
+    }
+
+    function startWindowDrag(event: React.DragEvent, windowDraftId: string) {
+        dragWindowIdRef.current = windowDraftId;
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", windowDraftId);
+    }
+
+    function dropWindowOnDay(event: React.DragEvent<HTMLDivElement>, dayOfWeek: number) {
+        event.preventDefault();
+        if (!canManage) {
             return;
         }
-        changeDay(toDayOfWeek, (day) => ({
-            ...day,
-            active: source.active,
-            windows: source.active
-                ? source.windows.map((window) => ({
-                    ...window,
-                    draftId: createDraftWindowId(toDayOfWeek),
-                    shiftId: undefined,
-                }))
-                : [],
-        }));
-        onExpandedDay(toDayOfWeek);
+
+        const windowDraftId = dragWindowIdRef.current ?? event.dataTransfer.getData("text/plain");
+        const targetStartTime = clockFromTimelinePointer(
+            event.clientY,
+            event.currentTarget.getBoundingClientRect(),
+            timelineBounds.startMinutes,
+            timelineBounds.endMinutes,
+        );
+        if (!windowDraftId || !targetStartTime) {
+            return;
+        }
+
+        onDraftChange(moveWeeklyScheduleWindow(draft, { windowDraftId, targetDayOfWeek: dayOfWeek, targetStartTime }));
+        setSelectedWindowId(windowDraftId);
+        onExpandedDay(dayOfWeek);
+        dragWindowIdRef.current = null;
+    }
+
+    function startWindowResize(event: React.PointerEvent<HTMLElement>, windowDraftId: string, edge: "start" | "end") {
+        if (!canManage) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        const dayColumn = event.currentTarget.closest("[data-timeline-day]") as HTMLElement | null;
+        if (!dayColumn) {
+            return;
+        }
+
+        const rect = dayColumn.getBoundingClientRect();
+        const handlePointerMove = (pointerEvent: PointerEvent) => {
+            const targetTime = clockFromTimelinePointer(pointerEvent.clientY, rect, timelineBounds.startMinutes, timelineBounds.endMinutes);
+            if (targetTime) {
+                onDraftChange(resizeWeeklyScheduleWindow(draft, { windowDraftId, edge, targetTime }));
+            }
+        };
+        const handlePointerUp = () => {
+            window.removeEventListener("pointermove", handlePointerMove);
+            window.removeEventListener("pointerup", handlePointerUp);
+            document.body.style.userSelect = "";
+        };
+
+        document.body.style.userSelect = "none";
+        window.addEventListener("pointermove", handlePointerMove);
+        window.addEventListener("pointerup", handlePointerUp);
+        handlePointerMove(event.nativeEvent);
     }
 
     return (
         <section className="flex flex-1 flex-col">
-            <div className="overflow-x-auto px-4 py-4 sm:px-5">
-                <div className="overflow-hidden rounded-md border border-forest/10">
-                    <div className="grid grid-cols-[72px_minmax(0,1fr)_40px] border-b border-forest/10 bg-[#f8faf7] px-3 py-3 text-xs font-black uppercase tracking-[0.14em] text-charcoal/45 sm:px-4 md:grid-cols-[86px_minmax(0,1fr)_90px] xl:grid-cols-[86px_minmax(0,1fr)_150px]">
-                        <span>Day</span>
-                        <span>Working hours & location</span>
-                        <span className="hidden text-right md:block">Actions</span>
+            <div className="hidden min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px] gap-4 p-4 xl:grid 2xl:grid-cols-[minmax(0,1fr)_360px]">
+                <div className="min-w-0 overflow-hidden rounded-md border border-forest/10 bg-[#fbfcfa]" data-testid="weekly-shift-timeline">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-forest/10 bg-white px-4 py-3">
+                        <div>
+                            <p className="text-xs font-black uppercase tracking-[0.14em] text-charcoal/45">Visual weekly schedule</p>
+                            <h3 className="text-lg font-black text-forest">Drag shifts, resize handles, then save</h3>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs font-black text-charcoal/55">
+                            <span className="inline-flex items-center gap-1.5 rounded-md border border-forest/10 bg-white px-2 py-1"><GripVertical size={14} /> Move</span>
+                            <span className="inline-flex items-center gap-1.5 rounded-md border border-forest/10 bg-white px-2 py-1"><Clock size={14} /> Resize</span>
+                            <span className="inline-flex items-center gap-1.5 rounded-md border border-forest/10 bg-white px-2 py-1"><CalendarDays size={14} /> Repeats weekly</span>
+                        </div>
                     </div>
-                    {orderedDays.map((day) => (
-                        <WeeklyDayRow
-                            key={day.dayOfWeek}
-                            day={day}
-                            schedule={schedule}
-                            canManage={canManage}
-                            expanded={expandedDay === day.dayOfWeek}
-                            onExpand={() => onExpandedDay(day.dayOfWeek)}
-                            onActiveChange={(active) => setDayActive(day.dayOfWeek, active)}
-                            onWindowChange={(index, patch) => updateWindow(day.dayOfWeek, index, patch)}
-                            onAddWindow={() => addWindow(day.dayOfWeek)}
-                            onRemoveWindow={(index) => removeWindow(day.dayOfWeek, index)}
-                            onClearDay={() => clearDay(day.dayOfWeek)}
-                            onCopyDay={(targetDay) => copyDay(day.dayOfWeek, targetDay)}
-                            validationIssues={validationIssues.filter((issue) => issue.dayOfWeek === day.dayOfWeek)}
-                        />
-                    ))}
+                    <div className="overflow-x-auto">
+                        <div className="min-w-[1080px]">
+                            <div className="grid grid-cols-[56px_repeat(7,minmax(132px,1fr))] border-b border-forest/10 bg-white">
+                                <div className="border-r border-forest/10 px-2 py-3 text-[11px] font-black uppercase tracking-[0.12em] text-charcoal/40">Time</div>
+                                {orderedDays.map((day) => (
+                                    <div key={`timeline-heading-${day.dayOfWeek}`} className="border-r border-forest/10 px-3 py-3 last:border-r-0">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className="text-sm font-black text-forest">{weekdays[day.dayOfWeek]}</span>
+                                            <button
+                                                className={`rounded-full px-2 py-1 text-[11px] font-black ${day.active ? "bg-mint text-forest" : "bg-charcoal/10 text-charcoal/55"}`}
+                                                type="button"
+                                                onClick={() => setDayActive(day.dayOfWeek, !day.active)}
+                                                disabled={!canManage}
+                                            >
+                                                {day.active ? `${day.windows.length} shift${day.windows.length === 1 ? "" : "s"}` : "Off"}
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="grid grid-cols-[56px_repeat(7,minmax(132px,1fr))]">
+                                <div className="relative min-h-[760px] border-r border-forest/10 bg-white">
+                                    {timelineHourMarks.map((minutes) => (
+                                        <div
+                                            key={`time-${minutes}`}
+                                            className="absolute right-2 -translate-y-1/2 text-[11px] font-black text-charcoal/40"
+                                            style={{ top: `${((minutes - timelineBounds.startMinutes) / timelineSpanMinutes) * 100}%` }}
+                                        >
+                                            {formatClockLabel(minutesToLocalClock(minutes))}
+                                        </div>
+                                    ))}
+                                </div>
+                                {orderedDays.map((day) => {
+                                    const dayIssues = validationIssues.filter((issue) => issue.dayOfWeek === day.dayOfWeek);
+
+                                    return (
+                                        <div
+                                            key={`timeline-day-${day.dayOfWeek}`}
+                                            data-timeline-day={day.dayOfWeek}
+                                            className={`relative min-h-[760px] border-r border-forest/10 last:border-r-0 ${day.active ? "bg-white" : "bg-[#f6f8f3]"}`}
+                                            onDragOver={(event) => event.preventDefault()}
+                                            onDrop={(event) => dropWindowOnDay(event, day.dayOfWeek)}
+                                        >
+                                            {timelineHourMarks.map((minutes) => (
+                                                <div
+                                                    key={`line-${day.dayOfWeek}-${minutes}`}
+                                                    className="absolute left-0 right-0 border-t border-forest/10"
+                                                    style={{ top: `${((minutes - timelineBounds.startMinutes) / timelineSpanMinutes) * 100}%` }}
+                                                />
+                                            ))}
+                                            {!day.active && (
+                                                <div className="absolute inset-x-3 top-1/2 -translate-y-1/2 rounded-md border border-dashed border-forest/20 bg-white/85 p-3 text-center">
+                                                    <p className="text-sm font-black text-charcoal/45">Not working</p>
+                                                    {canManage && (
+                                                        <button className="mt-2 text-button inline-flex !min-h-8 items-center gap-1.5 !px-2 !py-1 text-sm" type="button" onClick={() => addWindow(day.dayOfWeek, "10:00", "19:00")}>
+                                                            <Plus size={14} /> Add shift
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {day.windows.map((window, index) => {
+                                                const style = shiftBlockStyle(window, timelineBounds.startMinutes, timelineSpanMinutes);
+                                                const selected = window.draftId === selectedWindowId;
+                                                const issueCount = dayIssues.filter((issue) => issue.windowDraftId === window.draftId).length;
+
+                                                return (
+                                                    <button
+                                                        key={window.draftId}
+                                                        type="button"
+                                                        draggable={canManage}
+                                                        className={`absolute left-2 right-2 z-10 overflow-hidden rounded-md border p-2 text-left shadow-sm transition hover:z-20 hover:shadow-md ${
+                                                            selected ? "border-forest bg-mint text-forest ring-2 ring-forest/20" : issueCount > 0 ? "border-red-400 bg-red-50 text-red-800" : "border-forest/25 bg-[#d9f2df] text-forest"
+                                                        }`}
+                                                        style={style}
+                                                        onClick={() => {
+                                                            setSelectedWindowId(window.draftId);
+                                                            onExpandedDay(day.dayOfWeek);
+                                                        }}
+                                                        onDragStart={(event) => startWindowDrag(event, window.draftId)}
+                                                        onDragEnd={() => { dragWindowIdRef.current = null; }}
+                                                    >
+                                                        {canManage && (
+                                                            <>
+                                                                <span
+                                                                    className="absolute inset-x-0 top-0 z-20 h-2 cursor-ns-resize rounded-t-md bg-forest/20"
+                                                                    onPointerDown={(event) => startWindowResize(event, window.draftId, "start")}
+                                                                />
+                                                                <span
+                                                                    className="absolute inset-x-0 bottom-0 z-20 h-2 cursor-ns-resize rounded-b-md bg-forest/20"
+                                                                    onPointerDown={(event) => startWindowResize(event, window.draftId, "end")}
+                                                                />
+                                                            </>
+                                                        )}
+                                                        <span className="flex h-full min-h-12 flex-col justify-center gap-1">
+                                                            <span className="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-[0.08em] text-current/60"><GripVertical size={13} /> Shift {index + 1}</span>
+                                                            <span className="text-sm font-black leading-tight">{safeScheduleWindowLabel(window.startTime, window.endTime)}</span>
+                                                            <span className="truncate text-xs font-bold opacity-75">{locationName(schedule, window.locationId)}</span>
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
+                                            {day.active && canManage && (
+                                                <button
+                                                    className="absolute bottom-3 left-3 right-3 inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-forest/15 bg-white text-sm font-black text-forest shadow-sm hover:bg-mint/40"
+                                                    type="button"
+                                                    onClick={() => addWindow(day.dayOfWeek)}
+                                                >
+                                                    <Plus size={14} /> Add split
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
                 </div>
+
+                <aside className="min-w-0 rounded-md border border-forest/10 bg-white p-4">
+                    {selectedContext ? (
+                        <div className="space-y-4">
+                            <div>
+                                <p className="text-xs font-black uppercase tracking-[0.14em] text-charcoal/45">Edit shift</p>
+                                <h3 className="mt-1 text-xl font-black text-forest">{weekdays[selectedContext.day.dayOfWeek]} shift</h3>
+                                <p className="mt-1 text-sm font-bold text-charcoal/55">{safeScheduleWindowLabel(selectedContext.window.startTime, selectedContext.window.endTime)}</p>
+                            </div>
+                            <div className="grid gap-3">
+                                <label className="grid gap-1">
+                                    <span className="text-[11px] font-black uppercase tracking-[0.12em] text-charcoal/45">Starts</span>
+                                    <input
+                                        className={scheduleFieldClass(selectedIssues.some((issue) => issue.field === "startTime" || issue.field === "window"))}
+                                        type="time"
+                                        step="900"
+                                        value={selectedContext.window.startTime}
+                                        disabled={!canManage}
+                                        onChange={(event) => updateWindow(selectedContext.day.dayOfWeek, selectedContext.index, { startTime: event.target.value })}
+                                        onBlur={(event) => {
+                                            const snapped = snapWeeklyScheduleClock(event.target.value);
+                                            if (snapped) updateWindow(selectedContext.day.dayOfWeek, selectedContext.index, { startTime: snapped });
+                                        }}
+                                    />
+                                </label>
+                                <label className="grid gap-1">
+                                    <span className="text-[11px] font-black uppercase tracking-[0.12em] text-charcoal/45">Ends</span>
+                                    <input
+                                        className={scheduleFieldClass(selectedIssues.some((issue) => issue.field === "endTime" || issue.field === "window"))}
+                                        type="time"
+                                        step="900"
+                                        value={selectedContext.window.endTime}
+                                        disabled={!canManage}
+                                        onChange={(event) => updateWindow(selectedContext.day.dayOfWeek, selectedContext.index, { endTime: event.target.value })}
+                                        onBlur={(event) => {
+                                            const snapped = snapWeeklyScheduleClock(event.target.value);
+                                            if (snapped) updateWindow(selectedContext.day.dayOfWeek, selectedContext.index, { endTime: snapped });
+                                        }}
+                                    />
+                                </label>
+                                <label className="grid gap-1">
+                                    <span className="text-[11px] font-black uppercase tracking-[0.12em] text-charcoal/45">Location</span>
+                                    <select
+                                        className={scheduleFieldClass(selectedIssues.some((issue) => issue.field === "locationId"))}
+                                        value={selectedContext.window.locationId}
+                                        disabled={!canManage}
+                                        onChange={(event) => updateWindow(selectedContext.day.dayOfWeek, selectedContext.index, { locationId: event.target.value })}
+                                    >
+                                        {schedule.locations.map((location) => (
+                                            <option key={location.id} value={location.id}>{locationName(schedule, location.id)}</option>
+                                        ))}
+                                    </select>
+                                </label>
+                            </div>
+                            {selectedIssues.map((issue) => (
+                                <p key={`${issue.field}-${issue.message}`} className="rounded-md bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{issue.message}</p>
+                            ))}
+                            {canManage && (
+                                <div className="grid gap-2">
+                                    <button className="icon-text-button justify-center !min-h-10" type="button" onClick={() => duplicateWindow(selectedContext.window.draftId, selectedContext.day.dayOfWeek)}>
+                                        <Copy size={15} /> Duplicate
+                                    </button>
+                                    <div className="grid grid-cols-[1fr_auto] gap-2">
+                                        <select className="input !min-h-10 !py-2 text-sm" value={inspectorCopyTarget} onChange={(event) => setInspectorCopyTarget(event.target.value)}>
+                                            {selectedCopyOptions.map((option) => (
+                                                <option key={option.dayOfWeek} value={option.dayOfWeek}>{option.label}</option>
+                                            ))}
+                                        </select>
+                                        <button className="icon-text-button !min-h-10" type="button" onClick={() => inspectorCopyTarget && copyDay(selectedContext.day.dayOfWeek, Number(inspectorCopyTarget))}>
+                                            <Copy size={15} /> Copy
+                                        </button>
+                                    </div>
+                                    <button className="text-button inline-flex !min-h-10 items-center justify-center gap-1.5 text-red-700 hover:bg-red-50" type="button" onClick={() => removeWindow(selectedContext.day.dayOfWeek, selectedContext.index)}>
+                                        <Trash2 size={15} /> Delete shift
+                                    </button>
+                                    <button className="text-button inline-flex !min-h-10 items-center justify-center gap-1.5 text-red-700 hover:bg-red-50" type="button" onClick={() => clearDay(selectedContext.day.dayOfWeek)}>
+                                        <X size={15} /> Clear {weekdays[selectedContext.day.dayOfWeek]}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="grid h-full min-h-60 place-items-center rounded-md border border-dashed border-forest/15 bg-[#f8faf7] p-4 text-center">
+                            <div>
+                                <p className="text-sm font-black text-forest">Select a shift</p>
+                                <p className="mt-1 text-sm font-bold text-charcoal/55">Click a block to edit exact time, location, copy, duplicate, or delete.</p>
+                            </div>
+                        </div>
+                    )}
+                </aside>
+            </div>
+            <div className="grid gap-3 p-4 xl:hidden">
+                {orderedDays.map((day) => (
+                    <MobileWeeklyDayCard
+                        key={day.dayOfWeek}
+                        day={day}
+                        schedule={schedule}
+                        canManage={canManage}
+                        expanded={expandedDay === day.dayOfWeek}
+                        onExpand={() => onExpandedDay(day.dayOfWeek)}
+                        onActiveChange={(active) => setDayActive(day.dayOfWeek, active)}
+                        onWindowChange={(index, patch) => updateWindow(day.dayOfWeek, index, patch)}
+                        onAddWindow={() => addWindow(day.dayOfWeek)}
+                        onRemoveWindow={(index) => removeWindow(day.dayOfWeek, index)}
+                        onClearDay={() => clearDay(day.dayOfWeek)}
+                        onCopyDay={(targetDay) => copyDay(day.dayOfWeek, targetDay)}
+                        onDuplicateWindow={(windowDraftId) => duplicateWindow(windowDraftId, day.dayOfWeek)}
+                        validationIssues={validationIssues.filter((issue) => issue.dayOfWeek === day.dayOfWeek)}
+                    />
+                ))}
             </div>
             <div className="mt-auto flex flex-col gap-3 border-t border-forest/10 bg-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                 <p className={`text-xs font-bold ${validationIssues.length > 0 ? "text-red-700" : "text-charcoal/50"}`}>
@@ -505,6 +830,217 @@ function WeeklyScheduleBuilder({
                     </div>
                 )}
             </div>
+        </section>
+    );
+}
+
+function findWindowContext(days: DayScheduleDraft[], windowDraftId: string) {
+    for (const day of days) {
+        const index = day.windows.findIndex((window) => window.draftId === windowDraftId);
+        if (index >= 0) {
+            return {
+                day,
+                window: day.windows[index],
+                index,
+            };
+        }
+    }
+
+    return null;
+}
+
+function findNewWindow(previous: WeeklyScheduleDraft, next: WeeklyScheduleDraft) {
+    const previousIds = new Set(previous.days.flatMap((day) => day.windows.map((window) => window.draftId)));
+    return next.days.flatMap((day) => day.windows).find((window) => !previousIds.has(window.draftId)) ?? null;
+}
+
+function weeklyTimelineBounds(days: DayScheduleDraft[]) {
+    const windowMinutes = days
+        .flatMap((day) => day.windows)
+        .flatMap((window) => [clockInputToMinutes(window.startTime), clockInputToMinutes(window.endTime)])
+        .filter((minutes): minutes is number => minutes !== null);
+    const earliest = Math.min(8 * 60, ...windowMinutes);
+    const latest = Math.max(21 * 60, ...windowMinutes);
+    const startMinutes = Math.max(0, Math.floor(earliest / 60) * 60);
+    const endMinutes = Math.min(23 * 60 + 45, Math.ceil(latest / 60) * 60);
+
+    return {
+        startMinutes,
+        endMinutes: Math.max(startMinutes + 60, endMinutes),
+    };
+}
+
+function weeklyTimelineHourMarks(startMinutes: number, endMinutes: number) {
+    const first = Math.ceil(startMinutes / 60) * 60;
+    const last = Math.floor(endMinutes / 60) * 60;
+    const marks: number[] = [];
+    for (let minutes = first; minutes <= last; minutes += 60) {
+        marks.push(minutes);
+    }
+    return marks;
+}
+
+function shiftBlockStyle(window: ShiftWindowDraft, timelineStartMinutes: number, timelineSpanMinutes: number): React.CSSProperties {
+    const startMinutes = clockInputToMinutes(window.startTime) ?? timelineStartMinutes;
+    const endMinutes = clockInputToMinutes(window.endTime) ?? startMinutes + 60;
+    const visibleStart = Math.max(timelineStartMinutes, startMinutes);
+    const visibleEnd = Math.min(timelineStartMinutes + timelineSpanMinutes, Math.max(endMinutes, visibleStart + 15));
+    const top = ((visibleStart - timelineStartMinutes) / timelineSpanMinutes) * 100;
+    const height = ((visibleEnd - visibleStart) / timelineSpanMinutes) * 100;
+
+    return {
+        top: `calc(${top}% + 3px)`,
+        height: `max(52px, calc(${height}% - 6px))`,
+    };
+}
+
+function clockFromTimelinePointer(clientY: number, rect: DOMRect, startMinutes: number, endMinutes: number) {
+    const ratio = Math.max(0, Math.min(1, (clientY - rect.top) / Math.max(1, rect.height)));
+    const minutes = startMinutes + ratio * (endMinutes - startMinutes);
+    return snapWeeklyScheduleClock(minutesToLocalClock(minutes));
+}
+
+function minutesToLocalClock(totalMinutes: number) {
+    const clamped = Math.max(0, Math.min(23 * 60 + 45, Math.round(totalMinutes)));
+    const hour = Math.floor(clamped / 60);
+    const minute = clamped % 60;
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function clockInputToMinutes(time: string) {
+    if (!/^\d{2}:\d{2}$/.test(time)) {
+        return null;
+    }
+
+    const [hour, minute] = time.split(":").map(Number);
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+        return null;
+    }
+
+    return hour * 60 + minute;
+}
+
+function formatClockLabel(clock: string) {
+    const minutes = clockInputToMinutes(clock) ?? 0;
+    const hour = Math.floor(minutes / 60);
+    const minute = minutes % 60;
+    const period = hour >= 12 ? "PM" : "AM";
+    const displayHour = hour % 12 || 12;
+    return `${displayHour}${minute ? `:${String(minute).padStart(2, "0")}` : ""} ${period}`;
+}
+
+function MobileWeeklyDayCard({
+    day,
+    schedule,
+    canManage,
+    expanded,
+    onExpand,
+    onActiveChange,
+    onWindowChange,
+    onAddWindow,
+    onRemoveWindow,
+    onClearDay,
+    onCopyDay,
+    onDuplicateWindow,
+    validationIssues,
+}: {
+    day: DayScheduleDraft;
+    schedule: AdminSchedule;
+    canManage: boolean;
+    expanded: boolean;
+    onExpand: () => void;
+    onActiveChange: (active: boolean) => void;
+    onWindowChange: (index: number, patch: Partial<ShiftWindowDraft>) => void;
+    onAddWindow: () => void;
+    onRemoveWindow: (index: number) => void;
+    onClearDay: () => void;
+    onCopyDay: (targetDay: number) => void;
+    onDuplicateWindow: (windowDraftId: string) => void;
+    validationIssues: WeeklyScheduleValidationIssue[];
+}) {
+    const copyTargetOptions = useMemo(() => getWeeklyCopyTargetDayOptions(day.dayOfWeek), [day.dayOfWeek]);
+    const [copyTarget, setCopyTarget] = useState(String(copyTargetOptions[0]?.dayOfWeek ?? ""));
+    const dayLevelIssues = validationIssues.filter((issue) => !issue.windowDraftId);
+
+    return (
+        <section className={`rounded-md border p-3 shadow-sm ${expanded ? "border-forest/25 bg-mint/20" : "border-forest/10 bg-white"}`}>
+            <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                    <span className="grid size-11 place-items-center rounded-md bg-forest text-sm font-black text-white">{weekdays[day.dayOfWeek]}</span>
+                    <div className="min-w-0">
+                        <p className="text-base font-black text-forest">{day.active ? `${day.windows.length} shift${day.windows.length === 1 ? "" : "s"}` : "Not working"}</p>
+                        <p className="truncate text-sm font-bold text-charcoal/55">
+                            {day.windows.length > 0
+                                ? day.windows.map((window) => safeScheduleWindowLabel(window.startTime, window.endTime)).join(", ")
+                                : "Tap add shift to start this day."}
+                        </p>
+                    </div>
+                </div>
+                <div className="flex items-center gap-2">
+                    <ToggleSwitch checked={day.active} disabled={!canManage} onChange={onActiveChange} />
+                    <IconMini title={expanded ? "Collapse options" : "Show options"} onClick={onExpand}>
+                        <ChevronDown size={14} className={expanded ? "rotate-180 transition" : "transition"} />
+                    </IconMini>
+                </div>
+            </div>
+            {expanded && (
+                <div className="mt-3 grid gap-3">
+                    {dayLevelIssues.map((issue) => (
+                        <p key={`${issue.field}-${issue.message}`} className="rounded-md bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{issue.message}</p>
+                    ))}
+                    {day.active ? (
+                        <>
+                            {day.windows.map((window, index) => (
+                                <div key={window.draftId} className="grid gap-2 rounded-md border border-forest/10 bg-white/90 p-2">
+                                    <WeeklyWindowEditor
+                                        index={index}
+                                        window={window}
+                                        schedule={schedule}
+                                        canManage={canManage}
+                                        issues={validationIssues.filter((issue) => issue.windowDraftId === window.draftId)}
+                                        onWindowChange={onWindowChange}
+                                        onRemoveWindow={onRemoveWindow}
+                                    />
+                                    {canManage && (
+                                        <button className="icon-text-button justify-self-start !min-h-9 !px-2 !py-1 text-sm" type="button" onClick={() => onDuplicateWindow(window.draftId)}>
+                                            <Copy size={14} /> Duplicate
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                            {canManage && (
+                                <button className="text-button inline-flex !min-h-9 items-center gap-1.5 justify-self-start !px-2 !py-1 text-sm" type="button" onClick={onAddWindow}>
+                                    <Plus size={14} /> Add split
+                                </button>
+                            )}
+                        </>
+                    ) : (
+                        canManage && (
+                            <button className="primary-button inline-flex !min-h-10 items-center gap-1.5 justify-self-start !px-3 !py-2 text-sm" type="button" onClick={onAddWindow}>
+                                <Plus size={14} /> Add shift
+                            </button>
+                        )
+                    )}
+                    {canManage && (
+                        <div className="flex flex-col gap-2 rounded-md border border-forest/10 bg-white px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-xs font-black uppercase tracking-[0.12em] text-charcoal/45">Copy to</span>
+                                <select className="input !min-h-9 !w-auto !py-1 text-sm" value={copyTarget} onChange={(event) => setCopyTarget(event.target.value)}>
+                                    {copyTargetOptions.map((option) => (
+                                        <option key={option.dayOfWeek} value={option.dayOfWeek}>{option.label}</option>
+                                    ))}
+                                </select>
+                                <button className="icon-text-button !min-h-9 !px-2 !py-1 text-sm" type="button" onClick={() => onCopyDay(Number(copyTarget))} disabled={!copyTarget}>
+                                    <Copy size={14} /> Apply
+                                </button>
+                            </div>
+                            <button className="text-button inline-flex !min-h-9 items-center justify-center gap-1.5 !px-2 !py-1 text-sm text-red-700 hover:bg-red-50" type="button" onClick={onClearDay}>
+                                <X size={14} /> Clear {weekdays[day.dayOfWeek]}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
         </section>
     );
 }

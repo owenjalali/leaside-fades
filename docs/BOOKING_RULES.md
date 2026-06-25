@@ -62,6 +62,10 @@ Removal is deactivation. If future confirmed bookings exist, removal is rejected
 
 Phase 7 schedule management rules:
 - owner/admin users can create, edit, list, and deactivate recurring shifts
+- `/admin/shifts` edits recurring weekly schedules through a visual weekly timeline on desktop and compact day cards on tablet/mobile
+- recurring shift drag, drop, resize, duplicate, copy, and clear-day actions update only the frontend draft until `Save changes`
+- recurring shift drag/drop/resize actions snap to 15-minute local-time boundaries and still rely on server-side schedule validation at save time
+- the shift inspector supports exact start/end/location editing for owner/admin users who prefer typed controls over dragging
 - split shifts are represented as multiple same-day non-overlapping shift windows
 - adjacent shift windows are allowed
 - active shifts for the same barber, same weekday, overlapping local time, and overlapping effective date ranges are rejected
@@ -355,7 +359,7 @@ Phase 7.5 drag/drop:
 - barber users can drag only their own bookings and only within their own calendar column
 - owner/admin cross-barber moves are allowed only through the same reschedule validation path
 - drag/drop is snapped to 15-minute slot boundaries
-- shifts, closures, and blocked time are not drag/drop editable in Phase 7.5
+- in the admin calendar, shifts, closures, and blocked time are not drag/drop editable; recurring shift drag/resize belongs to `/admin/shifts`
 
 ## Blocked Time
 

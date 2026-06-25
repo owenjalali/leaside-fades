@@ -19,13 +19,17 @@ import {
     bookingFallsOutsideWorkingWindows,
     calendarRangeFitsWorkingWindows,
     calculateWeeklyScheduleHours,
+    clearWeeklyScheduleDay,
     estimateMobileCalendarGridHeight,
     formatCompactDashboardCurrency,
     formatDashboardPeriodLabel,
     formatAdminStatus,
     formatDashboardCurrency,
+    copyWeeklyScheduleDay,
     compactNotificationFailureMessage,
+    duplicateWeeklyScheduleWindow,
     getBookingCardTone,
+    getBookingToneClasses,
     getActiveNotificationFailures,
     getCalendarInitialScrollTop,
     getScheduledCalendarBarbers,
@@ -34,10 +38,13 @@ import {
     groupBookingsByLocalDate,
     groupShiftsByBarberAndWeekday,
     mobileAdminCalendarLayoutBudget,
+    moveWeeklyScheduleWindow,
     navigateCalendarDate,
     navigateDashboardPeriod,
     notificationFilterMatches,
+    resizeWeeklyScheduleWindow,
     seriesHasDashboardData,
+    snapWeeklyScheduleClock,
     summarizeNotificationHealth,
     validateWeeklyScheduleDraft,
 } from "./admin-utils";
@@ -467,6 +474,98 @@ describe("Phase 7 schedule UI utilities", () => {
         expect(validateWeeklyScheduleDraft(draft)).toEqual([]);
     });
 
+    test("snaps weekly timeline edits to 15-minute schedule clocks", () => {
+        expect(snapWeeklyScheduleClock("10:07")).toBe("10:00");
+        expect(snapWeeklyScheduleClock("10:08")).toBe("10:15");
+        expect(snapWeeklyScheduleClock("23:59")).toBe("23:45");
+        expect(snapWeeklyScheduleClock("not-a-time")).toBeNull();
+    });
+
+    test("moves and resizes weekly shift windows without mutating the original draft", () => {
+        const schedule: AdminSchedule = {
+            locations: [{ id: "location-a", name: "Eglinton", sortOrder: 1 }],
+            barbers: [{ id: "barber-a", displayName: "Laura Nguyen", locationIds: ["location-a"], sortOrder: 1 }],
+            shifts: [shiftA],
+            shiftOverrides: [],
+            blockedTimes: [],
+        };
+        const draft = buildWeeklyScheduleDraft(schedule, "barber-a");
+
+        const moved = moveWeeklyScheduleWindow(draft, {
+            windowDraftId: "shift-a",
+            targetDayOfWeek: 2,
+            targetStartTime: "11:07",
+        });
+
+        expect(draft.days[1]).toMatchObject({ active: true, windows: [{ draftId: "shift-a", startTime: "10:00", endTime: "13:00" }] });
+        expect(moved.days[1]).toMatchObject({ active: false, windows: [] });
+        expect(moved.days[2]).toMatchObject({
+            active: true,
+            windows: [{ draftId: "shift-a", shiftId: "shift-a", startTime: "11:00", endTime: "14:00" }],
+        });
+        expect(buildWeeklyScheduleSavePlan(schedule, moved)).toEqual([{
+            type: "update",
+            shiftId: "shift-a",
+            payload: {
+                barberId: "barber-a",
+                locationId: "location-a",
+                dayOfWeek: 2,
+                startTime: "11:00",
+                endTime: "14:00",
+                effectiveFrom: "",
+                effectiveTo: "",
+            },
+        }]);
+
+        const resized = resizeWeeklyScheduleWindow(moved, {
+            windowDraftId: "shift-a",
+            edge: "end",
+            targetTime: "15:37",
+        });
+
+        expect(resized.days[2].windows[0]).toMatchObject({ startTime: "11:00", endTime: "15:30" });
+        expect(validateWeeklyScheduleDraft(resized)).toEqual([]);
+    });
+
+    test("duplicates, copies, and clears weekly shift windows for inspector actions", () => {
+        const draft = buildWeeklyScheduleDraft({
+            locations: [
+                { id: "location-a", name: "Eglinton", sortOrder: 1 },
+                { id: "location-b", name: "Millwood", sortOrder: 2 },
+            ],
+            barbers: [{ id: "barber-a", displayName: "Laura Nguyen", locationIds: ["location-a", "location-b"], sortOrder: 1 }],
+            shifts: [shiftA],
+            shiftOverrides: [],
+            blockedTimes: [],
+        }, "barber-a");
+
+        const duplicated = duplicateWeeklyScheduleWindow(draft, {
+            windowDraftId: "shift-a",
+            targetDayOfWeek: 2,
+            targetStartTime: "12:22",
+        });
+        const duplicate = duplicated.days[2].windows[0];
+
+        expect(duplicate).toMatchObject({
+            locationId: "location-a",
+            startTime: "12:15",
+            endTime: "15:15",
+        });
+        expect(duplicate.draftId).not.toBe("shift-a");
+        expect(duplicate.shiftId).toBeUndefined();
+
+        const copied = copyWeeklyScheduleDay(duplicated, { fromDayOfWeek: 2, toDayOfWeek: 5 });
+        expect(copied.days[5]).toMatchObject({
+            active: true,
+            windows: [{ locationId: "location-a", startTime: "12:15", endTime: "15:15" }],
+        });
+        expect(copied.days[5].windows[0].draftId).not.toBe(duplicate.draftId);
+        expect(copied.days[5].windows[0].shiftId).toBeUndefined();
+
+        const cleared = clearWeeklyScheduleDay(copied, 5);
+        expect(cleared.days[5]).toMatchObject({ active: false, windows: [] });
+    });
+
     test("diffs weekly draft changes into deactivate, update, and create operations", () => {
         const schedule: AdminSchedule = {
             locations: [
@@ -616,6 +715,17 @@ describe("Phase 7.5 calendar-first UI utilities", () => {
         expect(getBookingCardTone({ ...bookingA, status: "cancelled", serviceCategoryNames: ["Hair & Styling (Men)"] } as AdminBookingSummary)).toBe("cancelled");
         expect(getBookingCardTone({ ...bookingA, status: "completed", serviceCategoryNames: ["Hair & Styling (Women)"] } as AdminBookingSummary)).toBe("completed");
         expect(getBookingCardTone({ ...bookingA, status: "no_show", serviceCategoryNames: ["Hair & Styling (Boy 9 & Under)"] } as AdminBookingSummary)).toBe("no_show");
+    });
+
+    test("uses high-visibility appointment colors for the admin schedule", () => {
+        expect(getBookingToneClasses("boys")).toContain("bg-yellow-100");
+        expect(getBookingToneClasses("boys")).toContain("border-yellow-700");
+        expect(getBookingToneClasses("women")).toContain("bg-pink-100");
+        expect(getBookingToneClasses("women")).toContain("border-pink-700");
+        expect(getBookingToneClasses("men")).toContain("bg-blue-100");
+        expect(getBookingToneClasses("men")).toContain("border-blue-700");
+        expect(getBookingToneClasses("no_show")).toContain("bg-red-600");
+        expect(getBookingToneClasses("no_show")).toContain("text-white");
     });
 
     test("builds reschedule payloads for authorized booking drag drops and rejects unsafe drops", () => {

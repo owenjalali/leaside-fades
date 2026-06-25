@@ -69,7 +69,7 @@ Barbers can work at different locations on the same day. By default, overlapping
 
 Phase 7 implements this as `src/server/admin/schedule-service.ts` with a Drizzle repository in `src/server/admin/schedule-repository.ts`. Owner/admin users can create, edit, list, and deactivate recurring shifts, including split shifts as adjacent same-day windows. The service rejects overlapping active shifts for the same barber, weekday, local time range, and overlapping effective date ranges.
 
-The `/admin/shifts` UI is a staff-first weekly schedule builder for recurring patterns and a team overview. One-off shift overrides remain part of the server schedule model and calendar availability engine, but the visible Staff Shifts override editor is hidden until the exception workflow can be redesigned with a clearer calendar-native interaction.
+The `/admin/shifts` UI is a staff-first visual weekly timeline for recurring patterns and a team overview. Desktop owners/admins edit Mon-Sun shift blocks by dragging, dropping, and resizing 15-minute-snapped draft windows, then use the inspector for exact start/end/location, duplicate, copy-to-days, delete, clear-day, effective range, and explicit save/discard actions. Tablet/mobile screens use compact day cards with the same exact controls instead of precision drag editing. One-off shift overrides remain part of the server schedule model and calendar availability engine, but one-day exception editing stays calendar-native through barber headers.
 
 The calendar-native one-day shift editor is exposed from `/admin/calendar` barber headers through `POST /api/admin/schedule/day-shifts`. It replaces the selected barber/location/date shift by deleting same-day overrides for that scope and diffing desired windows against the recurring baseline into `add` and `remove` override rows. Owner/admin users can edit any barber; barber users can edit only their own selected-day shift.
 
@@ -371,10 +371,10 @@ Rules:
 - blocked times that overlap confirmed bookings in the affected scope are rejected
 
 Frontend:
-- `/admin/shifts` provides a staff-first weekly schedule builder with inline day toggles, time windows, location selection, split shifts, effective dates, explicit save, and team overview tab; one-day exception editing is available from `/admin/calendar` barber headers
+- `/admin/shifts` provides a staff-first recurring weekly timeline with 15-minute-snapped drag/drop move, pointer resize, exact inspector edits, location selection, split shifts, copy/duplicate/clear actions, effective dates, explicit save/discard, tablet/mobile day cards, and a team overview tab; one-day exception editing is available from `/admin/calendar` barber headers
 - when multiple active recurring date ranges are returned for one barber, the weekly builder displays and diffs the latest effective recurring pattern instead of mixing separate dated patterns into one editable week
 - `/admin/blocked-time` provides scope-aware blocked-time forms, all-day closure entry, and visible chips for barber blocks, location closures, and business closures
-- drag/drop editing is intentionally deferred; future drag/drop can call the same validated mutation endpoints
+- recurring shift drag/drop edits only the frontend draft until the existing validated save-plan mutation endpoints commit the change; closures and blocked time remain form-based
 
 ## UI Route Map
 
@@ -486,14 +486,14 @@ Phase 7 implemented:
 - `/admin/shifts`
 - `/admin/blocked-time`
 - authenticated schedule shell integration in the existing admin workspace
-- recurring shift list/create/edit/deactivate flows through a staff-first weekly schedule builder that diffs inline day rows back to the existing mutation endpoints
-- one-off `add`, `remove`, and `not_working` shift override flows in a secondary `/admin/shifts` tab
+- recurring shift list/create/edit/deactivate flows through a staff-first visual weekly schedule builder that diffs timeline/day-card drafts back to the existing mutation endpoints
+- one-off `add`, `remove`, and `not_working` shift override flows through the calendar-native one-day shift editor exposed from barber headers
 - barber, location, and business blocked-time flows
 - barber read context for broader closures and self-service mutation for own blocked time
 - `npm run qa:phase7-schedule` for local/dev real-route owner/barber schedule QA
 
 Deferred:
-- drag/drop shift/block editing
+- calendar-native drag/drop for closures and blocked time
 - production schedule seed data
 - notification sends for schedule changes remain out of scope
 

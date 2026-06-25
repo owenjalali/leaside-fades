@@ -329,10 +329,11 @@
 - [x] Admin rail uses the Leaside Fades logo instead of the `LF` placeholder
 - [x] Admin calendar uses a bounded viewport layout with internal board scrolling
 - [x] `/admin/shifts` uses a staff-first weekly schedule builder instead of the previous all-staff CRUD grid
-- [x] Staff shift edits use inline weekly draft rows and explicit Save changes through the existing schedule mutation endpoints
-- [x] Staff shift utility tests cover weekly draft creation, split-window hour totals, and save-plan diff operations
-- [x] Staff shift browser QA stress-tested weekly builder, overview, staff search, edit/discard state, and 1440/768/390/320-width layouts with no document overflow
+- [x] Staff shift edits use a visual weekly draft timeline/day-card editor and explicit Save changes through the existing schedule mutation endpoints
+- [x] Staff shift utility tests cover weekly draft creation, split-window hour totals, 15-minute snapping, drag move, resize, duplicate, copy, clear-day, and save-plan diff operations
+- [x] Staff shift browser QA stress-tested weekly builder, overview, staff search, edit/discard state, visual timeline, mobile day-card fallback, and 1440/768/390/320-width layouts with no document overflow
 - [x] Staff shift weekly builder shows the latest dated recurring pattern instead of duplicating separate active effective date ranges in one week
+- [x] Admin calendar appointment colors use higher-contrast Men blue, Women pink, Boys yellow, Mixed violet, no-show red, completed green, and cancelled grey styling
 - [x] Admin day board renders the weekday 7:00 PM close boundary without creating a 7:00 PM bookable slot
 - [x] Add appointment drawer uses a desktop split-pane layout so staff columns remain reachable
 - [x] Public Fresha booking fallback links replaced with `/book` / `https://leasidefades.com/book`
@@ -449,3 +450,4 @@
 - [x] Notification Center shows delivery mode, filters, upcoming reminder previews, failed rows, channel badges, and provider/error details
 - [x] Notification Center separates active delivery issues from historical failed notification audit rows
 - [x] Playwright MCP browser QA verified `/admin/calendar` and the Notification Center at iPhone width, 1280x720, 1440x900, and 1912x970
+- [x] Playwright CLI smoke verified `/admin/shifts` desktop visual timeline, `/admin/shifts` mobile day cards, `/admin/calendar` color legend, `/book`, `/api/booking/catalog`, `/api/health`, and unauthenticated reminder protection
