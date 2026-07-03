@@ -34,7 +34,9 @@
     "fresha:import:apply": "tsx src/server/import/fresha-import.ts --mode=apply",
     "preview": "vite preview",
     "server": "node server.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src"
   },
   "keywords": [
     "barbershop",
@@ -72,11 +74,14 @@
     "@vitejs/plugin-react": "^5.1.4",
     "autoprefixer": "^10.4.24",
     "drizzle-kit": "^0.31.10",
+    "eslint": "^10.6.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "postcss": "^8.5.12",
     "supertest": "^7.2.2",
     "tailwindcss": "^4.2.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.62.1",
     "vite": "^7.3.2",
     "vitest": "^4.1.5"
   },
