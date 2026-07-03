@@ -263,6 +263,26 @@ Before cutover, confirm where these are visible:
 
 Notification provider failures should be visible in the `notifications` table and host logs.
 
+## Weekly Health Check
+
+Run this short routine once a week against production:
+
+1. Run the non-mutating smoke:
+
+```sh
+npm run qa:production-smoke
+```
+
+2. Verify the durable reminder success heartbeat:
+
+```sh
+npm run qa:production-reminder-heartbeat
+```
+
+3. Scan Vercel production logs for `[error]` entries. After the July 2026 sslmode normalization fix, the error stream should be quiet on healthy traffic, so anything appearing there deserves investigation.
+
+If the smoke fails, follow Health And Domain Checks. If the heartbeat is stale or failing, follow Reminder Runner. For error triage sources, see Logging And Error Visibility.
+
 ## Cutover
 
 Only after owner signoff:

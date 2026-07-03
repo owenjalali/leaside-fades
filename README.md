@@ -1,93 +1,111 @@
-# Leaside Fades Website
+# Leaside Fades
 
-Conversion-focused marketing site for Leaside Fades with secure Google Reviews integration.
+Custom booking and scheduling platform for Leaside Fades, a two-location barbershop in Toronto. It is a focused "Fresha Lite": scheduling correctness, no double-booking, reliable availability generation, a clean customer booking flow, and simple owner/barber administration — without payments, inventory, payroll, or marketing systems.
+
+One Express app serves three surfaces:
+
+- the marketing site at `/`
+- the public customer booking flow at `/book` (with `/booking` as an alias)
+- the admin application at `/admin` (calendar, bookings, schedule, team, dashboard)
+
+The platform is live in production at `https://leasidefades.com`.
 
 ## Stack
 
-- Frontend: Semantic HTML + CSS + vanilla JS (mobile-first)
-- Backend: Node.js + Express
-- Reviews data: Google Places Details API via backend-only route
+- **Frontend**: React 19 + Vite 7 + TypeScript (strict) single-page app
+- **Styling**: Tailwind CSS v4, CSS-first — theme tokens live in `@theme` inside `src/index.css`; there is no `tailwind.config.*` file
+- **Backend**: Express 5 in `server.js`, deployed as a single Vercel serverless function through `api/[...route].js`
+- **Database**: Neon Postgres via Drizzle ORM and node-postgres (`pg`); migrations managed by drizzle-kit
+- **Auth**: custom session auth with Argon2 password hashing (owner/admin/barber roles)
+- **Notifications**: Twilio SMS and Resend email through an idempotent notifications outbox (the `notifications` table), with `mock` / `dev` / `live` delivery modes
+- **Reminders**: appointment reminders run through `GET /api/jobs/send-reminders`, guarded by `CRON_SECRET` and triggered by cron-job.org (primary) and a GitHub Actions workflow (`.github/workflows/send-reminders.yml`, backup)
+- **Tests**: Vitest
 
-## Features Implemented
+## Getting Started
 
-- `GET /api/google-reviews` backend endpoint
-- `GET /api/site-config` endpoint for env-driven public links and CTAs
-- Backend-only Google API calls (no browser API key exposure)
-- 12-hour cache (`data/google-reviews-cache.json`)
-- Normalized review payload
-- Graceful fallback order:
-  - Fresh cache
-  - Stale cache
-  - Local fallback (`data/reviews-fallback.json`)
-- Frontend reviews component with max 6 reviews
-- Lazy review loading (IntersectionObserver)
-- Mobile-first layout and performance-oriented media loading
-
-## Setup
-
-1. Install dependencies:
-
-```bash
+```sh
 npm install
 ```
 
-2. Create `.env` from `.env.example`:
+Copy `.env.example` to `.env` and fill in values (see Environment Variables below):
 
-```bash
+```sh
 cp .env.example .env
 ```
 
-3. Add environment values:
+Apply database migrations:
 
-- `GOOGLE_PLACES_API_KEY`
-- `GOOGLE_PLACE_ID`
-- `SITE_GOOGLE_MAPS_URL`
-- `SITE_INSTAGRAM_URL`
-- `SITE_FACEBOOK_URL`
-- `SITE_BOOKING_URL` (production default: `https://leasidefades.com/book`)
-- `SITE_PHONE_E164`
+```sh
+npm run db:migrate
+```
 
-4. Start locally:
+Optionally seed a local dev owner account and sample shifts:
 
-```bash
+```sh
+npm run db:seed:dev-owner
+npm run db:seed:dev-shifts
+```
+
+Start the dev server:
+
+```sh
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+## Key Scripts
 
-## Phase 13 Fresha Import
+| Script | Purpose |
+| --- | --- |
+| `npm run dev` | Vite dev server |
+| `npm run build` | Typecheck (`tsc`) + production build |
+| `npm test` | Run the Vitest suite |
+| `npm run typecheck` | TypeScript type checking |
+| `npm run lint` | Lint the codebase |
+| `npm run db:generate` | Generate Drizzle migrations from the schema |
+| `npm run db:migrate` | Apply migrations |
+| `npm run db:seed` | Seed static public business data |
+| `npm run db:seed:dev-owner` | Seed a local dev owner account |
+| `npm run db:seed:dev-shifts` | Seed local sample shifts |
+| `npm run qa:production-smoke` | Non-mutating production smoke check (health, catalog, auth guards) |
+| `npm run qa:production-read-stress` | Bounded non-mutating production read stress |
+| `npm run qa:production-reminder-heartbeat` | Verify the durable reminder success heartbeat |
+| `npm run qa:production-reminder-scheduler` | Verify scheduler runs in Vercel production logs |
+| `npm run qa:phase*` | Repeatable per-phase real-route QA runners |
+| `npm run preview` | Preview the production build locally |
+| `npm run server` | Run the Express server directly (`node server.js`) |
 
-Use the guarded importer only after read-only Playwright extraction:
+## Environment Variables
 
-```bash
-npm run fresha:import:dry-run -- --input output/fresha-import/fresha-extraction.json --report output/fresha-import/fresha-import-review.md
-```
+`.env.example` is the authoritative, annotated list — copy it and fill in real values. The critical ones:
 
-See `docs/FRESHA_IMPORT_GUIDE.md` before applying production imports.
+- `DATABASE_URL` — Postgres connection string (Neon in production)
+- `NOTIFICATION_DELIVERY_MODE` — `mock` (default), `dev`, or `live`
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` — SMS delivery (live mode only)
+- `RESEND_API_KEY` — email delivery (live mode only)
+- `CRON_SECRET` — bearer token guarding `GET /api/jobs/send-reminders`
+- `BLOB_READ_WRITE_TOKEN` — Vercel Blob for barber profile photo uploads
+- `SITE_*` — public site configuration (business name, phone, booking URL, social links)
 
-## API Response Shape
+Never put real credentials anywhere except your gitignored `.env` locally or Vercel environment variables in production.
 
-`GET /api/google-reviews`
+## Documentation
 
-```json
-{
-  "source": "google_places_api",
-  "fetchedAt": 1739900000000,
-  "stale": false,
-  "businessName": "Leaside Fades",
-  "overallRating": 4.9,
-  "totalReviews": 123,
-  "googleMapsUrl": "https://maps.google.com/...",
-  "reviews": [
-    {
-      "authorName": "Client Name",
-      "authorUrl": "https://...",
-      "profilePhotoUrl": "https://...",
-      "rating": 5,
-      "text": "Great fade...",
-      "relativeTimeDescription": "a month ago",
-      "publishTime": 1739500000
-    }
-  ]
-}
-```
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system architecture, time model, and core module boundaries
+- [docs/BOOKING_RULES.md](docs/BOOKING_RULES.md) — availability and booking rules (slot intervals, notice windows, overlap logic)
+- [docs/PRODUCTION_RUNBOOK.md](docs/PRODUCTION_RUNBOOK.md) — deploy, smoke, reminder scheduler, cutover, and rollback procedures
+- [docs/DECISIONS.md](docs/DECISIONS.md) — dated architecture decision records
+- [docs/QA_CHECKLIST.md](docs/QA_CHECKLIST.md) — manual QA checklist
+- [docs/FRESHA_IMPORT_GUIDE.md](docs/FRESHA_IMPORT_GUIDE.md) — guarded Fresha data import workflow
+
+## Deployment
+
+Hosted on Vercel. Pushes to `master` auto-deploy to production, so every push to `master` is a deliberate production deploy. The build serves the SPA from `dist/` and routes all `/api/*` traffic to the single serverless function. Follow [docs/PRODUCTION_RUNBOOK.md](docs/PRODUCTION_RUNBOOK.md) for pre-deploy checks, migrations, smoke tests, and rollback.
+
+## Security And Public Repository Policy
+
+This repository is public. Rules:
+
+- All secrets are environment-only: Vercel environment variables in production, a gitignored `.env` locally.
+- Never commit credentials, tokens, exports, cookies, or customer data.
+- `.env.example` contains placeholders and documentation only — no real values.
+- Customer cancel/reschedule links use unguessable tokens; notification metadata never contains raw management tokens or URLs.

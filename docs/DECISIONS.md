@@ -738,3 +738,11 @@ Replace the `/admin/shifts` row-based recurring weekly editor with a staff-first
 
 Reason:
 The owner found the previous shift UI confusing and specifically wanted a Fresha-style schedule editing experience. Keeping drag/drop draft-only preserves the existing server-side validation and save-plan source of truth, while the mobile day-card fallback avoids fragile precision dragging on small screens. Stronger appointment colors improve calendar scanning without changing booking, revenue, notification, or permission rules.
+
+### 2026-07-03 - Normalize Database Connection Strings To sslmode=verify-full
+
+Decision:
+Normalize the database connection string at client-creation time. `normalizeDatabaseUrl()` in `src/server/db/client.ts` rewrites `sslmode=require` to `sslmode=verify-full` on `DATABASE_URL` before the pool is created, and a `DATABASE_SSL_MODE` environment variable overrides the normalization when set.
+
+Reason:
+node-postgres emits a deprecation warning for `sslmode=require` on every serverless cold start, which marked healthy requests as `[error]` in Vercel logs and produced hundreds of noise entries that buried real failures. Neon TLS certificates chain to a public CA, so full certificate verification is both safe and strictly stronger than `require`.
