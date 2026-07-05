@@ -15,6 +15,8 @@ import {
     X,
 } from "lucide-react";
 
+import { useConfirm } from "../components/ui/ConfirmDialog.tsx";
+import { useToast } from "../components/ui/toast.tsx";
 import {
     createAdminBlockedTime,
     createAdminShift,
@@ -54,7 +56,6 @@ import type {
 } from "./types";
 
 type ScheduleMode = "shifts" | "blocked";
-type ScheduleNotice = { tone: "success" | "error"; message: string } | null;
 
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const weeklyDisplayOrder = [1, 2, 3, 4, 5, 6, 0];
@@ -68,7 +69,7 @@ export default function SchedulePage({
 }) {
     const [schedule, setSchedule] = useState<AdminSchedule | null>(null);
     const [loading, setLoading] = useState(true);
-    const [notice, setNotice] = useState<ScheduleNotice>(null);
+    const { toast } = useToast();
     const [filters, setFilters] = useState({
         from: todayLocalDate(),
         to: addDaysToLocalDate(todayLocalDate(), 30),
@@ -79,7 +80,7 @@ export default function SchedulePage({
         try {
             setSchedule(await fetchAdminSchedule(filters));
         } catch (error) {
-            setNotice({ tone: "error", message: error instanceof Error ? error.message : "Schedule failed to load." });
+            toast({ tone: "error", message: error instanceof Error ? error.message : "Schedule failed to load." });
         } finally {
             setLoading(false);
         }
@@ -91,7 +92,7 @@ export default function SchedulePage({
     }, [filters.from, filters.to]);
 
     async function afterMutation(message: string) {
-        setNotice({ tone: "success", message });
+        toast({ tone: "success", message });
         await refresh();
     }
 
@@ -116,7 +117,6 @@ export default function SchedulePage({
                     </button>
                 </section>
             )}
-            {notice && <Notice notice={notice} onClear={() => setNotice(null)} />}
             {mode === "shifts" ? (
                 <ShiftWorkspace
                     schedule={schedule}
@@ -1375,6 +1375,7 @@ function BlockedTimeWorkspace({
 }) {
     const [draft, setDraft] = useState<AdminBlockedTime | null>(null);
     const [notice, setNotice] = useState("");
+    const confirm = useConfirm();
 
     async function submit(input: BlockedTimeFormInput, editingId?: string) {
         try {
@@ -1394,7 +1395,13 @@ function BlockedTimeWorkspace({
     }
 
     async function remove(blockedTime: AdminBlockedTime) {
-        if (!window.confirm("Delete this blocked time?")) return;
+        const confirmed = await confirm({
+            title: "Delete blocked time?",
+            description: "This frees the time for online booking again.",
+            confirmLabel: "Delete",
+            tone: "danger",
+        });
+        if (!confirmed) return;
         try {
             await deleteAdminBlockedTime(blockedTime.id);
             await onChanged("Blocked time deleted.");
@@ -1614,15 +1621,6 @@ function IconMini({
 
 function FormHeading({ icon, title }: { icon: React.ReactNode; title: string }) {
     return <h2 className="flex items-center gap-2 text-lg font-black text-forest">{icon}{title}</h2>;
-}
-
-function Notice({ notice, onClear }: { notice: NonNullable<ScheduleNotice>; onClear: () => void }) {
-    return (
-        <div className={`flex items-center justify-between gap-3 rounded-md px-4 py-3 text-sm font-bold ${notice.tone === "success" ? "bg-mint text-forest" : "bg-red-50 text-red-700"}`}>
-            <span>{notice.message}</span>
-            <button onClick={onClear} title="Dismiss"><X size={16} /></button>
-        </div>
-    );
 }
 
 function InlineLoading({ label }: { label: string }) {

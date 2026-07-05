@@ -55,6 +55,13 @@ import {
 } from "./api";
 import SchedulePage from "./SchedulePage";
 import TeamPage from "./TeamPage";
+import { Button } from "../components/ui/Button.tsx";
+import { ConfirmDialogProvider } from "../components/ui/ConfirmDialog.tsx";
+import { Field as UiField } from "../components/ui/Field.tsx";
+import { Input } from "../components/ui/Input.tsx";
+import { Notice as UiNotice } from "../components/ui/Notice.tsx";
+import { ToastProvider } from "../components/ui/toast.tsx";
+import { TooltipProvider } from "../components/ui/Tooltip.tsx";
 import {
     buildDashboardChartScale,
     buildDashboardPeriodRange,
@@ -133,6 +140,18 @@ const defaultFilters = (date = todayLocalDate(), view: AdminView = "day"): Admin
 });
 
 export default function AdminApp() {
+    return (
+        <ToastProvider>
+            <ConfirmDialogProvider>
+                <TooltipProvider>
+                    <AdminAppRoutes />
+                </TooltipProvider>
+            </ConfirmDialogProvider>
+        </ToastProvider>
+    );
+}
+
+function AdminAppRoutes() {
     const [path, setPath] = useState(window.location.pathname);
     const [user, setUser] = useState<SafeAdminUser | null>(null);
     const [sessionLoading, setSessionLoading] = useState(true);
@@ -270,48 +289,40 @@ function LoginPage({
     }
 
     return (
-        <main className="min-h-screen bg-cream text-charcoal">
-            <section className="mx-auto flex min-h-screen w-full max-w-[min(92vw,34rem)] flex-col justify-center px-6 py-12">
-                <div className="mb-8 md:mb-10">
-                    <p className="text-base font-semibold uppercase tracking-[0.22em] text-green md:text-lg">Leaside Fades</p>
-                    <h1 className="mt-2 text-5xl font-black leading-tight text-forest md:text-6xl">Admin login</h1>
-                </div>
-                <form onSubmit={handleSubmit} className="space-y-6 rounded-md border border-forest/10 bg-white p-6 shadow-sm md:p-8">
-                    {notice && <p className="rounded-md bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">{notice}</p>}
-                    <Field label="Email">
-                        <input
+        <AdminAuthPage title="Admin login" description="Sign in to manage bookings, schedules, and your team.">
+            <form onSubmit={handleSubmit} className="space-y-6">
+                {notice && <UiNotice tone="warning">{notice}</UiNotice>}
+                <UiField label="Email">
+                    {(id) => (
+                        <Input
+                            id={id}
                             value={email}
                             onChange={(event) => setEmail(event.target.value)}
-                            className="input"
                             type="email"
                             autoComplete="email"
                             required
                         />
-                    </Field>
-                    <Field label="Password">
-                        <input
+                    )}
+                </UiField>
+                <UiField label="Password">
+                    {(id) => (
+                        <Input
+                            id={id}
                             value={password}
                             onChange={(event) => setPassword(event.target.value)}
-                            className="input"
                             type="password"
                             autoComplete="current-password"
                             required
                         />
-                    </Field>
-                    {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p>}
-                    <button className="primary-button w-full text-lg md:text-xl" type="submit" disabled={submitting}>
-                        {submitting ? "Signing in" : "Sign in"}
-                    </button>
-                    <button
-                        className="w-full text-sm font-bold text-forest underline-offset-4 hover:underline"
-                        type="button"
-                        onClick={() => onNavigate("/admin/forgot-password")}
-                    >
-                        Forgot password?
-                    </button>
-                </form>
-            </section>
-        </main>
+                    )}
+                </UiField>
+                {error && <UiNotice tone="error">{error}</UiNotice>}
+                <Button type="submit" className="w-full" loading={submitting}>
+                    Sign in
+                </Button>
+                <AdminAuthLink onClick={() => onNavigate("/admin/forgot-password")}>Forgot password?</AdminAuthLink>
+            </form>
+        </AdminAuthPage>
     );
 }
 
@@ -338,30 +349,26 @@ export function ForgotPasswordPage({ onNavigate }: { onNavigate: (path: string) 
     }
 
     return (
-        <AdminAuthPage title="Reset password">
-            <form onSubmit={handleSubmit} className="space-y-6 rounded-md border border-forest/10 bg-white p-6 shadow-sm md:p-8">
-                <Field label="Email">
-                    <input
-                        value={email}
-                        onChange={(event) => setEmail(event.target.value)}
-                        className="input"
-                        type="email"
-                        autoComplete="email"
-                        required
-                    />
-                </Field>
-                {message && <p className="rounded-md bg-green/10 px-3 py-2 text-sm font-semibold text-forest">{message}</p>}
-                {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p>}
-                <button className="primary-button w-full text-lg md:text-xl" type="submit" disabled={submitting}>
-                    {submitting ? "Sending" : "Send reset email"}
-                </button>
-                <button
-                    className="w-full text-sm font-bold text-forest underline-offset-4 hover:underline"
-                    type="button"
-                    onClick={() => onNavigate("/admin/login")}
-                >
-                    Back to sign in
-                </button>
+        <AdminAuthPage title="Reset password" description="Enter your email and we'll send you a reset link.">
+            <form onSubmit={handleSubmit} className="space-y-6">
+                <UiField label="Email">
+                    {(id) => (
+                        <Input
+                            id={id}
+                            value={email}
+                            onChange={(event) => setEmail(event.target.value)}
+                            type="email"
+                            autoComplete="email"
+                            required
+                        />
+                    )}
+                </UiField>
+                {message && <UiNotice tone="success">{message}</UiNotice>}
+                {error && <UiNotice tone="error">{error}</UiNotice>}
+                <Button type="submit" className="w-full" loading={submitting}>
+                    Send reset email
+                </Button>
+                <AdminAuthLink onClick={() => onNavigate("/admin/login")}>Back to sign in</AdminAuthLink>
             </form>
         </AdminAuthPage>
     );
@@ -396,36 +403,28 @@ export function ResetPasswordPage({
     }
 
     return (
-        <AdminAuthPage title="Set new password">
-            <form onSubmit={handleSubmit} className="space-y-6 rounded-md border border-forest/10 bg-white p-6 shadow-sm md:p-8">
-                {!token && (
-                    <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-                        Password reset link is invalid or expired.
-                    </p>
-                )}
+        <AdminAuthPage title="Set new password" description="Choose a new password for your admin account.">
+            <form onSubmit={handleSubmit} className="space-y-6">
+                {!token && <UiNotice tone="error">Password reset link is invalid or expired.</UiNotice>}
                 <input className="hidden" type="text" name="username" autoComplete="username" tabIndex={-1} aria-hidden="true" />
-                <Field label="New password">
-                    <input
-                        value={password}
-                        onChange={(event) => setPassword(event.target.value)}
-                        className="input"
-                        type="password"
-                        autoComplete="new-password"
-                        minLength={8}
-                        required
-                    />
-                </Field>
-                {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p>}
-                <button className="primary-button w-full text-lg md:text-xl" type="submit" disabled={submitting || !token}>
-                    {submitting ? "Saving" : "Save password"}
-                </button>
-                <button
-                    className="w-full text-sm font-bold text-forest underline-offset-4 hover:underline"
-                    type="button"
-                    onClick={() => onNavigate("/admin/login")}
-                >
-                    Back to sign in
-                </button>
+                <UiField label="New password">
+                    {(id) => (
+                        <Input
+                            id={id}
+                            value={password}
+                            onChange={(event) => setPassword(event.target.value)}
+                            type="password"
+                            autoComplete="new-password"
+                            minLength={8}
+                            required
+                        />
+                    )}
+                </UiField>
+                {error && <UiNotice tone="error">{error}</UiNotice>}
+                <Button type="submit" className="w-full" loading={submitting} disabled={!token}>
+                    Save password
+                </Button>
+                <AdminAuthLink onClick={() => onNavigate("/admin/login")}>Back to sign in</AdminAuthLink>
             </form>
         </AdminAuthPage>
     );
@@ -460,52 +459,67 @@ export function AcceptInvitePage({
     }
 
     return (
-        <AdminAuthPage title="Set up account">
-            <form onSubmit={handleSubmit} className="space-y-6 rounded-md border border-forest/10 bg-white p-6 shadow-sm md:p-8">
-                {!token && (
-                    <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-                        Invite link is invalid or expired.
-                    </p>
-                )}
+        <AdminAuthPage title="Set up account" description="Choose a password to finish setting up your account.">
+            <form onSubmit={handleSubmit} className="space-y-6">
+                {!token && <UiNotice tone="error">Invite link is invalid or expired.</UiNotice>}
                 <input className="hidden" type="text" name="username" autoComplete="username" tabIndex={-1} aria-hidden="true" />
-                <Field label="Password">
-                    <input
-                        value={password}
-                        onChange={(event) => setPassword(event.target.value)}
-                        className="input"
-                        type="password"
-                        autoComplete="new-password"
-                        minLength={8}
-                        required
-                    />
-                </Field>
-                {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p>}
-                <button className="primary-button w-full text-lg md:text-xl" type="submit" disabled={submitting || !token}>
-                    {submitting ? "Saving" : "Create account"}
-                </button>
-                <button
-                    className="w-full text-sm font-bold text-forest underline-offset-4 hover:underline"
-                    type="button"
-                    onClick={() => onNavigate("/admin/login")}
-                >
-                    Back to sign in
-                </button>
+                <UiField label="Password">
+                    {(id) => (
+                        <Input
+                            id={id}
+                            value={password}
+                            onChange={(event) => setPassword(event.target.value)}
+                            type="password"
+                            autoComplete="new-password"
+                            minLength={8}
+                            required
+                        />
+                    )}
+                </UiField>
+                {error && <UiNotice tone="error">{error}</UiNotice>}
+                <Button type="submit" className="w-full" loading={submitting} disabled={!token}>
+                    Create account
+                </Button>
+                <AdminAuthLink onClick={() => onNavigate("/admin/login")}>Back to sign in</AdminAuthLink>
             </form>
         </AdminAuthPage>
     );
 }
 
-function AdminAuthPage({ title, children }: { title: string; children: ReactNode }) {
+function AdminAuthPage({
+    title,
+    description,
+    children,
+}: {
+    title: string;
+    description: string;
+    children: ReactNode;
+}) {
     return (
-        <main className="min-h-screen bg-cream text-charcoal">
-            <section className="mx-auto flex min-h-screen w-full max-w-[min(92vw,34rem)] flex-col justify-center px-6 py-12">
-                <div className="mb-8 md:mb-10">
-                    <p className="text-base font-semibold uppercase tracking-[0.22em] text-green md:text-lg">Leaside Fades</p>
-                    <h1 className="mt-2 text-5xl font-black leading-tight text-forest md:text-6xl">{title}</h1>
+        <main className="flex min-h-screen items-center justify-center bg-canvas px-4 py-12">
+            <div className="w-full max-w-[400px] space-y-6 rounded-card border border-border bg-surface p-8 shadow-card">
+                <div className="space-y-3">
+                    <p className="text-sm font-semibold text-forest">Leaside Fades</p>
+                    <div>
+                        <h1 className="text-xl font-semibold text-ink">{title}</h1>
+                        <p className="mt-1 text-sm text-ink-muted">{description}</p>
+                    </div>
                 </div>
                 {children}
-            </section>
+            </div>
         </main>
+    );
+}
+
+function AdminAuthLink({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className="block w-full rounded-control text-center text-sm text-emerald outline-none transition-colors duration-150 hover:underline focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
+        >
+            {children}
+        </button>
     );
 }
 
