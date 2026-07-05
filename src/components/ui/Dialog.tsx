@@ -29,6 +29,8 @@ export interface DialogContentProps
     extends ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
     size?: DialogSize;
     className?: string;
+    /** Disables the built-in X control (e.g. while a save is in flight). */
+    closeDisabled?: boolean;
     ref?: Ref<HTMLDivElement>;
 }
 
@@ -40,6 +42,7 @@ export interface DialogContentProps
 export function DialogContent({
     size = "md",
     className,
+    closeDisabled = false,
     children,
     ref,
     ...props
@@ -53,7 +56,11 @@ export function DialogContent({
                 {...props}
             >
                 {children}
-                <DialogPrimitive.Close aria-label="Close" className={dialogCloseButtonClasses}>
+                <DialogPrimitive.Close
+                    aria-label="Close"
+                    disabled={closeDisabled}
+                    className={cn(dialogCloseButtonClasses, "disabled:pointer-events-none disabled:opacity-40")}
+                >
                     <X size={16} />
                 </DialogPrimitive.Close>
             </DialogPrimitive.Content>

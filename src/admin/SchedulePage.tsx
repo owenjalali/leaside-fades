@@ -15,7 +15,12 @@ import {
     X,
 } from "lucide-react";
 
+import { Button } from "../components/ui/Button.tsx";
 import { useConfirm } from "../components/ui/ConfirmDialog.tsx";
+import { DateInput } from "../components/ui/DateInput.tsx";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../components/ui/Dialog.tsx";
+import { Select } from "../components/ui/Select.tsx";
+import { TimeInput } from "../components/ui/TimeInput.tsx";
 import { useToast } from "../components/ui/toast.tsx";
 import {
     createAdminBlockedTime,
@@ -29,23 +34,31 @@ import {
 import { getAdminBarberPhotoUrl } from "./barber-photos";
 import {
     addDaysToLocalDate,
+    buildDeleteSchedulePeriodPlan,
+    buildTemporarySchedulePlan,
     buildWeeklyScheduleDraft,
     buildWeeklyScheduleSavePlan,
     buildBlockedTimePayload,
     calculateWeeklyScheduleHours,
     clearWeeklyScheduleDay,
     copyWeeklyScheduleDay,
+    describeSchedulePeriod,
     duplicateWeeklyScheduleWindow,
+    formatLocalDateLabel,
     formatLocalDateTime,
     formatScheduleWindow,
     getWeeklyCopyTargetDayOptions,
+    listWeeklyShiftPatterns,
     moveWeeklyScheduleWindow,
     resizeWeeklyScheduleWindow,
     snapWeeklyScheduleClock,
     todayLocalDate,
     validateWeeklyScheduleDraft,
+    weekdaysInLocalDateRange,
+    weeklyShiftPatternKey,
+    weeklyShiftPatternLabel,
 } from "./admin-utils";
-import type { DayScheduleDraft, ShiftWindowDraft, WeeklyScheduleDraft, WeeklyScheduleValidationIssue } from "./admin-utils";
+import type { DayScheduleDraft, ShiftWindowDraft, WeeklyScheduleDraft, WeeklyScheduleSaveOperation, WeeklyScheduleValidationIssue } from "./admin-utils";
 import type {
     AdminBarberOption,
     AdminBlockedTime,
@@ -59,6 +72,23 @@ type ScheduleMode = "shifts" | "blocked";
 
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const weeklyDisplayOrder = [1, 2, 3, 4, 5, 6, 0];
+
+async function runScheduleOperations(operations: WeeklyScheduleSaveOperation[], shouldContinue?: () => boolean) {
+    for (const [index, operation] of operations.entries()) {
+        if (shouldContinue && !shouldContinue()) {
+            return { completed: false, applied: index };
+        }
+        if (operation.type === "deactivate") {
+            await deactivateAdminShift(operation.shiftId);
+        } else if (operation.type === "update") {
+            await updateAdminShift(operation.shiftId, operation.payload);
+        } else {
+            await createAdminShift(operation.payload);
+        }
+    }
+
+    return { completed: true, applied: operations.length };
+}
 
 export default function SchedulePage({
     mode,
@@ -152,6 +182,7 @@ function ShiftWorkspace({
     );
     const initialBarberId = user.role === "barber" && user.barberId ? user.barberId : visibleBarbers[0]?.id ?? "";
     const [selectedBarberId, setSelectedBarberId] = useState(initialBarberId);
+    const [selectedPatternKey, setSelectedPatternKey] = useState<string | null>(null);
     const [staffSearch, setStaffSearch] = useState("");
     const [activeTab, setActiveTab] = useState<ShiftWorkspaceTab>("weekly");
     const [weeklyDraft, setWeeklyDraft] = useState<WeeklyScheduleDraft>(() =>
@@ -160,8 +191,15 @@ function ShiftWorkspace({
     const [expandedDay, setExpandedDay] = useState(1);
     const [notice, setNotice] = useState("");
     const [saving, setSaving] = useState(false);
+    const [deletingPattern, setDeletingPattern] = useState(false);
+    const [temporaryDialogOpen, setTemporaryDialogOpen] = useState(false);
+    const confirm = useConfirm();
     const canManageShifts = user.role === "owner" || user.role === "admin";
     const selectedBarber = visibleBarbers.find((barber) => barber.id === selectedBarberId) ?? visibleBarbers[0];
+    const patterns = useMemo(
+        () => listWeeklyShiftPatterns(schedule, selectedBarberId),
+        [schedule, selectedBarberId],
+    );
     const savePlan = useMemo(
         () => buildWeeklyScheduleSavePlan(schedule, weeklyDraft),
         [schedule, weeklyDraft],
@@ -172,6 +210,15 @@ function ShiftWorkspace({
         barber.displayName.toLowerCase().includes(staffSearch.trim().toLowerCase()),
     );
     const effectiveDateIssues = validationIssues.filter((issue) => issue.field === "effectiveFrom" || issue.field === "effectiveTo");
+    const activePatternKey = useMemo(() => {
+        const sourceShiftId = weeklyDraft.sourceShiftIds[0];
+        return sourceShiftId
+            ? patterns.find((pattern) => pattern.shiftIds.includes(sourceShiftId))?.key ?? ""
+            : "";
+    }, [patterns, weeklyDraft.sourceShiftIds]);
+    const activePattern = patterns.find((pattern) => pattern.key === activePatternKey);
+    const showPatternChips = patterns.length > 1
+        || (patterns.length === 1 && Boolean(patterns[0].effectiveFrom || patterns[0].effectiveTo));
 
     useEffect(() => {
         if (!selectedBarber || selectedBarber.id === selectedBarberId) {
@@ -181,17 +228,41 @@ function ShiftWorkspace({
     }, [selectedBarber, selectedBarberId]);
 
     useEffect(() => {
-        setWeeklyDraft(buildWeeklyScheduleDraft(schedule, selectedBarberId));
-    }, [schedule, selectedBarberId]);
+        setWeeklyDraft(buildWeeklyScheduleDraft(schedule, selectedBarberId, selectedPatternKey ?? undefined));
+    }, [schedule, selectedBarberId, selectedPatternKey]);
 
-    function selectBarber(barberId: string) {
+    async function confirmDiscardDraft() {
+        if (savePlan.length === 0) {
+            return true;
+        }
+        return confirm({
+            title: "Discard unsaved changes?",
+            description: "Your weekly schedule edits haven't been saved yet.",
+            confirmLabel: "Discard",
+            tone: "danger",
+        });
+    }
+
+    async function selectBarber(barberId: string) {
         if (barberId === selectedBarberId) {
             return;
         }
-        if (savePlan.length > 0 && !window.confirm("Discard unsaved weekly schedule changes?")) {
+        if (!(await confirmDiscardDraft())) {
             return;
         }
         setSelectedBarberId(barberId);
+        setSelectedPatternKey(null);
+        setNotice("");
+    }
+
+    async function selectPattern(patternKey: string) {
+        if (patternKey === activePatternKey) {
+            return;
+        }
+        if (!(await confirmDiscardDraft())) {
+            return;
+        }
+        setSelectedPatternKey(patternKey);
         setNotice("");
     }
 
@@ -207,21 +278,50 @@ function ShiftWorkspace({
         try {
             setSaving(true);
             setNotice("");
-            for (const operation of savePlan) {
-                if (operation.type === "deactivate") {
-                    await deactivateAdminShift(operation.shiftId);
-                } else if (operation.type === "update") {
-                    await updateAdminShift(operation.shiftId, operation.payload);
-                } else {
-                    await createAdminShift(operation.payload);
-                }
-            }
+            await runScheduleOperations(savePlan);
+            setSelectedPatternKey(weeklyShiftPatternKey(weeklyDraft.effectiveFrom, weeklyDraft.effectiveTo));
             await onChanged(savePlan.length === 1 ? "Weekly schedule saved." : `${savePlan.length} schedule changes saved.`);
         } catch (error) {
             setNotice(error instanceof Error ? error.message : "Weekly schedule could not be saved.");
         } finally {
             setSaving(false);
         }
+    }
+
+    async function deleteActivePattern() {
+        if (!activePattern || !activePattern.effectiveFrom || !activePattern.effectiveTo) {
+            return;
+        }
+        const plan = buildDeleteSchedulePeriodPlan(schedule, activePattern);
+        const restoreSentence = plan.mergedShiftCount > 0
+            ? ` ${plan.mergedShiftCount} paused regular shift${plan.mergedShiftCount === 1 ? " resumes its" : "s resume their"} original schedule.`
+            : " Regular shifts paused for these dates are not restored automatically.";
+        const confirmed = await confirm({
+            title: "Delete this schedule period?",
+            description: `Deletes the ${weeklyShiftPatternLabel(activePattern)} period and its ${plan.removedShiftCount} shift${plan.removedShiftCount === 1 ? "" : "s"}.${restoreSentence}`,
+            confirmLabel: "Delete period",
+            tone: "danger",
+        });
+        if (!confirmed) {
+            return;
+        }
+        try {
+            setDeletingPattern(true);
+            setNotice("");
+            await runScheduleOperations(plan.operations);
+            setSelectedPatternKey(null);
+            await onChanged("Schedule period deleted.");
+        } catch (error) {
+            await onRefresh();
+            setNotice(error instanceof Error ? error.message : "Schedule period could not be deleted.");
+        } finally {
+            setDeletingPattern(false);
+        }
+    }
+
+    async function completeTemporarySchedule(patternKey: string, message: string) {
+        setSelectedPatternKey(patternKey);
+        await onChanged(message);
     }
 
     return (
@@ -250,7 +350,7 @@ function ShiftWorkspace({
                                     className={`flex items-center gap-3 rounded-md p-3 text-left transition ${
                                         selected ? "bg-mint text-forest shadow-sm" : "text-charcoal hover:bg-white"
                                     }`}
-                                    onClick={() => selectBarber(barber.id)}
+                                    onClick={() => void selectBarber(barber.id)}
                                 >
                                     <StaffAvatar barber={barber} active={selected} />
                                     <span className="min-w-0">
@@ -284,49 +384,53 @@ function ShiftWorkspace({
                                 </div>
                             </div>
                             <div className="grid gap-3 sm:grid-cols-[auto_1fr_auto] xl:min-w-[560px]">
-                                <Metric label="Weekly hours" value={formatWeeklyHours(weeklyHours)} />
+                                <Metric label="Weekly hours" value={formatWeeklyHours(weeklyHours)} className="self-start" />
                                 <div className="rounded-md border border-forest/10 bg-white p-3">
-                                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                                        <p className="text-xs font-black uppercase tracking-[0.14em] text-charcoal/45">Schedule range</p>
-                                        <label className="inline-flex items-center gap-2 text-xs font-black text-forest">
-                                            <input
-                                                className="h-4 w-4 accent-forest"
-                                                type="checkbox"
-                                                checked={!weeklyDraft.effectiveTo}
-                                                onChange={(event) => setWeeklyDraft({
-                                                    ...weeklyDraft,
-                                                    effectiveTo: event.target.checked ? "" : weeklyDraft.effectiveTo || weeklyDraft.effectiveFrom || todayLocalDate(),
-                                                    effectiveDatesTouched: true,
-                                                })}
-                                                disabled={!canManageShifts}
-                                            />
-                                            Ongoing
-                                        </label>
-                                    </div>
+                                    <p className="mb-2 text-xs font-black uppercase tracking-[0.14em] text-charcoal/45">Schedule period</p>
                                     <div className="grid gap-2 sm:grid-cols-2">
                                         <label className="grid gap-1">
                                             <span className="text-[11px] font-black uppercase tracking-[0.12em] text-charcoal/45">Starts</span>
-                                            <input
-                                                className="input !min-h-11 !py-2 text-sm"
-                                                type="date"
+                                            <DateInput
                                                 value={weeklyDraft.effectiveFrom}
                                                 onChange={(event) => setWeeklyDraft({ ...weeklyDraft, effectiveFrom: event.target.value, effectiveDatesTouched: true })}
                                                 disabled={!canManageShifts}
                                             />
                                         </label>
-                                        <label className="grid gap-1">
+                                        <div className="grid gap-1">
                                             <span className="text-[11px] font-black uppercase tracking-[0.12em] text-charcoal/45">Ends</span>
-                                            <input
-                                                className={`input !min-h-11 !py-2 text-sm ${effectiveDateIssues.length > 0 ? "!border-red-400 !bg-red-50" : ""}`}
-                                                type="date"
-                                                value={weeklyDraft.effectiveTo}
-                                                onChange={(event) => setWeeklyDraft({ ...weeklyDraft, effectiveTo: event.target.value, effectiveDatesTouched: true })}
-                                                disabled={!canManageShifts || !weeklyDraft.effectiveTo}
-                                            />
-                                        </label>
+                                            <Select
+                                                aria-label="Schedule period end"
+                                                value={weeklyDraft.effectiveTo ? "date" : "never"}
+                                                onChange={(event) => setWeeklyDraft({
+                                                    ...weeklyDraft,
+                                                    effectiveTo: event.target.value === "never"
+                                                        ? ""
+                                                        : weeklyDraft.effectiveTo || weeklyDraft.effectiveFrom || todayLocalDate(),
+                                                    effectiveDatesTouched: true,
+                                                })}
+                                                disabled={!canManageShifts}
+                                            >
+                                                <option value="never">Never</option>
+                                                <option value="date">On date</option>
+                                            </Select>
+                                            {weeklyDraft.effectiveTo && (
+                                                <DateInput
+                                                    aria-label="Schedule period end date"
+                                                    aria-invalid={effectiveDateIssues.length > 0 ? true : undefined}
+                                                    value={weeklyDraft.effectiveTo}
+                                                    onChange={(event) => setWeeklyDraft({ ...weeklyDraft, effectiveTo: event.target.value, effectiveDatesTouched: true })}
+                                                    disabled={!canManageShifts}
+                                                />
+                                            )}
+                                        </div>
                                     </div>
+                                    {effectiveDateIssues.length === 0 && (
+                                        <p className="mt-2 text-xs text-ink-faint">
+                                            {describeSchedulePeriod(weeklyDraft.effectiveFrom, weeklyDraft.effectiveTo)}
+                                        </p>
+                                    )}
                                     {effectiveDateIssues.map((issue) => (
-                                        <p key={`${issue.field}-${issue.message}`} className="mt-2 text-xs font-bold text-red-700">{issue.message}</p>
+                                        <p key={`${issue.field}-${issue.message}`} className="mt-2 text-xs font-medium text-danger" role="alert">{issue.message}</p>
                                     ))}
                                 </div>
                                 <button className="icon-button self-start" onClick={onRefresh} title="Refresh schedule">
@@ -334,6 +438,61 @@ function ShiftWorkspace({
                                 </button>
                             </div>
                         </div>
+
+                        {(showPatternChips || canManageShifts) && (
+                            <div className="mt-4 flex flex-wrap items-center gap-2" role="group" aria-label="Schedule periods">
+                                {showPatternChips && (
+                                    <>
+                                        <span className="text-[11px] font-black uppercase tracking-[0.12em] text-charcoal/45">Schedule periods</span>
+                                        {patterns.map((pattern) => {
+                                            const selected = pattern.key === activePatternKey;
+                                            const temporary = Boolean(pattern.effectiveFrom && pattern.effectiveTo);
+                                            const patternLocations = pattern.locationIds.map((id) => locationName(schedule, id)).join(", ");
+
+                                            return (
+                                                <button
+                                                    key={pattern.key}
+                                                    type="button"
+                                                    aria-pressed={selected}
+                                                    className={`rounded-control border px-3 py-1.5 text-xs font-semibold transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 focus-visible:ring-offset-canvas ${
+                                                        temporary ? "border-dashed" : ""
+                                                    } ${
+                                                        selected
+                                                            ? "border-emerald bg-shift-fill text-forest"
+                                                            : "border-border bg-surface text-ink-muted hover:border-border-strong hover:text-ink"
+                                                    }`}
+                                                    onClick={() => void selectPattern(pattern.key)}
+                                                >
+                                                    {temporary && <span className="font-normal text-ink-faint">Temp · </span>}
+                                                    {weeklyShiftPatternLabel(pattern)}
+                                                    {patternLocations && <span className="font-normal"> · {patternLocations}</span>}
+                                                </button>
+                                            );
+                                        })}
+                                    </>
+                                )}
+                                {canManageShifts && (
+                                    <span className="flex flex-wrap items-center gap-2 sm:ml-auto">
+                                        {activePattern && activePattern.effectiveFrom && activePattern.effectiveTo && (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                loading={deletingPattern}
+                                                className="text-danger hover:bg-danger-soft hover:text-danger"
+                                                onClick={() => void deleteActivePattern()}
+                                            >
+                                                <Trash2 size={15} aria-hidden="true" />
+                                                Delete period
+                                            </Button>
+                                        )}
+                                        <Button variant="secondary" size="sm" onClick={() => setTemporaryDialogOpen(true)}>
+                                            <Plus size={15} aria-hidden="true" />
+                                            Temporary schedule
+                                        </Button>
+                                    </span>
+                                )}
+                            </div>
+                        )}
 
                         <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                             <div className="flex flex-wrap gap-2">
@@ -353,7 +512,7 @@ function ShiftWorkspace({
                             expandedDay={expandedDay}
                             onExpandedDay={setExpandedDay}
                             onDraftChange={setWeeklyDraft}
-                            onDiscard={() => setWeeklyDraft(buildWeeklyScheduleDraft(schedule, selectedBarberId))}
+                            onDiscard={() => setWeeklyDraft(buildWeeklyScheduleDraft(schedule, selectedBarberId, selectedPatternKey ?? undefined))}
                             onSave={saveWeeklySchedule}
                             saving={saving}
                             pendingChanges={savePlan.length}
@@ -366,11 +525,241 @@ function ShiftWorkspace({
                     )}
                 </section>
             </div>
+            {canManageShifts && selectedBarber && (
+                <TemporaryScheduleDialog
+                    key={`${selectedBarber.id}:${temporaryDialogOpen}`}
+                    open={temporaryDialogOpen}
+                    onOpenChange={setTemporaryDialogOpen}
+                    schedule={schedule}
+                    barber={selectedBarber}
+                    onCompleted={completeTemporarySchedule}
+                    onRefresh={onRefresh}
+                />
+            )}
         </div>
     );
 }
 
 type ShiftWorkspaceTab = "weekly" | "overview";
+
+function TemporaryScheduleDialog({
+    open,
+    onOpenChange,
+    schedule,
+    barber,
+    onCompleted,
+    onRefresh,
+}: {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    schedule: AdminSchedule;
+    barber: AdminBarberOption;
+    onCompleted: (patternKey: string, message: string) => Promise<void>;
+    onRefresh: () => Promise<void>;
+}) {
+    const [effectiveFrom, setEffectiveFrom] = useState(() => todayLocalDate());
+    const [effectiveTo, setEffectiveTo] = useState(() => addDaysToLocalDate(todayLocalDate(), 6));
+    const [locationId, setLocationId] = useState(barber.locationIds[0] ?? "");
+    const [excludedWeekdays, setExcludedWeekdays] = useState<number[]>(() => {
+        const workingWeekdays = new Set(
+            schedule.shifts
+                .filter((shift) => shift.active && shift.barberId === barber.id)
+                .map((shift) => shift.dayOfWeek),
+        );
+        return workingWeekdays.size > 0
+            ? [0, 1, 2, 3, 4, 5, 6].filter((dayOfWeek) => !workingWeekdays.has(dayOfWeek))
+            : [];
+    });
+    const [startTime, setStartTime] = useState("10:00");
+    const [endTime, setEndTime] = useState("19:00");
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState("");
+    const cancelRequestedRef = useRef(false);
+
+    const availableWeekdays = effectiveFrom && effectiveTo && effectiveFrom <= effectiveTo
+        ? weekdaysInLocalDateRange(effectiveFrom, effectiveTo)
+        : [];
+    const selectedWeekdays = availableWeekdays.filter((dayOfWeek) => !excludedWeekdays.includes(dayOfWeek));
+    const plan = buildTemporarySchedulePlan(schedule, {
+        barberId: barber.id,
+        locationId,
+        effectiveFrom,
+        effectiveTo,
+        weekdays: selectedWeekdays,
+        startTime,
+        endTime,
+    });
+    const hasUnassignedLocations = schedule.locations.some((location) => !barber.locationIds.includes(location.id));
+
+    function toggleWeekday(dayOfWeek: number) {
+        setExcludedWeekdays((current) =>
+            current.includes(dayOfWeek) ? current.filter((value) => value !== dayOfWeek) : [...current, dayOfWeek],
+        );
+    }
+
+    async function submit() {
+        if (plan.issues.length > 0 || saving) {
+            return;
+        }
+        try {
+            setSaving(true);
+            setError("");
+            cancelRequestedRef.current = false;
+            const run = await runScheduleOperations(plan.operations, () => !cancelRequestedRef.current);
+            if (!run.completed) {
+                await onRefresh();
+                setError(
+                    run.applied > 0
+                        ? "Stopped before finishing — some changes were already applied. Check the schedule period chips: if a regular shift was paused without a matching resumed period, select its chip and set Ends back to Never."
+                        : "Stopped before any changes were made.",
+                );
+                return;
+            }
+            await onCompleted(weeklyShiftPatternKey(effectiveFrom, effectiveTo), "Temporary schedule created.");
+            onOpenChange(false);
+        } catch (submitError) {
+            await onRefresh();
+            setError(
+                `${submitError instanceof Error ? submitError.message : "Temporary schedule could not be created."} Some changes may already be applied. Check the schedule period chips: if a regular shift was paused without a matching resumed period, select its chip and set Ends back to Never.`,
+            );
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    function requestCancel() {
+        if (saving) {
+            cancelRequestedRef.current = true;
+            return;
+        }
+        onOpenChange(false);
+    }
+
+    return (
+        <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
+            <DialogContent size="lg" closeDisabled={saving}>
+                <DialogTitle>Temporary schedule for {barber.displayName}</DialogTitle>
+                <DialogDescription>
+                    Schedule a short stretch at one location. Regular shifts pause during this period and resume automatically after it ends.
+                </DialogDescription>
+                <div className="mt-4 grid gap-4">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="grid gap-1">
+                            <span className="text-xs font-medium text-ink-muted">First day</span>
+                            <DateInput
+                                value={effectiveFrom}
+                                onChange={(event) => setEffectiveFrom(event.target.value)}
+                                disabled={saving}
+                            />
+                        </label>
+                        <label className="grid gap-1">
+                            <span className="text-xs font-medium text-ink-muted">Last day</span>
+                            <DateInput
+                                value={effectiveTo}
+                                onChange={(event) => setEffectiveTo(event.target.value)}
+                                disabled={saving}
+                            />
+                        </label>
+                    </div>
+                    <label className="grid gap-1">
+                        <span className="text-xs font-medium text-ink-muted">Location</span>
+                        <Select value={locationId} onChange={(event) => setLocationId(event.target.value)} disabled={saving}>
+                            {schedule.locations.map((location) => {
+                                const assigned = barber.locationIds.includes(location.id);
+
+                                return (
+                                    <option key={location.id} value={location.id} disabled={!assigned}>
+                                        {location.name}
+                                        {assigned ? "" : " — not assigned"}
+                                    </option>
+                                );
+                            })}
+                        </Select>
+                        {hasUnassignedLocations && (
+                            <span className="text-xs text-ink-faint">
+                                Locations marked "not assigned" need to be added to {barber.displayName} in Team first.
+                            </span>
+                        )}
+                    </label>
+                    <div className="grid gap-1">
+                        <span className="text-xs font-medium text-ink-muted">Working days</span>
+                        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Working days">
+                            {weeklyDisplayOrder.map((dayOfWeek) => {
+                                const occurs = availableWeekdays.includes(dayOfWeek);
+                                const selected = occurs && selectedWeekdays.includes(dayOfWeek);
+
+                                return (
+                                    <button
+                                        key={dayOfWeek}
+                                        type="button"
+                                        aria-pressed={selected}
+                                        disabled={!occurs || saving}
+                                        title={occurs ? undefined : "This day doesn't occur between those dates."}
+                                        className={`rounded-control border px-2.5 py-1.5 text-xs font-semibold transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 focus-visible:ring-offset-canvas disabled:cursor-not-allowed disabled:opacity-40 ${
+                                            selected
+                                                ? "border-emerald bg-shift-fill text-forest"
+                                                : "border-border bg-surface text-ink-muted hover:border-border-strong hover:text-ink"
+                                        }`}
+                                        onClick={() => toggleWeekday(dayOfWeek)}
+                                    >
+                                        {weekdays[dayOfWeek]}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        {availableWeekdays.length > 0 && availableWeekdays.length < 7 && (
+                            <span className="text-xs text-ink-faint">Days outside the selected dates can't be picked.</span>
+                        )}
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="grid gap-1">
+                            <span className="text-xs font-medium text-ink-muted">Starts</span>
+                            <TimeInput value={startTime} onChange={setStartTime} disabled={saving} />
+                        </label>
+                        <label className="grid gap-1">
+                            <span className="text-xs font-medium text-ink-muted">Ends</span>
+                            <TimeInput value={endTime} onChange={setEndTime} disabled={saving} />
+                        </label>
+                    </div>
+                    {plan.issues.length > 0 ? (
+                        <ul className="grid gap-1 rounded-control border border-border bg-surface-muted p-3">
+                            {plan.issues.map((issue) => (
+                                <li key={issue} className="text-xs font-medium text-ink-muted">{issue}</li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <div className="grid gap-1 rounded-control border border-border bg-surface-muted p-3">
+                            <p className="text-xs font-medium text-ink">
+                                {plan.temporaryShiftCount} temporary shift{plan.temporaryShiftCount === 1 ? "" : "s"} at{" "}
+                                {locationName(schedule, locationId)} · {formatLocalDateLabel(effectiveFrom)} – {formatLocalDateLabel(effectiveTo)}
+                            </p>
+                            <p className="text-xs text-ink-muted">
+                                {plan.pausedShiftCount > 0
+                                    ? `Pauses ${plan.pausedShiftCount} regular shift${plan.pausedShiftCount === 1 ? "" : "s"}.${
+                                        plan.resumedShiftCount > 0
+                                            ? ` The regular schedule resumes ${formatLocalDateLabel(plan.resumeDate, { year: true })}.`
+                                            : ""
+                                    }`
+                                    : "No regular shifts overlap this period."}
+                            </p>
+                        </div>
+                    )}
+                    {error && (
+                        <p className="rounded-control bg-danger-soft px-3 py-2 text-xs font-medium text-danger" role="alert">{error}</p>
+                    )}
+                    <div className="flex justify-end gap-2">
+                        <Button variant="ghost" onClick={requestCancel}>
+                            Cancel
+                        </Button>
+                        <Button loading={saving} disabled={plan.issues.length > 0} onClick={() => void submit()}>
+                            Create temporary schedule
+                        </Button>
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
 
 function WeeklyScheduleBuilder({
     draft,
@@ -1325,9 +1714,9 @@ function LocationPill({ schedule, locationId }: { schedule: AdminSchedule; locat
     );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, className }: { label: string; value: string; className?: string }) {
     return (
-        <div className="rounded-md border border-forest/10 bg-white p-3">
+        <div className={`rounded-md border border-forest/10 bg-white p-3${className ? ` ${className}` : ""}`}>
             <p className="text-xs font-black uppercase tracking-[0.14em] text-charcoal/45">{label}</p>
             <p className="mt-1 text-xl font-black text-forest">{value}</p>
         </div>

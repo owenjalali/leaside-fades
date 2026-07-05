@@ -432,10 +432,14 @@ export function groupShiftsByBarberAndWeekday(shifts: AdminShift[]) {
     }, {});
 }
 
-export function buildWeeklyScheduleDraft(schedule: AdminSchedule, barberId: string): WeeklyScheduleDraft {
-    const shifts = selectCurrentWeeklyShiftPattern(schedule.shifts
+export function buildWeeklyScheduleDraft(schedule: AdminSchedule, barberId: string, patternKey?: string): WeeklyScheduleDraft {
+    const activeShifts = schedule.shifts
         .filter((shift) => shift.active && shift.barberId === barberId)
-        .sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime)));
+        .sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime));
+    const requestedShifts = patternKey === undefined
+        ? []
+        : activeShifts.filter((shift) => weeklyShiftPatternKey(shift.effectiveFrom ?? "", shift.effectiveTo ?? "") === patternKey);
+    const shifts = requestedShifts.length > 0 ? requestedShifts : selectCurrentWeeklyShiftPattern(activeShifts);
     const effectiveFromValues = uniqueShiftDateValues(shifts, "effectiveFrom");
     const effectiveToValues = uniqueShiftDateValues(shifts, "effectiveTo");
     const days: DayScheduleDraft[] = Array.from({ length: 7 }, (_, dayOfWeek) => {
@@ -779,6 +783,293 @@ export function buildWeeklyScheduleSavePlan(
     }
 
     return [...deactivates, ...updates, ...creates];
+}
+
+export interface WeeklyShiftPattern {
+    key: string;
+    barberId: string;
+    effectiveFrom: string;
+    effectiveTo: string;
+    shiftIds: string[];
+    locationIds: string[];
+}
+
+export function weeklyShiftPatternKey(effectiveFrom: string, effectiveTo: string) {
+    return `${effectiveFrom}|${effectiveTo}`;
+}
+
+const openEndedSortSentinel = "9999-12-31";
+
+export function listWeeklyShiftPatterns(schedule: Pick<AdminSchedule, "shifts">, barberId: string): WeeklyShiftPattern[] {
+    const groups = new Map<string, WeeklyShiftPattern>();
+
+    for (const shift of schedule.shifts) {
+        if (!shift.active || shift.barberId !== barberId) {
+            continue;
+        }
+
+        const effectiveFrom = shift.effectiveFrom ?? "";
+        const effectiveTo = shift.effectiveTo ?? "";
+        const key = weeklyShiftPatternKey(effectiveFrom, effectiveTo);
+        const group = groups.get(key) ?? { key, barberId, effectiveFrom, effectiveTo, shiftIds: [], locationIds: [] };
+        group.shiftIds.push(shift.id);
+        if (!group.locationIds.includes(shift.locationId)) {
+            group.locationIds.push(shift.locationId);
+        }
+        groups.set(key, group);
+    }
+
+    return [...groups.values()].sort((a, b) => {
+        if (a.effectiveFrom !== b.effectiveFrom) {
+            return a.effectiveFrom.localeCompare(b.effectiveFrom);
+        }
+        return (a.effectiveTo || openEndedSortSentinel).localeCompare(b.effectiveTo || openEndedSortSentinel);
+    });
+}
+
+export function localDateWeekday(localDate: string) {
+    return parseLocalDate(localDate).getUTCDay();
+}
+
+export function weekdaysInLocalDateRange(from: string, to: string) {
+    const weekdays: number[] = [];
+    let cursor = from;
+
+    for (let index = 0; index < 7 && cursor <= to; index += 1) {
+        weekdays.push(localDateWeekday(cursor));
+        cursor = addDaysToLocalDate(cursor, 1);
+    }
+
+    return weekdays;
+}
+
+export function formatLocalDateLabel(localDate: string, options: { year?: boolean } = {}) {
+    return new Intl.DateTimeFormat("en-CA", {
+        timeZone: "UTC",
+        month: "short",
+        day: "numeric",
+        ...(options.year ? { year: "numeric" as const } : {}),
+    }).format(parseLocalDate(localDate));
+}
+
+export function weeklyShiftPatternLabel(pattern: Pick<WeeklyShiftPattern, "effectiveFrom" | "effectiveTo">) {
+    if (!pattern.effectiveTo) {
+        return pattern.effectiveFrom ? `From ${formatLocalDateLabel(pattern.effectiveFrom)}` : "Ongoing";
+    }
+
+    if (!pattern.effectiveFrom) {
+        return `Until ${formatLocalDateLabel(pattern.effectiveTo)}`;
+    }
+
+    return `${formatLocalDateLabel(pattern.effectiveFrom)} – ${formatLocalDateLabel(pattern.effectiveTo)}`;
+}
+
+export function describeSchedulePeriod(effectiveFrom: string, effectiveTo: string) {
+    if (!effectiveFrom && !effectiveTo) {
+        return "Repeats weekly with no end date.";
+    }
+
+    if (!effectiveTo) {
+        return `Repeats weekly from ${formatLocalDateLabel(effectiveFrom, { year: true })} with no end date.`;
+    }
+
+    if (!effectiveFrom) {
+        return `Repeats weekly until ${formatLocalDateLabel(effectiveTo, { year: true })}.`;
+    }
+
+    return `Repeats weekly, ${formatLocalDateLabel(effectiveFrom, { year: true })} to ${formatLocalDateLabel(effectiveTo, { year: true })}.`;
+}
+
+export interface TemporaryScheduleInput {
+    barberId: string;
+    locationId: string;
+    effectiveFrom: string;
+    effectiveTo: string;
+    weekdays: number[];
+    startTime: string;
+    endTime: string;
+}
+
+export interface TemporarySchedulePlan {
+    issues: string[];
+    operations: WeeklyScheduleSaveOperation[];
+    temporaryShiftCount: number;
+    pausedShiftCount: number;
+    resumedShiftCount: number;
+    resumeDate: string;
+}
+
+export function buildTemporarySchedulePlan(
+    schedule: Pick<AdminSchedule, "shifts">,
+    input: TemporaryScheduleInput,
+): TemporarySchedulePlan {
+    const issues: string[] = [];
+    const startMinutes = scheduleClockToMinutes(input.startTime);
+    const endMinutes = scheduleClockToMinutes(input.endTime);
+
+    if (!input.effectiveFrom || !input.effectiveTo) {
+        issues.push("Choose start and end dates.");
+    } else if (input.effectiveFrom > input.effectiveTo) {
+        issues.push("End date must be on or after the start date.");
+    }
+
+    if (!input.locationId) {
+        issues.push("Choose a location.");
+    }
+
+    if (startMinutes === null || endMinutes === null) {
+        issues.push("Times must use 15-minute increments.");
+    } else if (startMinutes >= endMinutes) {
+        issues.push("End time must be after start time.");
+    }
+
+    const availableWeekdays = input.effectiveFrom && input.effectiveTo && input.effectiveFrom <= input.effectiveTo
+        ? weekdaysInLocalDateRange(input.effectiveFrom, input.effectiveTo)
+        : [];
+
+    if (input.weekdays.length === 0) {
+        issues.push("Pick at least one working day.");
+    } else if (issues.length === 0 && input.weekdays.some((dayOfWeek) => !availableWeekdays.includes(dayOfWeek))) {
+        issues.push("Some selected days don't occur between those dates.");
+    }
+
+    const resumeDate = input.effectiveTo ? addDaysToLocalDate(input.effectiveTo, 1) : "";
+
+    if (issues.length > 0) {
+        return { issues, operations: [], temporaryShiftCount: 0, pausedShiftCount: 0, resumedShiftCount: 0, resumeDate };
+    }
+
+    // Each pause is immediately followed by its own resume-create so an
+    // interrupted run strands at most one shift, not the whole schedule.
+    const pauseAndResume: WeeklyScheduleSaveOperation[] = [];
+    let pausedShiftCount = 0;
+    let resumedShiftCount = 0;
+
+    for (const shift of schedule.shifts) {
+        if (!shift.active || shift.barberId !== input.barberId) {
+            continue;
+        }
+
+        const shiftFrom = shift.effectiveFrom ?? "";
+        const shiftTo = shift.effectiveTo ?? "";
+        const startsAfterWindow = shiftFrom !== "" && shiftFrom > input.effectiveTo;
+        const endsBeforeWindow = shiftTo !== "" && shiftTo < input.effectiveFrom;
+
+        if (startsAfterWindow || endsBeforeWindow) {
+            continue;
+        }
+
+        pausedShiftCount += 1;
+        const keepsHead = shiftFrom === "" || shiftFrom < input.effectiveFrom;
+        const keepsTail = shiftTo === "" || shiftTo > input.effectiveTo;
+        const rowPayload = {
+            barberId: shift.barberId,
+            locationId: shift.locationId,
+            dayOfWeek: shift.dayOfWeek,
+            startTime: shift.startTime,
+            endTime: shift.endTime,
+        };
+
+        if (keepsHead) {
+            pauseAndResume.push({
+                type: "update",
+                shiftId: shift.id,
+                payload: { ...rowPayload, effectiveFrom: shiftFrom, effectiveTo: addDaysToLocalDate(input.effectiveFrom, -1) },
+            });
+        } else {
+            pauseAndResume.push({ type: "deactivate", shiftId: shift.id });
+        }
+
+        if (keepsTail) {
+            resumedShiftCount += 1;
+            pauseAndResume.push({
+                type: "create",
+                payload: { ...rowPayload, effectiveFrom: resumeDate, effectiveTo: shiftTo },
+            });
+        }
+    }
+
+    const temporaryCreates: WeeklyScheduleSaveOperation[] = [...input.weekdays]
+        .sort((a, b) => a - b)
+        .map((dayOfWeek) => ({
+            type: "create",
+            payload: {
+                barberId: input.barberId,
+                locationId: input.locationId,
+                dayOfWeek,
+                startTime: input.startTime,
+                endTime: input.endTime,
+                effectiveFrom: input.effectiveFrom,
+                effectiveTo: input.effectiveTo,
+            },
+        }));
+
+    return {
+        issues,
+        operations: [...pauseAndResume, ...temporaryCreates],
+        temporaryShiftCount: temporaryCreates.length,
+        pausedShiftCount,
+        resumedShiftCount,
+        resumeDate,
+    };
+}
+
+export interface DeleteSchedulePeriodPlan {
+    operations: WeeklyScheduleSaveOperation[];
+    removedShiftCount: number;
+    mergedShiftCount: number;
+}
+
+export function buildDeleteSchedulePeriodPlan(
+    schedule: Pick<AdminSchedule, "shifts">,
+    pattern: Pick<WeeklyShiftPattern, "barberId" | "effectiveFrom" | "effectiveTo" | "shiftIds">,
+): DeleteSchedulePeriodPlan {
+    const operations: WeeklyScheduleSaveOperation[] = pattern.shiftIds.map((shiftId) => ({ type: "deactivate", shiftId }));
+    let mergedShiftCount = 0;
+
+    if (pattern.effectiveFrom && pattern.effectiveTo) {
+        const headEnd = addDaysToLocalDate(pattern.effectiveFrom, -1);
+        const resumeStart = addDaysToLocalDate(pattern.effectiveTo, 1);
+        const patternShiftIds = new Set(pattern.shiftIds);
+        const others = schedule.shifts.filter((shift) =>
+            shift.active && shift.barberId === pattern.barberId && !patternShiftIds.has(shift.id),
+        );
+        const heads = others.filter((shift) => (shift.effectiveTo ?? "") === headEnd);
+        const resumes = others.filter((shift) => (shift.effectiveFrom ?? "") === resumeStart);
+        const usedResumeIds = new Set<string>();
+
+        for (const head of heads) {
+            const resume = resumes.find((candidate) =>
+                !usedResumeIds.has(candidate.id)
+                && candidate.locationId === head.locationId
+                && candidate.dayOfWeek === head.dayOfWeek
+                && candidate.startTime === head.startTime
+                && candidate.endTime === head.endTime,
+            );
+            if (!resume) {
+                continue;
+            }
+
+            usedResumeIds.add(resume.id);
+            mergedShiftCount += 1;
+            operations.push({ type: "deactivate", shiftId: resume.id });
+            operations.push({
+                type: "update",
+                shiftId: head.id,
+                payload: {
+                    barberId: head.barberId,
+                    locationId: head.locationId,
+                    dayOfWeek: head.dayOfWeek,
+                    startTime: head.startTime,
+                    endTime: head.endTime,
+                    effectiveFrom: head.effectiveFrom ?? "",
+                    effectiveTo: resume.effectiveTo ?? "",
+                },
+            });
+        }
+    }
+
+    return { operations, removedShiftCount: pattern.shiftIds.length, mergedShiftCount };
 }
 
 export function buildBlockedTimePayload(input: BlockedTimeFormInput) {
