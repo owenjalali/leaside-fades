@@ -23,6 +23,86 @@
       background-position: -200% 0;
     }
   }
+
+  /* Admin surfaces */
+  --color-canvas: #f4f7f2;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f8faf7;
+  --color-rail: #08110e;
+
+  /* Admin hairlines */
+  --color-border: #d4ddd4;
+  --color-border-strong: #b7c6b7;
+
+  /* Admin text */
+  --color-ink: #16241c;
+  --color-ink-muted: #57675d;
+  --color-ink-faint: #86948a;
+
+  /* Admin status */
+  --color-success: #1e7d43;
+  --color-success-soft: #e3f4e8;
+  --color-danger: #b3372e;
+  --color-danger-soft: #fbe9e7;
+  --color-warning: #946618;
+  --color-warning-soft: #fdf3df;
+  --color-info: #2b5f8a;
+  --color-info-soft: #e7f0f7;
+
+  /* Admin accents */
+  --color-shift-fill: #d9f2df;
+  --color-location-millwood: #b99356;
+
+  /* Booking tones (calendar hues per owner-approved ADR) */
+  --color-tone-men: #1d4ed8;
+  --color-tone-men-soft: #dbeafe;
+  --color-tone-women: #be185d;
+  --color-tone-women-soft: #fce7f3;
+  --color-tone-boys: #a16207;
+  --color-tone-boys-soft: #fef9c3;
+  --color-tone-mixed: #6d28d9;
+  --color-tone-mixed-soft: #ede9fe;
+  --color-tone-noshow: #b91c1c;
+  --color-tone-noshow-soft: #fee2e2;
+  --color-tone-completed: #047857;
+  --color-tone-completed-soft: #d1fae5;
+  --color-tone-cancelled: #57534e;
+  --color-tone-cancelled-soft: #e7e5e4;
+
+  /* Admin radii */
+  --radius-control: 10px;
+  --radius-card: 14px;
+
+  /* Admin shadows */
+  --shadow-card: 0 1px 2px rgb(8 17 14 / 0.04), 0 1px 3px rgb(8 17 14 / 0.06);
+  --shadow-pop: 0 4px 12px rgb(8 17 14 / 0.08), 0 2px 4px rgb(8 17 14 / 0.05);
+  --shadow-overlay: 0 12px 32px rgb(8 17 14 / 0.16), 0 4px 12px rgb(8 17 14 / 0.08);
+
+  /* Admin motion */
+  --animate-fade-in: fade-in 150ms ease-out;
+  --animate-pop-in: pop-in 150ms ease-out;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
 }
 
 @layer base {
