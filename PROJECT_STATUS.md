@@ -500,6 +500,13 @@ Phase 4 manual DB-backed QA:
 
 ## Files Changed in Latest Session
 
+July 5, 2026 schedule-period addendum files changed:
+- `src/admin/admin-utils.ts`
+- `src/admin/admin-utils.test.ts`
+- `src/admin/SchedulePage.tsx`
+- `src/components/ui/Dialog.tsx`
+- `PROJECT_STATUS.md`
+
 July 2026 upgrade Phase A design system foundation files changed in the latest session:
 - `src/index.css`
 - `package.json`
@@ -770,6 +777,12 @@ Prior Phase 4 files from the previous session remain changed in this working tre
 - `src/server/db/seed-dev-shifts.test.ts`
 
 ## Commands / Tests Run
+
+July 5, 2026 schedule-period addendum verification:
+- `npm run typecheck` (passed), `npm run lint` (0 errors, 269 warnings — unchanged baseline, zero new), `npm test` (70 files, 529 tests passed), `npm run build` (passed)
+- Two adversarial review agents (correctness/data-safety and UX/design-consistency) on the uncommitted diff; all MAJOR findings fixed and re-verified
+- Headed Playwright QA against the local stack (vite :5174 → express :3000 → Docker Postgres): 18/18 checks passed, 0 real console errors; screenshots under `output/playwright/temp-schedule-qa/`
+- Local dev data repair: Laura's shifts reset to one clean ongoing pattern after QA exposed overlapping sample-shift generations from repeated `db:seed:dev-shifts` runs (seeder inserts bypass API overlap validation — cleanup follow-up noted)
 
 July 2026 upgrade Phase A design system foundation verification:
 - `npm run typecheck` (`tsc --noEmit` passed with zero errors)
@@ -1045,6 +1058,8 @@ Phase 6 hardening verification:
 - Do not proceed to later phases without updating project status and docs.
 
 ## Latest Session Summary
+
+July 5, 2026 Phase A addendum — schedule periods and temporary schedules (owner-requested): the `/admin/shifts` editor's confusing "Schedule range + Ongoing checkbox" was replaced with a schedule-period model. The header now shows one chip per schedule period (grouped by effective date range, chronological, temporary periods dashed and prefixed "Temp"); clicking a chip loads that period into the existing drag editor, guarded by the styled discard-confirm when the draft is dirty. The range panel became "Schedule period" with Starts + Ends (Never / On date) and a plain-language sentence preview. A new "Temporary schedule" dialog (dates, location with disabled not-assigned options, weekday toggles defaulting to the barber's existing working days, times, live plan preview) creates a date-bounded takeover: overlapping regular shifts are paused (head capped to the day before), each immediately followed by its resume row after the period, then the temporary shifts are created — all through the existing validated Phase 7 shift APIs, no backend or schema changes. "Delete period" (only for fully-bounded periods) computes the inverse: it removes the temporary shifts and re-merges paused head/resume pairs back into the original rows, with plan-driven confirm copy stating exactly what is and isn't restored. Pure helpers (`listWeeklyShiftPatterns`, `buildTemporarySchedulePlan`, `buildDeleteSchedulePeriodPlan`, `weekdaysInLocalDateRange`, labels) live in `admin-utils.ts` with 12 new tests. Two adversarial review agents ran against the diff; all findings were fixed (delete-period re-merge, onDiscard pattern-key omission, interleaved pause/resume ordering to bound partial-failure blast radius, dialog cancel-between-operations with a disabled X while saving, weekday defaults, copy/a11y minors). Gates: typecheck clean, lint 0 errors (269-warning baseline, zero new), 529 tests across 70 files, build green. Headed Playwright QA against the local stack passed 18/18 with zero console errors, covering login, temp-week creation for Laura (7 paused / 7 resumed / 5 temp rows verified via API), chip switching, discard confirm, delete-period re-merge back to 7 ongoing rows, mobile dialog, a churn stress loop, and snapshot restore. The QA also surfaced that repeated `db:seed:dev-shifts` runs stack overlapping sample-shift generations in the local dev database (direct inserts bypass API overlap validation); Laura's rows were reset to one clean ongoing pattern, and a seeder-idempotency cleanup is noted as a follow-up. Committed locally; not pushed pending owner approval.
 
 July 4, 2026 upgrade Phase A design system foundation: `src/index.css` gained an additive-only Tailwind v4 `@theme` block defining the "Fresha calm, Leaside green" design language — green-tinted canvas/surface/border neutrals, a three-step ink text scale, success/danger/warning/info status pairs (warning adjusted to `#946618` for 4.57:1 contrast on its soft background), booking/service tone palettes (men/women/boys/mixed/no-show/completed/cancelled), `--radius-control` 10px / `--radius-card` 14px, card/pop/overlay shadow tiers, and fade-in/pop-in motion keyframes with `motion-reduce` opt-outs. A new `src/components/ui/` library holds 26 admin primitives with colocated static-markup tests: form controls (Button/IconButton, Field with render-prop aria wiring, Input, Select, Textarea, Checkbox, DateInput, snap-on-blur TimeInput), overlays on exact-pinned React-19-compatible Radix packages (Dialog, docked Drawer, Popover, Tooltip, DropdownMenu, Switch), app-level `ToastProvider`/`useToast` and `ConfirmDialogProvider`/`useConfirm` (Promise-based, queued, danger-tone capable), and display pieces (SegmentedControl, Badge, Avatar, Card/Metric, Notice with role-per-tone, EmptyState, Skeleton, Spinner, status-tone maps). A shared `usePointerDrag` hook implements the drag state machine for later phases (mouse/pen 4px activation, touch 250ms hold with 8px drift cancel, idempotent listener teardown proven by a settle-effect invariant across 48 tests). As the prove-out, the four admin auth screens (`/admin/login`, `/admin/forgot-password`, `/admin/reset-password`, `/admin/accept-invite`) were rebuilt on the new primitives with a shared centered-card shell, and SchedulePage swapped its inline notice state for toasts and its blocked-time `window.confirm` for the styled danger confirm dialog. An adversarial multi-agent review round fixed a touch drift-exit listener leak in `usePointerDrag` and a toast info-icon color that collided with success green before gates ran. Verification passed: `npm run typecheck`, `npm run lint` (0 errors, 269 warnings), `npm test` (70 files, 519 tests), `npm run build`, and browser QA screenshots (new auth design confirmed; marketing homepage unchanged; `/book` shell rendered gracefully degraded because no local Postgres was available). Owner sign-off items: the login inactive-account notice now uses tone `warning`, and the blocked-time delete confirm copy reads "This frees the time for online booking again." Committed locally; not pushed pending owner approval.
 
