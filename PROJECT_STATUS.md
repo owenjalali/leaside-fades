@@ -4,7 +4,7 @@
 
 Phase 12 production launch readiness plus Phase 13 guarded Fresha import/cutover tooling are in progress. Phase 11 Fresha read-only public/admin inspection is complete.
 
-A separate July 2026 full UI/UX upgrade track has started (owner-approved phased plan: ops hygiene, design system, shifts rework, all-staff week grid, blocked time rework, calendar polish, backend hardening, app-wide sweep). Upgrade Phase 0 (ops hygiene) is deployed to production and verified; the owner confirmed the repository's public visibility is intentional. Next up: upgrade Phase A (design system foundation), pending owner go.
+A separate July 2026 full UI/UX upgrade track has started (owner-approved phased plan: ops hygiene, design system, shifts rework, all-staff week grid, blocked time rework, calendar polish, backend hardening, app-wide sweep). Upgrade Phase 0 (ops hygiene) is deployed to production and verified; the owner confirmed the repository's public visibility is intentional. Upgrade Phase A (design system foundation) is implemented and verified locally: additive Tailwind v4 design tokens, a `src/components/ui/` primitive library with app-level toast/confirm providers, a reusable pointer-drag engine, rebuilt admin auth screens, and SchedulePage notice/confirm migration. Phase A is committed locally and awaiting owner review before push and Phase B (schedule module extraction).
 
 ## Completed Phases
 
@@ -500,6 +500,15 @@ Phase 4 manual DB-backed QA:
 
 ## Files Changed in Latest Session
 
+July 2026 upgrade Phase A design system foundation files changed in the latest session:
+- `src/index.css`
+- `package.json`
+- `package-lock.json`
+- `src/components/ui/` (new directory: 26 primitives with colocated tests — `Button`, `Field`, `Input`, `Select`, `Textarea`, `Checkbox`, `DateInput`, `TimeInput`, `Dialog`, `Drawer`, `ConfirmDialog`, `toast`, `Popover`, `Tooltip`, `DropdownMenu`, `Switch`, `SegmentedControl`, `Badge`, `Avatar`, `Card`, `Notice`, `EmptyState`, `Skeleton`, `Spinner`, `status-tones`, `usePointerDrag`)
+- `src/admin/AdminApp.tsx`
+- `src/admin/SchedulePage.tsx`
+- `PROJECT_STATUS.md`
+
 July 2026 upgrade Phase 0 ops hygiene files changed in the latest session:
 - `src/server/db/client.ts`
 - `src/server/db/client.test.ts`
@@ -762,6 +771,14 @@ Prior Phase 4 files from the previous session remain changed in this working tre
 
 ## Commands / Tests Run
 
+July 2026 upgrade Phase A design system foundation verification:
+- `npm run typecheck` (`tsc --noEmit` passed with zero errors)
+- `npm run lint` (exit 0; 0 errors, 269 warnings — one over the Phase 0 baseline of 268, from an intentional `react-hooks/exhaustive-deps` suppression in the toast timer reconciler)
+- `npm test` (70 files, 519 tests passed; 163 new tests over Phase 0's 356, covering every new UI primitive plus 48 `usePointerDrag` state-machine tests)
+- `npm run build` (`tsc && vite build` passed; pinned Radix UI packages verified compatible with React 19)
+- Browser QA via Claude-in-Chrome against the local Vite dev server (`localhost:5174` proxying Express `:3000`): screenshots of `/admin/login`, `/admin/forgot-password`, `/admin/reset-password`, and `/admin/accept-invite` confirmed the rebuilt auth design; the marketing homepage screenshot is unchanged, proving the token additions are non-destructive to unmigrated screens.
+- `/book` browser QA ran degraded: no local Postgres was available (no Windows service; Docker Desktop's engine did not come up), so `/api/health` returned 503 and the wizard showed its graceful "Booking service is currently unavailable." notice with the page shell fully rendered and un-broken. The Phase A diff touches no booking-flow files; a DB-backed `/book` pass is deferred to the next phase with a working local database.
+
 July 2026 upgrade Phase 0 ops hygiene verification:
 - `npx vitest run src/server/db/client.test.ts` (18 tests passed)
 - `npm run typecheck` (`tsc --noEmit` passed with zero errors)
@@ -1012,6 +1029,10 @@ Phase 6 hardening verification:
 - Retry failed provider notification attempts on later dispatch/job runs while keeping sent, skipped, and pending rows idempotent.
 - Require `npm run notifications:check-live-config` as the production reminder preflight before enabling a live scheduler.
 - Keep mobile admin calendar filters out of the day-board height budget so the booking grid remains usable on 320px-class phones.
+- Use additive-only Tailwind v4 `@theme` design tokens in `src/index.css` (green-tinted neutrals, ink text scale, status/tone palettes, control/card radii, shadow and motion tiers); no existing token or utility is redefined, so unmigrated screens render unchanged.
+- Build admin UI primitives in `src/components/ui/` on exact-pinned Radix UI packages (dialog, popover, tooltip, dropdown menu, switch) with app-level `ToastProvider`/`ConfirmDialogProvider`, replacing inline notice state and `window.confirm` incrementally as screens are migrated.
+- Implement drag interactions through one shared `usePointerDrag` state-machine hook (mouse/pen 4px activation, touch 250ms hold with 8px drift cancel, full listener teardown on every exit path) instead of per-feature pointer handlers.
+- Keep the Bebas display font marketing-only; admin surfaces use the system font stack with weight/size hierarchy instead of uppercase/tracked headers.
 
 ## Do-Not-Break Rules
 
@@ -1024,6 +1045,8 @@ Phase 6 hardening verification:
 - Do not proceed to later phases without updating project status and docs.
 
 ## Latest Session Summary
+
+July 4, 2026 upgrade Phase A design system foundation: `src/index.css` gained an additive-only Tailwind v4 `@theme` block defining the "Fresha calm, Leaside green" design language — green-tinted canvas/surface/border neutrals, a three-step ink text scale, success/danger/warning/info status pairs (warning adjusted to `#946618` for 4.57:1 contrast on its soft background), booking/service tone palettes (men/women/boys/mixed/no-show/completed/cancelled), `--radius-control` 10px / `--radius-card` 14px, card/pop/overlay shadow tiers, and fade-in/pop-in motion keyframes with `motion-reduce` opt-outs. A new `src/components/ui/` library holds 26 admin primitives with colocated static-markup tests: form controls (Button/IconButton, Field with render-prop aria wiring, Input, Select, Textarea, Checkbox, DateInput, snap-on-blur TimeInput), overlays on exact-pinned React-19-compatible Radix packages (Dialog, docked Drawer, Popover, Tooltip, DropdownMenu, Switch), app-level `ToastProvider`/`useToast` and `ConfirmDialogProvider`/`useConfirm` (Promise-based, queued, danger-tone capable), and display pieces (SegmentedControl, Badge, Avatar, Card/Metric, Notice with role-per-tone, EmptyState, Skeleton, Spinner, status-tone maps). A shared `usePointerDrag` hook implements the drag state machine for later phases (mouse/pen 4px activation, touch 250ms hold with 8px drift cancel, idempotent listener teardown proven by a settle-effect invariant across 48 tests). As the prove-out, the four admin auth screens (`/admin/login`, `/admin/forgot-password`, `/admin/reset-password`, `/admin/accept-invite`) were rebuilt on the new primitives with a shared centered-card shell, and SchedulePage swapped its inline notice state for toasts and its blocked-time `window.confirm` for the styled danger confirm dialog. An adversarial multi-agent review round fixed a touch drift-exit listener leak in `usePointerDrag` and a toast info-icon color that collided with success green before gates ran. Verification passed: `npm run typecheck`, `npm run lint` (0 errors, 269 warnings), `npm test` (70 files, 519 tests), `npm run build`, and browser QA screenshots (new auth design confirmed; marketing homepage unchanged; `/book` shell rendered gracefully degraded because no local Postgres was available). Owner sign-off items: the login inactive-account notice now uses tone `warning`, and the blocked-time delete confirm copy reads "This frees the time for online booking again." Committed locally; not pushed pending owner approval.
 
 July 3, 2026 upgrade Phase 0 ops hygiene: `normalizeDatabaseUrl()` in `src/server/db/client.ts` now rewrites `sslmode=require` to `sslmode=verify-full` on `DATABASE_URL` before pool creation, silencing the once-per-cold-start node-postgres SECURITY WARNING that marked healthy requests `[error]` in Vercel logs (863 occurrences since May 1); a `DATABASE_SSL_MODE` env var overrides the normalization and unrecognized override values are ignored rather than spliced into the URL. The warning trigger was verified at its source (`pg-connection-string` warns for `prefer`/`require`/`verify-ca` but not `verify-full`) and covered by 18 unit tests in `src/server/db/client.test.ts`. ESLint now exists as flat config (`eslint.config.js`, eslint@10.6.0 + typescript-eslint@8.62.1 + eslint-plugin-react-hooks@7.1.1) scoped to `src/**/*.ts(x)` with non-type-checked presets, plus new `npm run typecheck` and `npm run lint` scripts; lint exits 0 with a documented warnings-first baseline of 268 warnings (five preset rules downgraded to warn, none off; `react-hooks/purity` × 2 and `react-hooks/immutability` × 1 are the first to restore to error in a later phase). README.md was rewritten to describe the real booking platform (surfaces, stack, getting started, scripts, env vars, docs index, deployment, public-repo secrets policy), docs/PRODUCTION_RUNBOOK.md gained a Weekly Health Check section (production smoke, reminder heartbeat, Vercel log scan), docs/DECISIONS.md gained the sslmode normalization ADR, and stray root screenshot PNGs were removed. Verification passed: focused client tests (18), `npm run typecheck`, `npm run lint` (exit 0), full `npm test` (44 files, 356 tests), and `npm run build`. Deployed with owner approval as commits `c9e16c7`/`db069c6`/`c814a7e` → production deployment `dpl_A2pTzjJx6ggiSFUgm7ejnDuB6PNp` (READY, aliased to `www.leasidefades.com`). Post-deploy `npm run qa:production-smoke` passed, and Vercel runtime logs on the new deployment show the `/api/health` cold start at info level with zero `SECURITY WARNING` entries and an empty error/warning stream — the sslmode fix is confirmed in production. The owner confirmed the repo's public visibility is intentional.
 
