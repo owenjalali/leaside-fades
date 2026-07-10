@@ -279,3 +279,877 @@
     color: #ffffff;
   }
 }
+
+/* ==========================================================================
+   Shifts screen skin — Fresha-style commercial SaaS, scoped to .shifts-saas.
+   White ground, near-black ink, cool-grey hairlines, violet accent.
+   Spacing scale: 4 / 8 / 12 / 16 / 24. Radii: 6 / 8.
+   Shared ui primitives inside the scope are retinted by remapping the
+   Tailwind theme variables they read (border, ink, focus ring).
+   ========================================================================== */
+@layer components {
+  .shifts-saas {
+    /* skin tokens */
+    --saas-ink: #0f1115;
+    --saas-ink-2: #5b616e;
+    --saas-ink-3: #98a0ac;
+    --saas-line: #e5e7eb;
+    --saas-line-2: #d8dbe1;
+    --saas-off: #f3f4f6;
+    --saas-hover: #f7f8fa;
+    --saas-header: #fbfbfc;
+    --saas-accent: #6950f3;
+    --saas-accent-ink: #5840d8;
+    --saas-accent-soft: #efecfe;
+    --saas-accent-line: #d9d2fb;
+    --saas-accent-tint: #f7f5ff;
+    --saas-amber: #b45309;
+    --saas-amber-soft: #fbecd6;
+    --saas-amber-line: #f0ddbe;
+
+    /* retint shared primitives (Input/Select/Button/Dialog) inside the scope */
+    --color-border: var(--saas-line);
+    --color-border-strong: var(--saas-line-2);
+    --color-ink: var(--saas-ink);
+    --color-ink-muted: var(--saas-ink-2);
+    --color-ink-faint: var(--saas-ink-3);
+    --color-emerald: var(--saas-accent);
+    --color-green: var(--saas-accent);
+    --color-surface-muted: var(--saas-hover);
+    --radius-control: 8px;
+    --radius-card: 12px;
+
+    color-scheme: light;
+    color: var(--saas-ink);
+    font-size: 13.5px;
+    line-height: 1.45;
+    font-weight: 500;
+  }
+
+  .shifts-saas :focus-visible {
+    outline: 2px solid var(--saas-accent);
+    outline-offset: 2px;
+  }
+
+  .shifts-saas .saas-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+  }
+
+  /* ---- Screen header ---- */
+  .shifts-saas .saas-screenhead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    margin-bottom: 10px;
+  }
+
+  .shifts-saas .saas-screentitle {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--saas-ink);
+  }
+
+  .shifts-saas .saas-legend {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+
+  .shifts-saas .saas-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 550;
+    color: var(--saas-ink-2);
+  }
+
+  /* ---- Toolbar ---- */
+  .shifts-saas .saas-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    background: #ffffff;
+    border: 1px solid var(--saas-line);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+  }
+
+  .shifts-saas .saas-weeknav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .shifts-saas .saas-navbtn {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--saas-line-2);
+    border-radius: 6px;
+    background: #ffffff;
+    color: var(--saas-ink-2);
+    cursor: pointer;
+  }
+
+  .shifts-saas .saas-navbtn:hover {
+    background: var(--saas-hover);
+    color: var(--saas-ink);
+  }
+
+  .shifts-saas .saas-today {
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--saas-line-2);
+    border-radius: 6px;
+    background: #ffffff;
+    color: var(--saas-ink);
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .shifts-saas .saas-today:hover {
+    background: var(--saas-hover);
+  }
+
+  .shifts-saas .saas-range {
+    font-weight: 650;
+    font-size: 14px;
+    padding: 0 8px;
+    white-space: nowrap;
+    letter-spacing: -0.01em;
+  }
+
+  .shifts-saas .saas-loc-seg {
+    display: inline-flex;
+    gap: 2px;
+    background: #eef0f4;
+    border-radius: 6px;
+    padding: 3px;
+  }
+
+  .shifts-saas .saas-loc-seg button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 0;
+    background: transparent;
+    color: var(--saas-ink-2);
+    padding: 5px 11px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+
+  .shifts-saas .saas-loc-seg button:hover {
+    color: var(--saas-ink);
+  }
+
+  .shifts-saas .saas-loc-seg button.on {
+    background: #ffffff;
+    color: var(--saas-ink);
+    box-shadow: 0 1px 2px rgb(15 17 21 / 0.1);
+  }
+
+  .shifts-saas .saas-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .shifts-saas .saas-search svg {
+    position: absolute;
+    left: 10px;
+    color: var(--saas-ink-3);
+    pointer-events: none;
+  }
+
+  .shifts-saas .saas-search input {
+    height: 32px;
+    width: 180px;
+    border: 1px solid var(--saas-line-2);
+    border-radius: 6px;
+    background: #ffffff;
+    color: var(--saas-ink);
+    padding: 0 10px 0 32px;
+    font-size: 13px;
+  }
+
+  .shifts-saas .saas-search input::placeholder {
+    color: var(--saas-ink-3);
+  }
+
+  .shifts-saas .saas-search input:focus {
+    border-color: var(--saas-accent);
+    box-shadow: 0 0 0 3px var(--saas-accent-soft);
+    outline: none;
+  }
+
+  .shifts-saas .saas-grow {
+    flex: 1;
+  }
+
+  .shifts-saas .saas-add {
+    position: relative;
+  }
+
+  .shifts-saas .saas-add-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--saas-accent);
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 13px;
+    box-shadow: 0 1px 2px rgb(88 64 216 / 0.35);
+    cursor: pointer;
+  }
+
+  .shifts-saas .saas-add-btn:hover {
+    background: var(--saas-accent-ink);
+  }
+
+  /* ---- Popover menus ---- */
+  .shifts-saas .saas-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 65;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    cursor: default;
+  }
+
+  .shifts-saas .saas-menu {
+    position: fixed;
+    z-index: 70;
+    min-width: 224px;
+    background: #ffffff;
+    border: 1px solid var(--saas-line-2);
+    border-radius: 10px;
+    box-shadow: 0 12px 30px rgb(15 17 21 / 0.14), 0 3px 8px rgb(15 17 21 / 0.08);
+    padding: 4px;
+    max-height: min(340px, 70vh);
+    overflow-y: auto;
+    animation: var(--animate-pop-in);
+  }
+
+  .shifts-saas .saas-menu-add {
+    position: absolute;
+    left: auto;
+    right: 0;
+    top: calc(100% + 4px);
+  }
+
+  .shifts-saas .saas-menu-head {
+    padding: 8px 8px 6px;
+    border-bottom: 1px solid var(--saas-line);
+    margin-bottom: 4px;
+  }
+
+  .shifts-saas .saas-menu-title {
+    font-weight: 650;
+    font-size: 12.5px;
+  }
+
+  .shifts-saas .saas-menu-sub {
+    font-size: 11.5px;
+    color: var(--saas-ink-3);
+    margin-top: 2px;
+  }
+
+  .shifts-saas .saas-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--saas-ink);
+    font-size: 13px;
+    font-weight: 550;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .shifts-saas .saas-menu-item svg {
+    color: var(--saas-ink-3);
+    flex: 0 0 auto;
+  }
+
+  .shifts-saas .saas-menu-item:hover {
+    background: var(--saas-accent-soft);
+    color: var(--saas-accent-ink);
+  }
+
+  .shifts-saas .saas-menu-item:hover svg {
+    color: var(--saas-accent-ink);
+  }
+
+  .shifts-saas .saas-menu-item--danger,
+  .shifts-saas .saas-menu-item--danger svg {
+    color: #b3372e;
+  }
+
+  .shifts-saas .saas-menu-item--danger:hover {
+    background: #fbe9e7;
+    color: #b3372e;
+  }
+
+  .shifts-saas .saas-menu-item--danger:hover svg {
+    color: #b3372e;
+  }
+
+  .shifts-saas .saas-menu-sep {
+    height: 1px;
+    background: var(--saas-line);
+    margin: 4px;
+  }
+
+  /* ---- Grid ---- */
+  .shifts-saas .saas-gridwrap {
+    background: #ffffff;
+    border: 1px solid var(--saas-line);
+    border-radius: 8px;
+    overflow: auto;
+    max-height: min(72vh, 680px);
+  }
+
+  .shifts-saas table.saas-grid {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+    min-width: 960px;
+  }
+
+  .shifts-saas .saas-grid th,
+  .shifts-saas .saas-grid td {
+    border-bottom: 1px solid var(--saas-line);
+    border-right: 1px solid var(--saas-line);
+    text-align: left;
+  }
+
+  .shifts-saas .saas-grid th:last-child,
+  .shifts-saas .saas-grid td:last-child {
+    border-right: 0;
+  }
+
+  .shifts-saas .saas-grid tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .shifts-saas .saas-grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: var(--saas-header);
+    padding: 8px 12px;
+    vertical-align: middle;
+  }
+
+  .shifts-saas th.saas-corner {
+    left: 0;
+    z-index: 6;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--saas-ink-3);
+    min-width: 216px;
+    box-shadow: 1px 0 0 var(--saas-line);
+  }
+
+  .shifts-saas .saas-colday {
+    min-width: 124px;
+  }
+
+  .shifts-saas .saas-dow {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--saas-ink-3);
+  }
+
+  .shifts-saas .saas-dnum {
+    font-size: 15px;
+    font-weight: 650;
+    color: var(--saas-ink);
+    line-height: 1.2;
+  }
+
+  .shifts-saas th.saas-th-today {
+    background: var(--saas-accent-tint);
+    box-shadow: 0 -2px 0 var(--saas-accent) inset;
+  }
+
+  .shifts-saas th.saas-th-today .saas-dow,
+  .shifts-saas th.saas-th-today .saas-dnum {
+    color: var(--saas-accent-ink);
+  }
+
+  .shifts-saas .saas-barber-cell {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: #ffffff;
+    padding: 8px 12px;
+    min-width: 216px;
+    box-shadow: 1px 0 0 var(--saas-line);
+  }
+
+  .shifts-saas .saas-barber-cell--static {
+    position: static;
+    box-shadow: none;
+  }
+
+  .shifts-saas .saas-barber-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .shifts-saas .saas-barber-meta {
+    min-width: 0;
+  }
+
+  .shifts-saas .saas-barber-name {
+    font-weight: 650;
+    font-size: 13.5px;
+    color: var(--saas-ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .shifts-saas .saas-barber-sub {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+  }
+
+  .shifts-saas .saas-hours {
+    font-size: 11.5px;
+    color: var(--saas-ink-2);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .shifts-saas .saas-locdots {
+    display: inline-flex;
+    gap: 4px;
+  }
+
+  .shifts-saas .saas-barber-editbtn {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--saas-line-2);
+    border-radius: 6px;
+    background: #ffffff;
+    color: var(--saas-ink-2);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 120ms ease, background 120ms ease, color 120ms ease, border-color 120ms ease;
+  }
+
+  .shifts-saas .saas-barber-row:hover .saas-barber-editbtn,
+  .shifts-saas .saas-barber-row:focus-within .saas-barber-editbtn,
+  .shifts-saas .saas-barber-editbtn:focus-visible {
+    opacity: 1;
+  }
+
+  .shifts-saas .saas-barber-editbtn:hover {
+    background: var(--saas-accent-soft);
+    border-color: var(--saas-accent-line);
+    color: var(--saas-accent-ink);
+  }
+
+  .shifts-saas td.saas-cell {
+    padding: 0;
+    vertical-align: top;
+    height: 64px;
+  }
+
+  .shifts-saas .saas-cell-btn {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 4px;
+    width: 100%;
+    height: 100%;
+    min-height: 64px;
+    padding: 8px 12px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .shifts-saas .saas-cell-btn--static {
+    cursor: default;
+  }
+
+  .shifts-saas button.saas-cell-btn:hover {
+    background: var(--saas-hover);
+  }
+
+  .shifts-saas button.saas-cell-btn:hover .saas-plus {
+    opacity: 1;
+  }
+
+  .shifts-saas td.saas-cell--today .saas-cell-btn {
+    background: var(--saas-accent-tint);
+  }
+
+  .shifts-saas td.saas-cell--today button.saas-cell-btn:hover {
+    background: #f1eeff;
+  }
+
+  .shifts-saas td.saas-cell--off .saas-cell-btn {
+    background: var(--saas-off);
+  }
+
+  .shifts-saas td.saas-cell--off.saas-cell--today .saas-cell-btn {
+    background: #efedf6;
+  }
+
+  .shifts-saas td.saas-cell--changed .saas-cell-btn {
+    box-shadow: 2.5px 0 0 var(--saas-accent) inset;
+  }
+
+  .shifts-saas .saas-shiftline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .shifts-saas .saas-time {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--saas-ink);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+  }
+
+  .shifts-saas .saas-off {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--saas-ink-3);
+  }
+
+  .shifts-saas .saas-plus {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    color: var(--saas-ink-3);
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+
+  .shifts-saas .saas-badge {
+    width: fit-content;
+    font-size: 10.5px;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+
+  .shifts-saas .saas-badge--cover,
+  .shifts-saas .saas-badge--hours {
+    background: var(--saas-accent-soft);
+    color: var(--saas-accent-ink);
+    border-color: var(--saas-accent-line);
+  }
+
+  .shifts-saas .saas-badge--late {
+    background: var(--saas-amber-soft);
+    color: var(--saas-amber);
+    border-color: var(--saas-amber-line);
+  }
+
+  .shifts-saas .saas-badge--off {
+    background: #eceef2;
+    color: var(--saas-ink-2);
+    border-color: #e0e3e9;
+  }
+
+  .shifts-saas .saas-empty {
+    padding: 24px 16px;
+    color: var(--saas-ink-3);
+  }
+
+  .shifts-saas .saas-grid-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 16px;
+  }
+
+  /* ---- Coming up ---- */
+  .shifts-saas .saas-coming {
+    margin-top: 16px;
+  }
+
+  .shifts-saas .saas-coming h3 {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--saas-ink-3);
+    margin: 0 0 8px;
+  }
+
+  .shifts-saas .saas-coming-empty {
+    color: var(--saas-ink-3);
+    font-size: 12.5px;
+    padding: 4px 2px;
+  }
+
+  .shifts-saas .saas-coming-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .shifts-saas .saas-coming-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #ffffff;
+    border: 1px solid var(--saas-line);
+    border-radius: 8px;
+    padding: 12px;
+  }
+
+  .shifts-saas .saas-coming-text {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+  }
+
+  .shifts-saas .saas-coming-remove {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--saas-line-2);
+    border-radius: 6px;
+    background: #ffffff;
+    color: var(--saas-ink-2);
+    flex: 0 0 auto;
+    cursor: pointer;
+  }
+
+  .shifts-saas .saas-coming-remove:hover {
+    background: #fbe9e7;
+    border-color: #ecc6c2;
+    color: #b3372e;
+  }
+
+  /* ---- Dialog fields ---- */
+  .shifts-saas .saas-field {
+    display: grid;
+    gap: 4px;
+  }
+
+  .shifts-saas .saas-field-label {
+    font-size: 11.5px;
+    font-weight: 650;
+    color: var(--saas-ink-2);
+    letter-spacing: 0.01em;
+  }
+
+  .shifts-saas .saas-input {
+    height: 40px;
+    width: 100%;
+    border: 1px solid var(--saas-line-2);
+    border-radius: 8px;
+    background: #ffffff;
+    color: var(--saas-ink);
+    padding: 0 12px;
+    font-size: 13px;
+  }
+
+  .shifts-saas .saas-input::placeholder {
+    color: var(--saas-ink-3);
+  }
+
+  .shifts-saas .saas-input:focus {
+    border-color: var(--saas-accent);
+    box-shadow: 0 0 0 3px var(--saas-accent-soft);
+    outline: none;
+  }
+
+  .shifts-saas .saas-checkbox {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--saas-accent);
+  }
+
+  .shifts-saas .saas-iconbtn {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 40px;
+    border: 1px solid var(--saas-line-2);
+    border-radius: 6px;
+    background: #ffffff;
+    color: var(--saas-ink-3);
+    flex: 0 0 auto;
+    cursor: pointer;
+  }
+
+  .shifts-saas .saas-iconbtn:hover {
+    color: #b3372e;
+    border-color: #ecc6c2;
+  }
+
+  .shifts-saas .saas-addsplit {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: fit-content;
+    border: 1px dashed var(--saas-line-2);
+    border-radius: 6px;
+    background: #ffffff;
+    color: var(--saas-accent-ink);
+    font-weight: 600;
+    font-size: 12px;
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+
+  .shifts-saas .saas-addsplit:hover {
+    background: var(--saas-accent-tint);
+    border-color: var(--saas-accent-line);
+  }
+
+  .shifts-saas .saas-seg-inline {
+    display: inline-flex;
+    gap: 2px;
+    background: #eef0f4;
+    border-radius: 6px;
+    padding: 3px;
+    width: fit-content;
+  }
+
+  .shifts-saas .saas-seg-inline button {
+    border: 0;
+    background: transparent;
+    color: var(--saas-ink-2);
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+
+  .shifts-saas .saas-seg-inline button.on {
+    background: #ffffff;
+    color: var(--saas-ink);
+    box-shadow: 0 1px 2px rgb(15 17 21 / 0.1);
+  }
+
+  .shifts-saas .saas-sentence {
+    background: #f6f7f9;
+    border: 1px solid var(--saas-line);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 13px;
+    color: var(--saas-ink);
+    line-height: 1.5;
+  }
+
+  .shifts-saas .saas-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    background: var(--saas-accent-soft);
+    border: 1px solid var(--saas-accent-line);
+    color: var(--saas-accent-ink);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12.5px;
+    font-weight: 550;
+  }
+
+  .shifts-saas .saas-banner svg {
+    flex: 0 0 auto;
+    margin-top: 1px;
+  }
+
+  .shifts-saas .saas-warn {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    background: var(--saas-amber-soft);
+    border: 1px solid var(--saas-amber-line);
+    color: #8a5a12;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12.5px;
+    font-weight: 550;
+  }
+
+  .shifts-saas .saas-warn svg {
+    flex: 0 0 auto;
+    margin-top: 1px;
+  }
+
+  .shifts-saas .saas-error {
+    background: #fbe9e7;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 12.5px;
+    font-weight: 550;
+    color: #b3372e;
+  }
+
+  .shifts-saas .saas-hint {
+    font-size: 12px;
+    color: var(--saas-ink-3);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .shifts-saas .saas-menu {
+      animation: none;
+    }
+
+    .shifts-saas .saas-plus {
+      transition: none;
+    }
+  }
+}

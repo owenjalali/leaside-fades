@@ -1,14 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+    AlertTriangle,
     Ban,
     CalendarDays,
     ChevronDown,
+    ChevronLeft,
+    ChevronRight,
     Clock,
     Copy,
     Edit3,
     GripVertical,
+    MapPin,
+    Plane,
     Plus,
     RefreshCw,
+    Repeat,
+    RotateCcw,
     Save,
     Search,
     Trash2,
@@ -25,40 +32,60 @@ import { useToast } from "../components/ui/toast.tsx";
 import {
     createAdminBlockedTime,
     createAdminShift,
+    createAdminShiftOverride,
     deactivateAdminShift,
     deleteAdminBlockedTime,
+    deleteAdminShiftOverride,
+    fetchAdminBookings,
     fetchAdminSchedule,
+    replaceAdminDayShift,
     updateAdminBlockedTime,
     updateAdminShift,
 } from "./api";
 import { getAdminBarberPhotoUrl } from "./barber-photos";
 import {
     addDaysToLocalDate,
-    buildDeleteSchedulePeriodPlan,
-    buildTemporarySchedulePlan,
+    buildComingUp,
+    buildCoverPlan,
+    buildTimeOffWritePlan,
     buildWeeklyScheduleDraft,
     buildWeeklyScheduleSavePlan,
     buildBlockedTimePayload,
     calculateWeeklyScheduleHours,
     clearWeeklyScheduleDay,
     copyWeeklyScheduleDay,
-    describeSchedulePeriod,
+    describeCoverResult,
+    describeDayEditResult,
+    describeTimeOffResult,
+    describeWeeklyScheduleDraft,
     duplicateWeeklyScheduleWindow,
-    formatLocalDateLabel,
+    formatClockRange12,
+    formatDayNameDate,
     formatLocalDateTime,
     formatScheduleWindow,
+    formatWeekHoursLabel,
+    formatWeekRangeLabel,
     getWeeklyCopyTargetDayOptions,
-    listWeeklyShiftPatterns,
     moveWeeklyScheduleWindow,
     resizeWeeklyScheduleWindow,
+    resolveBarberDay,
+    resolveBarberWeekMinutes,
     snapWeeklyScheduleClock,
+    startOfWeekLocalDate,
     todayLocalDate,
     validateWeeklyScheduleDraft,
-    weekdaysInLocalDateRange,
-    weeklyShiftPatternKey,
-    weeklyShiftPatternLabel,
+    weekDatesFromLocalDate,
 } from "./admin-utils";
-import type { DayScheduleDraft, ShiftWindowDraft, WeeklyScheduleDraft, WeeklyScheduleSaveOperation, WeeklyScheduleValidationIssue } from "./admin-utils";
+import type {
+    ComingUpGroup,
+    CoverPlan,
+    DayScheduleDraft,
+    ResolvedBarberDay,
+    ShiftWindowDraft,
+    WeeklyScheduleDraft,
+    WeeklyScheduleSaveOperation,
+    WeeklyScheduleValidationIssue,
+} from "./admin-utils";
 import type {
     AdminBarberOption,
     AdminBlockedTime,
@@ -73,11 +100,8 @@ type ScheduleMode = "shifts" | "blocked";
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const weeklyDisplayOrder = [1, 2, 3, 4, 5, 6, 0];
 
-async function runScheduleOperations(operations: WeeklyScheduleSaveOperation[], shouldContinue?: () => boolean) {
-    for (const [index, operation] of operations.entries()) {
-        if (shouldContinue && !shouldContinue()) {
-            return { completed: false, applied: index };
-        }
+async function runScheduleOperations(operations: WeeklyScheduleSaveOperation[]) {
+    for (const operation of operations) {
         if (operation.type === "deactivate") {
             await deactivateAdminShift(operation.shiftId);
         } else if (operation.type === "update") {
@@ -86,9 +110,17 @@ async function runScheduleOperations(operations: WeeklyScheduleSaveOperation[], 
             await createAdminShift(operation.payload);
         }
     }
-
-    return { completed: true, applied: operations.length };
 }
+
+const accentButtonClass = "!bg-[#6950f3] !text-white hover:!bg-[#5840d8]";
+const locationDotPalette = ["#1f7a4d", "#b99356", "#6950f3", "#b45309", "#2b5f8a", "#0f766e"];
+
+type ActiveDialog =
+    | { kind: "edit"; barberId: string; date: string; lockBarber: boolean }
+    | { kind: "timeoff"; barberId: string; date: string; lockBarber: boolean }
+    | { kind: "cover"; barberId: string; date: string; lockBarber: boolean }
+    | { kind: "weekly"; barberId: string }
+    | null;
 
 export default function SchedulePage({
     mode,
@@ -99,16 +131,22 @@ export default function SchedulePage({
 }) {
     const [schedule, setSchedule] = useState<AdminSchedule | null>(null);
     const [loading, setLoading] = useState(true);
+    const [fetchedRange, setFetchedRange] = useState<{ from: string; to: string } | null>(null);
     const { toast } = useToast();
-    const [filters, setFilters] = useState({
+    const [weekStart, setWeekStart] = useState(() => startOfWeekLocalDate(todayLocalDate()));
+    const [blockedFilters, setBlockedFilters] = useState({
         from: todayLocalDate(),
         to: addDaysToLocalDate(todayLocalDate(), 30),
     });
 
+    const fetchFrom = mode === "shifts" ? addDaysToLocalDate(weekStart, -7) : blockedFilters.from;
+    const fetchTo = mode === "shifts" ? addDaysToLocalDate(weekStart, 27) : blockedFilters.to;
+
     async function refresh() {
         setLoading(true);
         try {
-            setSchedule(await fetchAdminSchedule(filters));
+            setSchedule(await fetchAdminSchedule({ from: fetchFrom, to: fetchTo }));
+            setFetchedRange({ from: fetchFrom, to: fetchTo });
         } catch (error) {
             toast({ tone: "error", message: error instanceof Error ? error.message : "Schedule failed to load." });
         } finally {
@@ -117,9 +155,9 @@ export default function SchedulePage({
     }
 
     useEffect(() => {
-        refresh();
+        void refresh();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [filters.from, filters.to]);
+    }, [fetchFrom, fetchTo]);
 
     async function afterMutation(message: string) {
         toast({ tone: "success", message });
@@ -134,153 +172,1127 @@ export default function SchedulePage({
         return <Panel><EmptyState label="Schedule is unavailable." /></Panel>;
     }
 
+    if (mode === "shifts") {
+        return (
+            <TeamWeek
+                schedule={schedule}
+                user={user}
+                loading={loading}
+                weekStart={weekStart}
+                fetchedRange={fetchedRange}
+                onWeekStart={setWeekStart}
+                onRefresh={refresh}
+                onChanged={afterMutation}
+            />
+        );
+    }
+
     return (
         <section className="space-y-4">
-            {mode === "blocked" && (
-                <section className="flex flex-col gap-3 rounded-md border border-forest/10 bg-white p-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <DateField label="From" value={filters.from} onChange={(from) => setFilters((value) => ({ ...value, from }))} />
-                        <DateField label="To" value={filters.to} onChange={(to) => setFilters((value) => ({ ...value, to }))} />
-                    </div>
-                    <button className="icon-button" onClick={refresh} title="Refresh schedule">
-                        <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
-                    </button>
-                </section>
-            )}
-            {mode === "shifts" ? (
-                <ShiftWorkspace
-                    schedule={schedule}
-                    user={user}
-                    loading={loading}
-                    onRefresh={refresh}
-                    onChanged={afterMutation}
-                />
-            ) : (
-                <BlockedTimeWorkspace schedule={schedule} user={user} onChanged={afterMutation} />
-            )}
+            <section className="flex flex-col gap-3 rounded-md border border-forest/10 bg-white p-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                    <DateField label="From" value={blockedFilters.from} onChange={(from) => setBlockedFilters((value) => ({ ...value, from }))} />
+                    <DateField label="To" value={blockedFilters.to} onChange={(to) => setBlockedFilters((value) => ({ ...value, to }))} />
+                </div>
+                <button className="icon-button" onClick={() => void refresh()} title="Refresh schedule">
+                    <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
+                </button>
+            </section>
+            <BlockedTimeWorkspace schedule={schedule} user={user} onChanged={afterMutation} />
         </section>
     );
 }
 
-function ShiftWorkspace({
+function locationDotColor(schedule: Pick<AdminSchedule, "locations">, locationId: string) {
+    const index = schedule.locations.findIndex((location) => location.id === locationId);
+    return locationDotPalette[(index >= 0 ? index : 0) % locationDotPalette.length];
+}
+
+function assignableLocations(schedule: AdminSchedule, barber: Pick<AdminBarberOption, "locationIds"> | undefined) {
+    return schedule.locations.filter((location) => barber?.locationIds.includes(location.id));
+}
+
+function weekdayShortLabel(date: string) {
+    return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short" }).format(new Date(`${date}T00:00:00Z`));
+}
+
+function dayOfMonthLabel(date: string) {
+    return Number(date.slice(8, 10));
+}
+
+interface TeamWeekRow {
+    barber: AdminBarberOption;
+    days: ResolvedBarberDay[];
+    minutes: number;
+}
+
+function TeamWeek({
     schedule,
     user,
     loading,
+    weekStart,
+    fetchedRange,
+    onWeekStart,
     onRefresh,
     onChanged,
 }: {
     schedule: AdminSchedule;
     user: SafeAdminUser;
     loading: boolean;
+    weekStart: string;
+    fetchedRange: { from: string; to: string } | null;
+    onWeekStart: (date: string) => void;
     onRefresh: () => Promise<void>;
     onChanged: (message: string) => Promise<void>;
 }) {
-    const visibleBarbers = useMemo(
+    const confirm = useConfirm();
+    const { toast } = useToast();
+    const canManage = user.role === "owner" || user.role === "admin";
+    const today = todayLocalDate();
+    const weekDates = useMemo(() => weekDatesFromLocalDate(weekStart), [weekStart]);
+    // After a far week jump the effect refetch hasn't landed yet; the schedule
+    // in hand still describes the previous window. Show a loader rather than
+    // flash baseline-only cells for a week we haven't fetched.
+    const weekReady =
+        fetchedRange !== null &&
+        weekDates[0] >= fetchedRange.from &&
+        weekDates[weekDates.length - 1] <= fetchedRange.to;
+    const [locationFilter, setLocationFilter] = useState("all");
+    const [search, setSearch] = useState("");
+    const [menu, setMenu] = useState<{ barberId: string; date: string; x: number; y: number } | null>(null);
+    const [addMenuOpen, setAddMenuOpen] = useState(false);
+    const [dialog, setDialog] = useState<ActiveDialog>(null);
+
+    const orderedBarbers = useMemo(
         () => [...(user.role === "barber" ? schedule.barbers.filter((barber) => barber.id === user.barberId) : schedule.barbers)]
-            .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+            .sort((a, b) => a.sortOrder - b.sortOrder || a.displayName.localeCompare(b.displayName)),
         [schedule.barbers, user.barberId, user.role],
     );
-    const initialBarberId = user.role === "barber" && user.barberId ? user.barberId : visibleBarbers[0]?.id ?? "";
-    const [selectedBarberId, setSelectedBarberId] = useState(initialBarberId);
-    const [selectedPatternKey, setSelectedPatternKey] = useState<string | null>(null);
-    const [staffSearch, setStaffSearch] = useState("");
-    const [activeTab, setActiveTab] = useState<ShiftWorkspaceTab>("weekly");
-    const [weeklyDraft, setWeeklyDraft] = useState<WeeklyScheduleDraft>(() =>
-        buildWeeklyScheduleDraft(schedule, initialBarberId),
+
+    const rows = useMemo<TeamWeekRow[]>(
+        () =>
+            orderedBarbers
+                .map((barber) => ({
+                    barber,
+                    days: weekDates.map((date) => resolveBarberDay(schedule, barber.id, date)),
+                    minutes: resolveBarberWeekMinutes(schedule, barber.id, weekDates),
+                }))
+                .filter((row) => {
+                    if (search.trim() && !row.barber.displayName.toLowerCase().includes(search.trim().toLowerCase())) {
+                        return false;
+                    }
+                    if (locationFilter === "all") {
+                        return true;
+                    }
+                    if (row.barber.locationIds.includes(locationFilter)) {
+                        return true;
+                    }
+                    return row.days.some((day) => day.windows.some((window) => window.locationId === locationFilter));
+                }),
+        [orderedBarbers, weekDates, schedule, search, locationFilter],
     );
-    const [expandedDay, setExpandedDay] = useState(1);
-    const [notice, setNotice] = useState("");
-    const [saving, setSaving] = useState(false);
-    const [deletingPattern, setDeletingPattern] = useState(false);
-    const [temporaryDialogOpen, setTemporaryDialogOpen] = useState(false);
-    const confirm = useConfirm();
-    const canManageShifts = user.role === "owner" || user.role === "admin";
-    const selectedBarber = visibleBarbers.find((barber) => barber.id === selectedBarberId) ?? visibleBarbers[0];
-    const patterns = useMemo(
-        () => listWeeklyShiftPatterns(schedule, selectedBarberId),
-        [schedule, selectedBarberId],
+
+    const comingUp = useMemo(
+        () => buildComingUp(schedule, orderedBarbers, today, addDaysToLocalDate(weekStart, 27)),
+        [schedule, orderedBarbers, today, weekStart],
     );
-    const savePlan = useMemo(
-        () => buildWeeklyScheduleSavePlan(schedule, weeklyDraft),
-        [schedule, weeklyDraft],
-    );
-    const validationIssues = useMemo(() => validateWeeklyScheduleDraft(weeklyDraft), [weeklyDraft]);
-    const weeklyHours = calculateWeeklyScheduleHours(weeklyDraft);
-    const filteredBarbers = visibleBarbers.filter((barber) =>
-        barber.displayName.toLowerCase().includes(staffSearch.trim().toLowerCase()),
-    );
-    const effectiveDateIssues = validationIssues.filter((issue) => issue.field === "effectiveFrom" || issue.field === "effectiveTo");
-    const activePatternKey = useMemo(() => {
-        const sourceShiftId = weeklyDraft.sourceShiftIds[0];
-        return sourceShiftId
-            ? patterns.find((pattern) => pattern.shiftIds.includes(sourceShiftId))?.key ?? ""
-            : "";
-    }, [patterns, weeklyDraft.sourceShiftIds]);
-    const activePattern = patterns.find((pattern) => pattern.key === activePatternKey);
-    const showPatternChips = patterns.length > 1
-        || (patterns.length === 1 && Boolean(patterns[0].effectiveFrom || patterns[0].effectiveTo));
 
     useEffect(() => {
-        if (!selectedBarber || selectedBarber.id === selectedBarberId) {
+        if (!menu && !addMenuOpen) {
             return;
         }
-        setSelectedBarberId(selectedBarber.id);
-    }, [selectedBarber, selectedBarberId]);
+        const onKey = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+                setMenu(null);
+                setAddMenuOpen(false);
+            }
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [menu, addMenuOpen]);
 
-    useEffect(() => {
-        setWeeklyDraft(buildWeeklyScheduleDraft(schedule, selectedBarberId, selectedPatternKey ?? undefined));
-    }, [schedule, selectedBarberId, selectedPatternKey]);
-
-    async function confirmDiscardDraft() {
-        if (savePlan.length === 0) {
-            return true;
-        }
-        return confirm({
-            title: "Discard unsaved changes?",
-            description: "Your weekly schedule edits haven't been saved yet.",
-            confirmLabel: "Discard",
-            tone: "danger",
+    function openCell(event: React.MouseEvent<HTMLButtonElement>, barberId: string, date: string) {
+        const rect = event.currentTarget.getBoundingClientRect();
+        setAddMenuOpen(false);
+        setMenu({
+            barberId,
+            date,
+            x: Math.max(8, Math.min(rect.left, window.innerWidth - 248)),
+            // Flip above the cell when a below-placed menu would leave the viewport.
+            // Estimate matches the menu's CSS max-height (340px) so a 6-item menu
+            // never clips; the menu also scrolls internally if it still overflows.
+            y: rect.bottom + 4 + 340 > window.innerHeight
+                ? Math.max(8, rect.top - 344)
+                : rect.bottom + 4,
         });
     }
 
-    async function selectBarber(barberId: string) {
-        if (barberId === selectedBarberId) {
+    function openFromCell(kind: "edit" | "timeoff" | "cover") {
+        if (!menu) {
             return;
         }
-        if (!(await confirmDiscardDraft())) {
-            return;
-        }
-        setSelectedBarberId(barberId);
-        setSelectedPatternKey(null);
-        setNotice("");
+        const target = { barberId: menu.barberId, date: menu.date };
+        setMenu(null);
+        setDialog({ kind, barberId: target.barberId, date: target.date, lockBarber: true });
     }
 
-    async function selectPattern(patternKey: string) {
-        if (patternKey === activePatternKey) {
+    function openWeeklyFromCell() {
+        if (!menu) {
             return;
         }
-        if (!(await confirmDiscardDraft())) {
-            return;
-        }
-        setSelectedPatternKey(patternKey);
-        setNotice("");
+        const barberId = menu.barberId;
+        setMenu(null);
+        setDialog({ kind: "weekly", barberId });
     }
 
-    async function saveWeeklySchedule() {
-        if (!weeklyDraft || savePlan.length === 0) {
+    function openFromAdd(kind: "edit" | "timeoff" | "cover") {
+        setAddMenuOpen(false);
+        setDialog({ kind, barberId: orderedBarbers[0]?.id ?? "", date: today, lockBarber: false });
+    }
+
+    async function putBackToNormal(barberId: string, date: string) {
+        const overrides = schedule.shiftOverrides.filter(
+            (override) => override.barberId === barberId && override.overrideDate === date,
+        );
+        if (overrides.length === 0) {
+            return;
+        }
+        const barber = schedule.barbers.find((candidate) => candidate.id === barberId);
+        const confirmed = await confirm({
+            title: "Put this day back to normal?",
+            description: `${barber?.displayName ?? "This barber"} returns to their usual schedule on ${formatDayNameDate(date)}. If this day was part of a longer cover, the whole day goes back to normal.`,
+            confirmLabel: "Put back to normal",
+            tone: "danger",
+        });
+        if (!confirmed) {
+            return;
+        }
+        try {
+            for (const override of overrides) {
+                await deleteAdminShiftOverride(override.id);
+            }
+            await onChanged(`${barber?.displayName ?? "Barber"} is back to normal on ${formatDayNameDate(date)}.`);
+        } catch (error) {
+            toast({ tone: "error", message: error instanceof Error ? error.message : "That day could not be put back to normal." });
+            await onRefresh();
+        }
+    }
+
+    async function deleteDayShift(barberId: string, date: string) {
+        const barber = schedule.barbers.find((candidate) => candidate.id === barberId);
+        const day = resolveBarberDay(schedule, barberId, date);
+        const locationIds = Array.from(new Set(day.windows.map((window) => window.locationId)));
+        if (locationIds.length === 0) {
+            return;
+        }
+        const confirmed = await confirm({
+            title: `Delete ${barber?.displayName ?? "this barber"}'s shift on ${formatDayNameDate(date)}?`,
+            description: "Customers won't be able to book them that day.",
+            confirmLabel: "Delete shift",
+            tone: "danger",
+        });
+        if (!confirmed) {
+            return;
+        }
+        try {
+            for (const locationId of locationIds) {
+                await replaceAdminDayShift({ barberId, locationId, date, windows: [] });
+            }
+            await onChanged(`${barber?.displayName ?? "Barber"}'s shift on ${formatDayNameDate(date)} was deleted.`);
+        } catch (error) {
+            toast({ tone: "error", message: error instanceof Error ? error.message : "That shift could not be deleted." });
+            await onRefresh();
+        }
+    }
+
+    async function removeComingUp(group: ComingUpGroup) {
+        const confirmed = await confirm({
+            title: "Remove this change?",
+            description: `${group.sentence} — this puts those days back to ${group.barberName}'s usual schedule.`,
+            confirmLabel: "Remove",
+            tone: "danger",
+        });
+        if (!confirmed) {
+            return;
+        }
+        try {
+            for (const overrideId of group.overrideIds) {
+                await deleteAdminShiftOverride(overrideId);
+            }
+            await onChanged(`${group.barberName}'s change was removed.`);
+        } catch (error) {
+            toast({ tone: "error", message: error instanceof Error ? error.message : "The change could not be removed." });
+            await onRefresh();
+        }
+    }
+
+    const dialogBarbers = dialog && "lockBarber" in dialog && dialog.lockBarber
+        ? orderedBarbers.filter((barber) => barber.id === dialog.barberId)
+        : orderedBarbers;
+    const menuBarber = menu ? schedule.barbers.find((barber) => barber.id === menu.barberId) : undefined;
+    const menuDay = menu ? resolveBarberDay(schedule, menu.barberId, menu.date) : null;
+    const menuHasOverrides = menu
+        ? schedule.shiftOverrides.some((override) => override.barberId === menu.barberId && override.overrideDate === menu.date)
+        : false;
+    const canDeleteDay = Boolean(menuDay?.working && menuDay.windows.length > 0);
+
+    return (
+        <div className="shifts-saas">
+            <div className="saas-screenhead">
+                <h2 className="saas-screentitle">Scheduled shifts</h2>
+                <div className="saas-legend">
+                    {schedule.locations.map((location) => (
+                        <span key={location.id} className="saas-legend-item">
+                            <span className="saas-dot" style={{ backgroundColor: locationDotColor(schedule, location.id) }} />
+                            {locationName(schedule, location.id)}
+                        </span>
+                    ))}
+                </div>
+            </div>
+            <div className="saas-toolbar">
+                <div className="saas-weeknav">
+                    <button className="saas-navbtn" onClick={() => onWeekStart(addDaysToLocalDate(weekStart, -7))} aria-label="Previous week">
+                        <ChevronLeft size={17} />
+                    </button>
+                    <button className="saas-today" onClick={() => onWeekStart(startOfWeekLocalDate(today))}>Today</button>
+                    <button className="saas-navbtn" onClick={() => onWeekStart(addDaysToLocalDate(weekStart, 7))} aria-label="Next week">
+                        <ChevronRight size={17} />
+                    </button>
+                </div>
+                <div className="saas-range">{formatWeekRangeLabel(weekDates)}</div>
+                <div className="saas-loc-seg" role="group" aria-label="Filter by location">
+                    <button className={locationFilter === "all" ? "on" : ""} onClick={() => setLocationFilter("all")}>All</button>
+                    {schedule.locations.map((location) => (
+                        <button key={location.id} className={locationFilter === location.id ? "on" : ""} onClick={() => setLocationFilter(location.id)}>
+                            <span className="saas-dot" style={{ backgroundColor: locationDotColor(schedule, location.id) }} />
+                            {locationName(schedule, location.id)}
+                        </button>
+                    ))}
+                </div>
+                <label className="saas-search">
+                    <Search size={15} />
+                    <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search team" aria-label="Search team" />
+                </label>
+                <span className="saas-grow" />
+                {loading && <RefreshCw size={16} className="animate-spin text-[var(--saas-ink-3)]" aria-hidden="true" />}
+                {canManage && (
+                    <div className="saas-add">
+                        <button className="saas-add-btn" onClick={() => { setMenu(null); setAddMenuOpen((value) => !value); }} aria-haspopup="menu" aria-expanded={addMenuOpen}>
+                            <Plus size={16} /> Add
+                        </button>
+                        {addMenuOpen && (
+                            <>
+                                <button className="saas-backdrop" aria-hidden="true" tabIndex={-1} onClick={() => setAddMenuOpen(false)} />
+                                <div className="saas-menu saas-menu-add" role="menu">
+                                    <button className="saas-menu-item" onClick={() => openFromAdd("timeoff")}><Plane size={16} /> Time off</button>
+                                    <button className="saas-menu-item" onClick={() => openFromAdd("cover")}><MapPin size={16} /> Cover a location</button>
+                                    <button className="saas-menu-item" onClick={() => openFromAdd("edit")}><Edit3 size={16} /> Edit a day</button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            <div className="saas-gridwrap">
+                {!weekReady ? (
+                    <div className="saas-grid-loading"><InlineLoading label="Loading week" className="!text-[var(--saas-ink-2)]" /></div>
+                ) : (
+                <table className="saas-grid">
+                    <thead>
+                        <tr>
+                            <th className="saas-corner">Team member</th>
+                            {weekDates.map((date) => (
+                                <th key={date} className={`saas-colday${date === today ? " saas-th-today" : ""}`}>
+                                    <div className="saas-dow">{weekdayShortLabel(date)}</div>
+                                    <div className="saas-dnum">{dayOfMonthLabel(date)}{date === today ? " · Today" : ""}</div>
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.length === 0 ? (
+                            <tr>
+                                <td className="saas-barber-cell saas-barber-cell--static" />
+                                <td colSpan={7} className="saas-empty">No team members match this view.</td>
+                            </tr>
+                        ) : (
+                            rows.map((row) => (
+                                <tr key={row.barber.id}>
+                                    <td className="saas-barber-cell">
+                                        <div className="saas-barber-row">
+                                            <StaffAvatar barber={row.barber} neutral size="sm" />
+                                            <div className="saas-barber-meta">
+                                                <div className="saas-barber-name">{row.barber.displayName}</div>
+                                                <div className="saas-barber-sub">
+                                                    <span className="saas-hours">{formatWeekHoursLabel(row.minutes)} / wk</span>
+                                                    <span className="saas-locdots">
+                                                        {row.barber.locationIds.map((id) => (
+                                                            <span key={id} className="saas-dot" style={{ backgroundColor: locationDotColor(schedule, id) }} title={locationName(schedule, id)} />
+                                                        ))}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            {canManage && (
+                                                <button
+                                                    type="button"
+                                                    className="saas-barber-editbtn"
+                                                    aria-label={`Set weekly schedule for ${row.barber.displayName}`}
+                                                    onClick={() => { setMenu(null); setDialog({ kind: "weekly", barberId: row.barber.id }); }}
+                                                >
+                                                    <Edit3 size={15} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </td>
+                                    {row.days.map((day, index) => (
+                                        <TeamCell
+                                            key={weekDates[index]}
+                                            schedule={schedule}
+                                            day={day}
+                                            isToday={weekDates[index] === today}
+                                            canManage={canManage}
+                                            onOpen={(event) => openCell(event, row.barber.id, weekDates[index])}
+                                        />
+                                    ))}
+                                </tr>
+                            ))
+                        )}
+                    </tbody>
+                </table>
+                )}
+            </div>
+
+            <ComingUpStrip groups={comingUp} schedule={schedule} canManage={canManage} onRemove={removeComingUp} />
+
+            {menu && menuBarber && menuDay && (
+                <>
+                    <button className="saas-backdrop" aria-hidden="true" tabIndex={-1} onClick={() => setMenu(null)} />
+                    <div className="saas-menu" role="menu" style={{ left: menu.x, top: menu.y }}>
+                        <div className="saas-menu-head">
+                            <div className="saas-menu-title">{menuBarber.displayName} · {formatDayNameDate(menu.date)}</div>
+                            <div className="saas-menu-sub">
+                                {menuDay.working
+                                    ? menuDay.windows.map((window) => formatClockRange12(window.startTime, window.endTime)).join(" · ")
+                                    : "Off"}
+                            </div>
+                        </div>
+                        <button className="saas-menu-item" onClick={() => openFromCell("edit")}>
+                            {menuDay.working ? <Edit3 size={16} /> : <Plus size={16} />} {menuDay.working ? "Edit this day" : "Add a shift"}
+                        </button>
+                        <button className="saas-menu-item" onClick={() => openFromCell("timeoff")}><Plane size={16} /> Add time off</button>
+                        <button className="saas-menu-item" onClick={() => openFromCell("cover")}><MapPin size={16} /> Cover a location…</button>
+                        <button className="saas-menu-item" onClick={openWeeklyFromCell}><Repeat size={16} /> Set weekly schedule…</button>
+                        {(canDeleteDay || menuHasOverrides) && <div className="saas-menu-sep" />}
+                        {canDeleteDay && (
+                            <button
+                                className="saas-menu-item saas-menu-item--danger"
+                                onClick={() => { const target = menu; setMenu(null); void deleteDayShift(target.barberId, target.date); }}
+                            >
+                                <Trash2 size={16} /> Delete this shift
+                            </button>
+                        )}
+                        {menuHasOverrides && (
+                            <button
+                                className="saas-menu-item"
+                                onClick={() => { const target = menu; setMenu(null); void putBackToNormal(target.barberId, target.date); }}
+                            >
+                                <RotateCcw size={16} /> Put this day back to normal
+                            </button>
+                        )}
+                    </div>
+                </>
+            )}
+
+            {dialog?.kind === "edit" && (
+                <EditDayDialog
+                    schedule={schedule}
+                    barbers={dialogBarbers}
+                    initialBarberId={dialog.barberId}
+                    date={dialog.date}
+                    onClose={() => setDialog(null)}
+                    onChanged={onChanged}
+                />
+            )}
+            {dialog?.kind === "timeoff" && (
+                <TimeOffDialog
+                    schedule={schedule}
+                    barbers={dialogBarbers}
+                    initialBarberId={dialog.barberId}
+                    initialDate={dialog.date}
+                    onClose={() => setDialog(null)}
+                    onChanged={onChanged}
+                    onRefresh={onRefresh}
+                />
+            )}
+            {dialog?.kind === "cover" && (
+                <CoverDialog
+                    schedule={schedule}
+                    barbers={dialogBarbers}
+                    initialBarberId={dialog.barberId}
+                    initialDate={dialog.date}
+                    onClose={() => setDialog(null)}
+                    onChanged={onChanged}
+                    onRefresh={onRefresh}
+                />
+            )}
+            {dialog?.kind === "weekly" && (
+                <WeeklyScheduleDialog
+                    schedule={schedule}
+                    barber={schedule.barbers.find((barber) => barber.id === dialog.barberId)}
+                    canManage={canManage}
+                    onClose={() => setDialog(null)}
+                    onChanged={onChanged}
+                />
+            )}
+        </div>
+    );
+}
+
+function TeamCell({
+    schedule,
+    day,
+    isToday,
+    canManage,
+    onOpen,
+}: {
+    schedule: AdminSchedule;
+    day: ResolvedBarberDay;
+    isToday: boolean;
+    canManage: boolean;
+    onOpen: (event: React.MouseEvent<HTMLButtonElement>) => void;
+}) {
+    const classes = ["saas-cell"];
+    if (!day.working) classes.push("saas-cell--off");
+    if (day.changed) classes.push("saas-cell--changed");
+    if (isToday) classes.push("saas-cell--today");
+
+    const content = (
+        <>
+            {day.working ? (
+                <>
+                    {day.windows.map((window, index) => (
+                        <div key={index} className="saas-shiftline">
+                            <span className="saas-dot" style={{ backgroundColor: locationDotColor(schedule, window.locationId) }} />
+                            <span className="saas-time">{formatClockRange12(window.startTime, window.endTime)}</span>
+                        </div>
+                    ))}
+                    {day.badge && <span className={`saas-badge saas-badge--${day.badge.tone}`}>{day.badge.text}</span>}
+                </>
+            ) : (
+                <>
+                    <span className="saas-off">Off</span>
+                    {day.badge && <span className={`saas-badge saas-badge--${day.badge.tone}`}>{day.badge.text}</span>}
+                    {!day.badge && canManage && <span className="saas-plus"><Plus size={14} /></span>}
+                </>
+            )}
+        </>
+    );
+
+    return (
+        <td className={classes.join(" ")}>
+            {canManage ? (
+                <button type="button" className="saas-cell-btn" onClick={onOpen} title={day.tooltip ?? (day.working ? undefined : "Not working this day")}>
+                    {content}
+                </button>
+            ) : (
+                <div className="saas-cell-btn saas-cell-btn--static" title={day.tooltip}>{content}</div>
+            )}
+        </td>
+    );
+}
+
+function ComingUpStrip({
+    groups,
+    schedule,
+    canManage,
+    onRemove,
+}: {
+    groups: ComingUpGroup[];
+    schedule: AdminSchedule;
+    canManage: boolean;
+    onRemove: (group: ComingUpGroup) => void;
+}) {
+    return (
+        <section className="saas-coming">
+            <h3>Coming up</h3>
+            {groups.length === 0 ? (
+                <p className="saas-coming-empty">Nothing scheduled beyond the standard week.</p>
+            ) : (
+                <div className="saas-coming-list">
+                    {groups.map((group) => (
+                        <div key={`${group.barberId}-${group.startDate}-${group.kind}`} className="saas-coming-item">
+                            <span
+                                className="saas-dot"
+                                style={{ backgroundColor: group.locationId ? locationDotColor(schedule, group.locationId) : "#c9ccd4" }}
+                            />
+                            <p className="saas-coming-text">{group.sentence}</p>
+                            {canManage && (
+                                <button className="saas-coming-remove" onClick={() => onRemove(group)} aria-label="Remove this change" title="Remove this change">
+                                    <Trash2 size={15} />
+                                </button>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </section>
+    );
+}
+
+function BarberSelectField({
+    barbers,
+    value,
+    onChange,
+    disabled,
+}: {
+    barbers: AdminBarberOption[];
+    value: string;
+    onChange: (barberId: string) => void;
+    disabled?: boolean;
+}) {
+    if (barbers.length <= 1) {
+        return null;
+    }
+    return (
+        <label className="saas-field">
+            <span className="saas-field-label">Team member</span>
+            <Select value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled}>
+                {barbers.map((barber) => (
+                    <option key={barber.id} value={barber.id}>{barber.displayName}</option>
+                ))}
+            </Select>
+        </label>
+    );
+}
+
+function WindowsEditor({
+    windows,
+    disabled,
+    onChange,
+}: {
+    windows: Array<{ startTime: string; endTime: string }>;
+    disabled?: boolean;
+    onChange: (windows: Array<{ startTime: string; endTime: string }>) => void;
+}) {
+    return (
+        <div className="grid gap-2">
+            {windows.map((window, index) => (
+                <div key={index} className="flex items-center gap-2">
+                    <TimeInput
+                        value={window.startTime}
+                        onChange={(next) => onChange(windows.map((item, i) => (i === index ? { ...item, startTime: next } : item)))}
+                        disabled={disabled}
+                        className="flex-1"
+                    />
+                    <span className="text-[var(--saas-ink-3)]">–</span>
+                    <TimeInput
+                        value={window.endTime}
+                        onChange={(next) => onChange(windows.map((item, i) => (i === index ? { ...item, endTime: next } : item)))}
+                        disabled={disabled}
+                        className="flex-1"
+                    />
+                    <button
+                        type="button"
+                        className="saas-iconbtn"
+                        onClick={() => onChange(windows.filter((_, i) => i !== index))}
+                        disabled={disabled}
+                        aria-label="Remove hours"
+                    >
+                        <X size={15} />
+                    </button>
+                </div>
+            ))}
+            <button
+                type="button"
+                className="saas-addsplit"
+                onClick={() => onChange([...windows, { startTime: "15:00", endTime: "19:00" }])}
+                disabled={disabled}
+            >
+                <Plus size={14} /> Add split
+            </button>
+        </div>
+    );
+}
+
+function EditDayDialog({
+    schedule,
+    barbers,
+    initialBarberId,
+    date,
+    onClose,
+    onChanged,
+}: {
+    schedule: AdminSchedule;
+    barbers: AdminBarberOption[];
+    initialBarberId: string;
+    date: string;
+    onClose: () => void;
+    onChanged: (message: string) => Promise<void>;
+}) {
+    const initial = useMemo(() => resolveBarberDay(schedule, initialBarberId, date), [schedule, initialBarberId, date]);
+    const initialLocations = assignableLocations(schedule, schedule.barbers.find((barber) => barber.id === initialBarberId));
+    // Opening an off day means "add a shift": start on Working with the
+    // baseline hours prefilled (or a sensible default when there is none).
+    const initialWindows = (initial.working ? initial.windows : initial.baselineWindows)
+        .map((window) => ({ startTime: window.startTime, endTime: window.endTime }));
+    const [barberId, setBarberId] = useState(initialBarberId);
+    const [working, setWorking] = useState(true);
+    const [windows, setWindows] = useState(initialWindows.length > 0 ? initialWindows : [{ startTime: "10:00", endTime: "19:00" }]);
+    const [locationId, setLocationId] = useState(
+        initial.windows[0]?.locationId ?? initial.baselineWindows[0]?.locationId ?? initialLocations[0]?.id ?? "",
+    );
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState("");
+
+    const barber = schedule.barbers.find((candidate) => candidate.id === barberId);
+    const locations = assignableLocations(schedule, barber);
+    const resolved = resolveBarberDay(schedule, barberId, date);
+
+    function selectBarber(nextBarberId: string) {
+        const nextResolved = resolveBarberDay(schedule, nextBarberId, date);
+        const nextLocations = assignableLocations(schedule, schedule.barbers.find((candidate) => candidate.id === nextBarberId));
+        const nextWindows = (nextResolved.working ? nextResolved.windows : nextResolved.baselineWindows)
+            .map((window) => ({ startTime: window.startTime, endTime: window.endTime }));
+        setBarberId(nextBarberId);
+        setWorking(true);
+        setWindows(nextWindows.length > 0 ? nextWindows : [{ startTime: "10:00", endTime: "19:00" }]);
+        setLocationId(
+            nextResolved.windows[0]?.locationId ?? nextResolved.baselineWindows[0]?.locationId ?? nextLocations[0]?.id ?? "",
+        );
+        setError("");
+    }
+
+    const effectiveWindows = working ? windows : [];
+    const sentence = describeDayEditResult({
+        barberName: barber?.displayName ?? "This barber",
+        date,
+        locationName: locationName(schedule, locationId),
+        windows: effectiveWindows,
+        baselineWindows: resolved.baselineWindows,
+    });
+    // Every location the barber currently has hours (or a baseline) at on this
+    // date — the day is edited as a whole, so other locations get cleared.
+    const affectedLocationIds = Array.from(
+        new Set([...resolved.windows, ...resolved.baselineWindows].map((window) => window.locationId)),
+    );
+    const canSave = working
+        ? Boolean(locationId) && windows.length > 0 && windows.every((window) => window.startTime < window.endTime)
+        : affectedLocationIds.length > 0;
+
+    async function save() {
+        if (!canSave || saving) {
+            return;
+        }
+        try {
+            setSaving(true);
+            setError("");
+            if (working) {
+                await replaceAdminDayShift({ barberId, locationId, date, windows: effectiveWindows });
+            }
+            for (const otherLocationId of affectedLocationIds) {
+                if (!working || otherLocationId !== locationId) {
+                    await replaceAdminDayShift({ barberId, locationId: otherLocationId, date, windows: [] });
+                }
+            }
+            await onChanged(`${barber?.displayName ?? "Barber"} updated for ${formatDayNameDate(date)}.`);
+            onClose();
+        } catch (saveError) {
+            setError(saveError instanceof Error ? saveError.message : "That day's shift could not be saved.");
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    return (
+        <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
+            <DialogContent size="md" className="shifts-saas" closeDisabled={saving}>
+                <DialogTitle>Edit {formatDayNameDate(date)}</DialogTitle>
+                <DialogDescription>Change just this day — the repeating weekly schedule stays the same.</DialogDescription>
+                <div className="mt-4 grid gap-4">
+                    <BarberSelectField barbers={barbers} value={barberId} onChange={selectBarber} disabled={saving} />
+                    <label className="saas-field">
+                        <span className="saas-field-label">This day</span>
+                        <div className="saas-seg-inline" role="group">
+                            <button type="button" className={working ? "on" : ""} onClick={() => setWorking(true)} disabled={saving}>Working</button>
+                            <button type="button" className={!working ? "on" : ""} onClick={() => setWorking(false)} disabled={saving}>Off</button>
+                        </div>
+                    </label>
+                    {working && (
+                        <>
+                            <label className="saas-field">
+                                <span className="saas-field-label">Location</span>
+                                <Select value={locationId} onChange={(event) => setLocationId(event.target.value)} disabled={saving || locations.length === 0}>
+                                    {locations.length === 0 && <option value="">No assigned location</option>}
+                                    {locations.map((location) => (
+                                        <option key={location.id} value={location.id}>{locationName(schedule, location.id)}</option>
+                                    ))}
+                                </Select>
+                            </label>
+                            <label className="saas-field">
+                                <span className="saas-field-label">Hours</span>
+                                <WindowsEditor windows={windows} disabled={saving} onChange={setWindows} />
+                            </label>
+                        </>
+                    )}
+                    <p className="saas-sentence">{sentence}</p>
+                    {error && <p className="saas-error" role="alert">{error}</p>}
+                    <div className="flex justify-end gap-2">
+                        <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
+                        <Button className={accentButtonClass} loading={saving} disabled={!canSave} onClick={() => void save()}>Save this day</Button>
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function TimeOffDialog({
+    schedule,
+    barbers,
+    initialBarberId,
+    initialDate,
+    onClose,
+    onChanged,
+    onRefresh,
+}: {
+    schedule: AdminSchedule;
+    barbers: AdminBarberOption[];
+    initialBarberId: string;
+    initialDate: string;
+    onClose: () => void;
+    onChanged: (message: string) => Promise<void>;
+    onRefresh: () => Promise<void>;
+}) {
+    const [barberId, setBarberId] = useState(initialBarberId);
+    const [fromDate, setFromDate] = useState(initialDate);
+    const [toDate, setToDate] = useState(initialDate);
+    const [reason, setReason] = useState("");
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState("");
+    const [bookingCheck, setBookingCheck] = useState<{ key: string; message: string } | null>(null);
+
+    const barber = schedule.barbers.find((candidate) => candidate.id === barberId);
+    const validRange = Boolean(fromDate) && Boolean(toDate) && fromDate <= toDate;
+    const rangeDays = validRange ? Math.round((Date.parse(toDate) - Date.parse(fromDate)) / 86400000) + 1 : 0;
+    const rangeTooLong = rangeDays > 62;
+    const rangeKey = `${barberId}|${fromDate}|${toDate}`;
+
+    useEffect(() => {
+        if (!validRange || !barberId) {
+            return;
+        }
+        let cancelled = false;
+        fetchAdminBookings({ from: fromDate, to: toDate, barberId, status: "confirmed" })
+            .then((response) => {
+                if (cancelled) {
+                    return;
+                }
+                const count = response.bookings.length;
+                setBookingCheck({
+                    key: rangeKey,
+                    message: count > 0
+                        ? `${count} appointment${count === 1 ? " is" : "s are"} already booked in this period — they won't be cancelled automatically.`
+                        : "",
+                });
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setBookingCheck({ key: rangeKey, message: "Check the calendar for existing appointments in this period." });
+                }
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [barberId, fromDate, toDate, validRange, rangeKey]);
+
+    const bookingWarning = bookingCheck && bookingCheck.key === rangeKey ? bookingCheck.message : "";
+    const sentence = describeTimeOffResult({ barberName: barber?.displayName ?? "This barber", fromDate, toDate, reason });
+
+    async function save() {
+        if (!validRange || rangeTooLong || saving) {
+            return;
+        }
+        setSaving(true);
+        setError("");
+        const savedDates: string[] = [];
+        try {
+            const dates: string[] = [];
+            for (let date = fromDate; date <= toDate; date = addDaysToLocalDate(date, 1)) {
+                dates.push(date);
+            }
+            // Delete every existing override on the date before writing not_working,
+            // so a leftover add/remove can't re-open booking on a day marked off.
+            for (const day of buildTimeOffWritePlan(schedule, barberId, dates)) {
+                for (const overrideId of day.deleteOverrideIds) {
+                    await deleteAdminShiftOverride(overrideId);
+                }
+                if (!day.createNotWorking) {
+                    continue;
+                }
+                await createAdminShiftOverride({
+                    barberId,
+                    locationId: null,
+                    overrideDate: day.date,
+                    overrideType: "not_working",
+                    reason: reason.trim() || undefined,
+                });
+                savedDates.push(day.date);
+            }
+            await onChanged(`Time off saved for ${barber?.displayName ?? "barber"}.`);
+            onClose();
+        } catch (saveError) {
+            await onRefresh();
+            const savedNote = savedDates.length > 0
+                ? ` ${savedDates.length} day${savedDates.length === 1 ? " was" : "s were"} already saved before it stopped.`
+                : "";
+            setError(`${saveError instanceof Error ? saveError.message : "Time off could not be saved."}${savedNote}`);
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    return (
+        <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
+            <DialogContent size="md" className="shifts-saas" closeDisabled={saving}>
+                <DialogTitle>Add time off</DialogTitle>
+                <DialogDescription>Mark whole days off. Customers can't book these days.</DialogDescription>
+                <div className="mt-4 grid gap-4">
+                    <BarberSelectField barbers={barbers} value={barberId} onChange={setBarberId} disabled={saving} />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="saas-field">
+                            <span className="saas-field-label">First day</span>
+                            <DateInput value={fromDate} onChange={(event) => setFromDate(event.target.value)} disabled={saving} />
+                        </label>
+                        <label className="saas-field">
+                            <span className="saas-field-label">Last day</span>
+                            <DateInput value={toDate} onChange={(event) => setToDate(event.target.value)} disabled={saving} />
+                        </label>
+                    </div>
+                    <label className="saas-field">
+                        <span className="saas-field-label">Reason (optional)</span>
+                        <input
+                            className="saas-input"
+                            value={reason}
+                            onChange={(event) => setReason(event.target.value)}
+                            placeholder="Vacation, sick, personal…"
+                            list="saas-timeoff-reasons"
+                            disabled={saving}
+                        />
+                        <datalist id="saas-timeoff-reasons">
+                            <option value="Vacation" />
+                            <option value="Sick" />
+                            <option value="Personal" />
+                            <option value="Training" />
+                        </datalist>
+                    </label>
+                    {bookingWarning && (
+                        <p className="saas-warn"><AlertTriangle size={15} /> {bookingWarning}</p>
+                    )}
+                    <p className="saas-sentence">{sentence}</p>
+                    {!validRange && <p className="saas-error" role="alert">The last day must be on or after the first day.</p>}
+                    {rangeTooLong && <p className="saas-error" role="alert">Keep time off to 62 days or less — add another stretch for longer breaks.</p>}
+                    {error && <p className="saas-error" role="alert">{error}</p>}
+                    <div className="flex justify-end gap-2">
+                        <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
+                        <Button className={accentButtonClass} loading={saving} disabled={!validRange || rangeTooLong} onClick={() => void save()}>Save time off</Button>
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function CoverDialog({
+    schedule,
+    barbers,
+    initialBarberId,
+    initialDate,
+    onClose,
+    onChanged,
+    onRefresh,
+}: {
+    schedule: AdminSchedule;
+    barbers: AdminBarberOption[];
+    initialBarberId: string;
+    initialDate: string;
+    onClose: () => void;
+    onChanged: (message: string) => Promise<void>;
+    onRefresh: () => Promise<void>;
+}) {
+    const initialBarber = schedule.barbers.find((barber) => barber.id === initialBarberId);
+    const [barberId, setBarberId] = useState(initialBarberId);
+    const [coverLocationId, setCoverLocationId] = useState(
+        schedule.locations.find((location) => initialBarber?.locationIds.includes(location.id))?.id ?? schedule.locations[0]?.id ?? "",
+    );
+    const [fromDate, setFromDate] = useState(initialDate);
+    const [toDate, setToDate] = useState(initialDate);
+    const [customHours, setCustomHours] = useState(false);
+    const [startTime, setStartTime] = useState("10:00");
+    const [endTime, setEndTime] = useState("19:00");
+    const [saving, setSaving] = useState(false);
+    const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+    const [error, setError] = useState("");
+
+    const barber = schedule.barbers.find((candidate) => candidate.id === barberId);
+    const validRange = Boolean(fromDate) && Boolean(toDate) && fromDate <= toDate;
+    const rangeDays = validRange ? Math.round((Date.parse(toDate) - Date.parse(fromDate)) / 86400000) + 1 : 0;
+    const rangeTooLong = rangeDays > 62;
+    const assigned = Boolean(barber?.locationIds.includes(coverLocationId));
+    const hasUnassignedLocations = schedule.locations.some((location) => !barber?.locationIds.includes(location.id));
+
+    const plan: CoverPlan = useMemo(
+        () => buildCoverPlan(schedule, {
+            barberId,
+            coverLocationId,
+            fromDate,
+            toDate,
+            startTime: customHours ? startTime : undefined,
+            endTime: customHours ? endTime : undefined,
+        }),
+        [schedule, barberId, coverLocationId, fromDate, toDate, customHours, startTime, endTime],
+    );
+    const homePayload = plan.payloads.find((payload) => payload.windows.length === 0);
+    const sentence = describeCoverResult({
+        barberName: barber?.displayName ?? "This barber",
+        coverLocationName: locationName(schedule, coverLocationId),
+        fromDate,
+        toDate,
+        homeLocationName: homePayload ? locationName(schedule, homePayload.locationId) : undefined,
+        hoursLabel: customHours ? formatClockRange12(startTime, endTime) : undefined,
+        coveredCount: plan.coveredDates.length,
+    });
+    const canSave = validRange && !rangeTooLong && assigned && plan.coveredDates.length > 0 && (!customHours || startTime < endTime);
+
+    async function save() {
+        if (!canSave || saving) {
+            return;
+        }
+        setSaving(true);
+        setError("");
+        const saved: string[] = [];
+        try {
+            for (const date of plan.coveredDates) {
+                for (const payload of plan.payloads.filter((item) => item.date === date)) {
+                    await replaceAdminDayShift(payload);
+                }
+                saved.push(date);
+                setProgress({ done: saved.length, total: plan.coveredDates.length });
+            }
+            await onChanged(`${barber?.displayName ?? "Barber"} now covering ${locationName(schedule, coverLocationId)} for ${plan.coveredDates.length} day${plan.coveredDates.length === 1 ? "" : "s"}.`);
+            onClose();
+        } catch (saveError) {
+            await onRefresh();
+            const savedLabel = saved.length > 0 ? saved.map((date) => formatDayNameDate(date)).join(", ") : "no days";
+            setError(`Saved ${savedLabel} before the save stopped${saveError instanceof Error ? `: ${saveError.message}` : "."}. Re-open cover to finish the remaining days.`);
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    return (
+        <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
+            <DialogContent size="md" className="shifts-saas" closeDisabled={saving}>
+                <DialogTitle>Cover a location</DialogTitle>
+                <DialogDescription>Move someone to another location for a stretch of days.</DialogDescription>
+                <div className="mt-4 grid gap-4">
+                    <BarberSelectField barbers={barbers} value={barberId} onChange={setBarberId} disabled={saving} />
+                    <label className="saas-field">
+                        <span className="saas-field-label">Cover at</span>
+                        <Select value={coverLocationId} onChange={(event) => setCoverLocationId(event.target.value)} disabled={saving}>
+                            {schedule.locations.map((location) => {
+                                const locationAssigned = Boolean(barber?.locationIds.includes(location.id));
+                                return (
+                                    <option key={location.id} value={location.id} disabled={!locationAssigned}>
+                                        {locationName(schedule, location.id)}{locationAssigned ? "" : " — not assigned"}
+                                    </option>
+                                );
+                            })}
+                        </Select>
+                        {hasUnassignedLocations && (
+                            <span className="saas-hint">Locations marked "not assigned" need to be added to {barber?.displayName ?? "them"} in Team first.</span>
+                        )}
+                    </label>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="saas-field">
+                            <span className="saas-field-label">First day</span>
+                            <DateInput value={fromDate} onChange={(event) => setFromDate(event.target.value)} disabled={saving} />
+                        </label>
+                        <label className="saas-field">
+                            <span className="saas-field-label">Last day</span>
+                            <DateInput value={toDate} onChange={(event) => setToDate(event.target.value)} disabled={saving} />
+                        </label>
+                    </div>
+                    <label className="flex items-center gap-2 text-sm text-[var(--saas-ink-2)]">
+                        <input type="checkbox" className="saas-checkbox" checked={customHours} onChange={(event) => setCustomHours(event.target.checked)} disabled={saving} />
+                        Set specific hours (otherwise keeps their usual hours)
+                    </label>
+                    {customHours && (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            <label className="saas-field">
+                                <span className="saas-field-label">Starts</span>
+                                <TimeInput value={startTime} onChange={setStartTime} disabled={saving} />
+                            </label>
+                            <label className="saas-field">
+                                <span className="saas-field-label">Ends</span>
+                                <TimeInput value={endTime} onChange={setEndTime} disabled={saving} />
+                            </label>
+                        </div>
+                    )}
+                    <p className="saas-sentence">{sentence}</p>
+                    {plan.skippedDates.length > 0 && (
+                        <p className="saas-hint">Skips {plan.skippedDates.length} day{plan.skippedDates.length === 1 ? "" : "s"} they don't normally work{customHours ? "" : " (turn on specific hours to cover those too)"}.</p>
+                    )}
+                    {saving && progress && <p className="saas-hint">Saving day {progress.done} of {progress.total}…</p>}
+                    {rangeTooLong && <p className="saas-error" role="alert">Keep covers to 62 days or less — set a weekly schedule for longer moves.</p>}
+                    {error && <p className="saas-error" role="alert">{error}</p>}
+                    <div className="flex justify-end gap-2">
+                        <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
+                        <Button className={accentButtonClass} loading={saving} disabled={!canSave} onClick={() => void save()}>Save cover</Button>
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function WeeklyScheduleDialog({
+    schedule,
+    barber,
+    canManage,
+    onClose,
+    onChanged,
+}: {
+    schedule: AdminSchedule;
+    barber: AdminBarberOption | undefined;
+    canManage: boolean;
+    onClose: () => void;
+    onChanged: (message: string) => Promise<void>;
+}) {
+    const barberId = barber?.id ?? "";
+    const [draft, setDraft] = useState<WeeklyScheduleDraft>(() => buildWeeklyScheduleDraft(schedule, barberId));
+    const [expandedDay, setExpandedDay] = useState(1);
+    const [saving, setSaving] = useState(false);
+    const [notice, setNotice] = useState("");
+    const savePlan = useMemo(() => buildWeeklyScheduleSavePlan(schedule, draft), [schedule, draft]);
+    const validationIssues = useMemo(() => validateWeeklyScheduleDraft(draft), [draft]);
+    const weeklyHours = calculateWeeklyScheduleHours(draft);
+    const summary = barber ? describeWeeklyScheduleDraft(draft, schedule, barber.displayName) : "";
+
+    async function save() {
+        if (savePlan.length === 0) {
             return;
         }
         if (validationIssues.length > 0) {
-            setNotice("Fix highlighted weekly schedule items before saving.");
+            setNotice("Fix the highlighted items before saving.");
             return;
         }
-
         try {
             setSaving(true);
             setNotice("");
             await runScheduleOperations(savePlan);
-            setSelectedPatternKey(weeklyShiftPatternKey(weeklyDraft.effectiveFrom, weeklyDraft.effectiveTo));
             await onChanged(savePlan.length === 1 ? "Weekly schedule saved." : `${savePlan.length} schedule changes saved.`);
+            onClose();
         } catch (error) {
             setNotice(error instanceof Error ? error.message : "Weekly schedule could not be saved.");
         } finally {
@@ -288,474 +1300,35 @@ function ShiftWorkspace({
         }
     }
 
-    async function deleteActivePattern() {
-        if (!activePattern || !activePattern.effectiveFrom || !activePattern.effectiveTo) {
-            return;
-        }
-        const plan = buildDeleteSchedulePeriodPlan(schedule, activePattern);
-        const restoreSentence = plan.mergedShiftCount > 0
-            ? ` ${plan.mergedShiftCount} paused regular shift${plan.mergedShiftCount === 1 ? " resumes its" : "s resume their"} original schedule.`
-            : " Regular shifts paused for these dates are not restored automatically.";
-        const confirmed = await confirm({
-            title: "Delete this schedule period?",
-            description: `Deletes the ${weeklyShiftPatternLabel(activePattern)} period and its ${plan.removedShiftCount} shift${plan.removedShiftCount === 1 ? "" : "s"}.${restoreSentence}`,
-            confirmLabel: "Delete period",
-            tone: "danger",
-        });
-        if (!confirmed) {
-            return;
-        }
-        try {
-            setDeletingPattern(true);
-            setNotice("");
-            await runScheduleOperations(plan.operations);
-            setSelectedPatternKey(null);
-            await onChanged("Schedule period deleted.");
-        } catch (error) {
-            await onRefresh();
-            setNotice(error instanceof Error ? error.message : "Schedule period could not be deleted.");
-        } finally {
-            setDeletingPattern(false);
-        }
-    }
-
-    async function completeTemporarySchedule(patternKey: string, message: string) {
-        setSelectedPatternKey(patternKey);
-        await onChanged(message);
-    }
-
     return (
-        <div className="overflow-hidden rounded-md border border-forest/10 bg-white shadow-[0_18px_45px_rgba(7,17,14,0.06)]">
-            <div className="grid min-h-[680px] lg:grid-cols-[280px_minmax(0,1fr)]">
-                <aside className="border-b border-forest/10 bg-[#f8faf7] p-4 lg:border-b-0 lg:border-r">
-                    <div className="mb-4">
-                        <p className="text-xs font-black uppercase tracking-[0.16em] text-charcoal/45">Select staff</p>
-                        <label className="mt-3 flex h-11 items-center gap-2 rounded-md border border-forest/10 bg-white px-3 text-sm text-charcoal/55">
-                            <Search size={16} />
-                            <input
-                                className="min-w-0 flex-1 bg-transparent text-sm font-bold text-charcoal outline-none placeholder:text-charcoal/35"
-                                value={staffSearch}
-                                onChange={(event) => setStaffSearch(event.target.value)}
-                                placeholder="Search staff..."
-                            />
-                        </label>
-                    </div>
-                    <div className="grid gap-2">
-                        {filteredBarbers.map((barber) => {
-                            const selected = barber.id === selectedBarberId;
-
-                            return (
-                                <button
-                                    key={barber.id}
-                                    className={`flex items-center gap-3 rounded-md p-3 text-left transition ${
-                                        selected ? "bg-mint text-forest shadow-sm" : "text-charcoal hover:bg-white"
-                                    }`}
-                                    onClick={() => void selectBarber(barber.id)}
-                                >
-                                    <StaffAvatar barber={barber} active={selected} />
-                                    <span className="min-w-0">
-                                        <span className="block truncate text-sm font-black">{barber.displayName}</span>
-                                        <span className="block truncate text-xs font-bold text-charcoal/50">
-                                            {barber.locationIds.map((id) => locationName(schedule, id)).join(", ") || "No location"}
-                                        </span>
-                                    </span>
-                                </button>
-                            );
-                        })}
-                        {filteredBarbers.length === 0 && <EmptyState label="No staff match that search." />}
-                    </div>
-                </aside>
-
-                <section className="flex min-w-0 flex-col">
-                    <div className="border-b border-forest/10 px-4 py-4 sm:px-5">
-                        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                            <div className="flex min-w-0 items-start gap-3">
-                                <StaffAvatar barber={selectedBarber ?? { displayName: "Staff" }} active size="lg" />
-                                <div className="min-w-0">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <h2 className="truncate text-2xl font-black text-forest">{selectedBarber?.displayName ?? "Staff"}</h2>
-                                        <span className="rounded-md bg-mint px-2 py-1 text-xs font-black text-forest">Active</span>
-                                    </div>
-                                    <div className="mt-2 flex flex-wrap gap-2">
-                                        {(selectedBarber?.locationIds ?? []).map((locationId) => (
-                                            <LocationPill key={locationId} schedule={schedule} locationId={locationId} />
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="grid gap-3 sm:grid-cols-[auto_1fr_auto] xl:min-w-[560px]">
-                                <Metric label="Weekly hours" value={formatWeeklyHours(weeklyHours)} className="self-start" />
-                                <div className="rounded-md border border-forest/10 bg-white p-3">
-                                    <p className="mb-2 text-xs font-black uppercase tracking-[0.14em] text-charcoal/45">Schedule period</p>
-                                    <div className="grid gap-2 sm:grid-cols-2">
-                                        <label className="grid gap-1">
-                                            <span className="text-[11px] font-black uppercase tracking-[0.12em] text-charcoal/45">Starts</span>
-                                            <DateInput
-                                                value={weeklyDraft.effectiveFrom}
-                                                onChange={(event) => setWeeklyDraft({ ...weeklyDraft, effectiveFrom: event.target.value, effectiveDatesTouched: true })}
-                                                disabled={!canManageShifts}
-                                            />
-                                        </label>
-                                        <div className="grid gap-1">
-                                            <span className="text-[11px] font-black uppercase tracking-[0.12em] text-charcoal/45">Ends</span>
-                                            <Select
-                                                aria-label="Schedule period end"
-                                                value={weeklyDraft.effectiveTo ? "date" : "never"}
-                                                onChange={(event) => setWeeklyDraft({
-                                                    ...weeklyDraft,
-                                                    effectiveTo: event.target.value === "never"
-                                                        ? ""
-                                                        : weeklyDraft.effectiveTo || weeklyDraft.effectiveFrom || todayLocalDate(),
-                                                    effectiveDatesTouched: true,
-                                                })}
-                                                disabled={!canManageShifts}
-                                            >
-                                                <option value="never">Never</option>
-                                                <option value="date">On date</option>
-                                            </Select>
-                                            {weeklyDraft.effectiveTo && (
-                                                <DateInput
-                                                    aria-label="Schedule period end date"
-                                                    aria-invalid={effectiveDateIssues.length > 0 ? true : undefined}
-                                                    value={weeklyDraft.effectiveTo}
-                                                    onChange={(event) => setWeeklyDraft({ ...weeklyDraft, effectiveTo: event.target.value, effectiveDatesTouched: true })}
-                                                    disabled={!canManageShifts}
-                                                />
-                                            )}
-                                        </div>
-                                    </div>
-                                    {effectiveDateIssues.length === 0 && (
-                                        <p className="mt-2 text-xs text-ink-faint">
-                                            {describeSchedulePeriod(weeklyDraft.effectiveFrom, weeklyDraft.effectiveTo)}
-                                        </p>
-                                    )}
-                                    {effectiveDateIssues.map((issue) => (
-                                        <p key={`${issue.field}-${issue.message}`} className="mt-2 text-xs font-medium text-danger" role="alert">{issue.message}</p>
-                                    ))}
-                                </div>
-                                <button className="icon-button self-start" onClick={onRefresh} title="Refresh schedule">
-                                    <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
-                                </button>
-                            </div>
-                        </div>
-
-                        {(showPatternChips || canManageShifts) && (
-                            <div className="mt-4 flex flex-wrap items-center gap-2" role="group" aria-label="Schedule periods">
-                                {showPatternChips && (
-                                    <>
-                                        <span className="text-[11px] font-black uppercase tracking-[0.12em] text-charcoal/45">Schedule periods</span>
-                                        {patterns.map((pattern) => {
-                                            const selected = pattern.key === activePatternKey;
-                                            const temporary = Boolean(pattern.effectiveFrom && pattern.effectiveTo);
-                                            const patternLocations = pattern.locationIds.map((id) => locationName(schedule, id)).join(", ");
-
-                                            return (
-                                                <button
-                                                    key={pattern.key}
-                                                    type="button"
-                                                    aria-pressed={selected}
-                                                    className={`rounded-control border px-3 py-1.5 text-xs font-semibold transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 focus-visible:ring-offset-canvas ${
-                                                        temporary ? "border-dashed" : ""
-                                                    } ${
-                                                        selected
-                                                            ? "border-emerald bg-shift-fill text-forest"
-                                                            : "border-border bg-surface text-ink-muted hover:border-border-strong hover:text-ink"
-                                                    }`}
-                                                    onClick={() => void selectPattern(pattern.key)}
-                                                >
-                                                    {temporary && <span className="font-normal text-ink-faint">Temp · </span>}
-                                                    {weeklyShiftPatternLabel(pattern)}
-                                                    {patternLocations && <span className="font-normal"> · {patternLocations}</span>}
-                                                </button>
-                                            );
-                                        })}
-                                    </>
-                                )}
-                                {canManageShifts && (
-                                    <span className="flex flex-wrap items-center gap-2 sm:ml-auto">
-                                        {activePattern && activePattern.effectiveFrom && activePattern.effectiveTo && (
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                loading={deletingPattern}
-                                                className="text-danger hover:bg-danger-soft hover:text-danger"
-                                                onClick={() => void deleteActivePattern()}
-                                            >
-                                                <Trash2 size={15} aria-hidden="true" />
-                                                Delete period
-                                            </Button>
-                                        )}
-                                        <Button variant="secondary" size="sm" onClick={() => setTemporaryDialogOpen(true)}>
-                                            <Plus size={15} aria-hidden="true" />
-                                            Temporary schedule
-                                        </Button>
-                                    </span>
-                                )}
-                            </div>
-                        )}
-
-                        <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                            <div className="flex flex-wrap gap-2">
-                                <ShiftTabButton active={activeTab === "weekly"} onClick={() => setActiveTab("weekly")}>Weekly schedule</ShiftTabButton>
-                                <ShiftTabButton active={activeTab === "overview"} onClick={() => setActiveTab("overview")}>Overview</ShiftTabButton>
-                            </div>
-                        </div>
-                    </div>
-
-                    {notice && <p className="mx-4 mt-4 rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-red-700 sm:mx-5">{notice}</p>}
-
-                    {activeTab === "weekly" && (
-                        <WeeklyScheduleBuilder
-                            draft={weeklyDraft}
-                            schedule={schedule}
-                            canManage={canManageShifts}
-                            expandedDay={expandedDay}
-                            onExpandedDay={setExpandedDay}
-                            onDraftChange={setWeeklyDraft}
-                            onDiscard={() => setWeeklyDraft(buildWeeklyScheduleDraft(schedule, selectedBarberId, selectedPatternKey ?? undefined))}
-                            onSave={saveWeeklySchedule}
-                            saving={saving}
-                            pendingChanges={savePlan.length}
-                            validationIssues={validationIssues}
-                        />
-                    )}
-
-                    {activeTab === "overview" && (
-                        <StaffScheduleOverview schedule={schedule} barbers={visibleBarbers} />
-                    )}
-                </section>
-            </div>
-            {canManageShifts && selectedBarber && (
-                <TemporaryScheduleDialog
-                    key={`${selectedBarber.id}:${temporaryDialogOpen}`}
-                    open={temporaryDialogOpen}
-                    onOpenChange={setTemporaryDialogOpen}
-                    schedule={schedule}
-                    barber={selectedBarber}
-                    onCompleted={completeTemporarySchedule}
-                    onRefresh={onRefresh}
-                />
-            )}
-        </div>
-    );
-}
-
-type ShiftWorkspaceTab = "weekly" | "overview";
-
-function TemporaryScheduleDialog({
-    open,
-    onOpenChange,
-    schedule,
-    barber,
-    onCompleted,
-    onRefresh,
-}: {
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
-    schedule: AdminSchedule;
-    barber: AdminBarberOption;
-    onCompleted: (patternKey: string, message: string) => Promise<void>;
-    onRefresh: () => Promise<void>;
-}) {
-    const [effectiveFrom, setEffectiveFrom] = useState(() => todayLocalDate());
-    const [effectiveTo, setEffectiveTo] = useState(() => addDaysToLocalDate(todayLocalDate(), 6));
-    const [locationId, setLocationId] = useState(barber.locationIds[0] ?? "");
-    const [excludedWeekdays, setExcludedWeekdays] = useState<number[]>(() => {
-        const workingWeekdays = new Set(
-            schedule.shifts
-                .filter((shift) => shift.active && shift.barberId === barber.id)
-                .map((shift) => shift.dayOfWeek),
-        );
-        return workingWeekdays.size > 0
-            ? [0, 1, 2, 3, 4, 5, 6].filter((dayOfWeek) => !workingWeekdays.has(dayOfWeek))
-            : [];
-    });
-    const [startTime, setStartTime] = useState("10:00");
-    const [endTime, setEndTime] = useState("19:00");
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState("");
-    const cancelRequestedRef = useRef(false);
-
-    const availableWeekdays = effectiveFrom && effectiveTo && effectiveFrom <= effectiveTo
-        ? weekdaysInLocalDateRange(effectiveFrom, effectiveTo)
-        : [];
-    const selectedWeekdays = availableWeekdays.filter((dayOfWeek) => !excludedWeekdays.includes(dayOfWeek));
-    const plan = buildTemporarySchedulePlan(schedule, {
-        barberId: barber.id,
-        locationId,
-        effectiveFrom,
-        effectiveTo,
-        weekdays: selectedWeekdays,
-        startTime,
-        endTime,
-    });
-    const hasUnassignedLocations = schedule.locations.some((location) => !barber.locationIds.includes(location.id));
-
-    function toggleWeekday(dayOfWeek: number) {
-        setExcludedWeekdays((current) =>
-            current.includes(dayOfWeek) ? current.filter((value) => value !== dayOfWeek) : [...current, dayOfWeek],
-        );
-    }
-
-    async function submit() {
-        if (plan.issues.length > 0 || saving) {
-            return;
-        }
-        try {
-            setSaving(true);
-            setError("");
-            cancelRequestedRef.current = false;
-            const run = await runScheduleOperations(plan.operations, () => !cancelRequestedRef.current);
-            if (!run.completed) {
-                await onRefresh();
-                setError(
-                    run.applied > 0
-                        ? "Stopped before finishing — some changes were already applied. Check the schedule period chips: if a regular shift was paused without a matching resumed period, select its chip and set Ends back to Never."
-                        : "Stopped before any changes were made.",
-                );
-                return;
-            }
-            await onCompleted(weeklyShiftPatternKey(effectiveFrom, effectiveTo), "Temporary schedule created.");
-            onOpenChange(false);
-        } catch (submitError) {
-            await onRefresh();
-            setError(
-                `${submitError instanceof Error ? submitError.message : "Temporary schedule could not be created."} Some changes may already be applied. Check the schedule period chips: if a regular shift was paused without a matching resumed period, select its chip and set Ends back to Never.`,
-            );
-        } finally {
-            setSaving(false);
-        }
-    }
-
-    function requestCancel() {
-        if (saving) {
-            cancelRequestedRef.current = true;
-            return;
-        }
-        onOpenChange(false);
-    }
-
-    return (
-        <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
-            <DialogContent size="lg" closeDisabled={saving}>
-                <DialogTitle>Temporary schedule for {barber.displayName}</DialogTitle>
-                <DialogDescription>
-                    Schedule a short stretch at one location. Regular shifts pause during this period and resume automatically after it ends.
-                </DialogDescription>
-                <div className="mt-4 grid gap-4">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        <label className="grid gap-1">
-                            <span className="text-xs font-medium text-ink-muted">First day</span>
-                            <DateInput
-                                value={effectiveFrom}
-                                onChange={(event) => setEffectiveFrom(event.target.value)}
-                                disabled={saving}
-                            />
-                        </label>
-                        <label className="grid gap-1">
-                            <span className="text-xs font-medium text-ink-muted">Last day</span>
-                            <DateInput
-                                value={effectiveTo}
-                                onChange={(event) => setEffectiveTo(event.target.value)}
-                                disabled={saving}
-                            />
-                        </label>
-                    </div>
-                    <label className="grid gap-1">
-                        <span className="text-xs font-medium text-ink-muted">Location</span>
-                        <Select value={locationId} onChange={(event) => setLocationId(event.target.value)} disabled={saving}>
-                            {schedule.locations.map((location) => {
-                                const assigned = barber.locationIds.includes(location.id);
-
-                                return (
-                                    <option key={location.id} value={location.id} disabled={!assigned}>
-                                        {location.name}
-                                        {assigned ? "" : " — not assigned"}
-                                    </option>
-                                );
-                            })}
-                        </Select>
-                        {hasUnassignedLocations && (
-                            <span className="text-xs text-ink-faint">
-                                Locations marked "not assigned" need to be added to {barber.displayName} in Team first.
-                            </span>
-                        )}
-                    </label>
-                    <div className="grid gap-1">
-                        <span className="text-xs font-medium text-ink-muted">Working days</span>
-                        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Working days">
-                            {weeklyDisplayOrder.map((dayOfWeek) => {
-                                const occurs = availableWeekdays.includes(dayOfWeek);
-                                const selected = occurs && selectedWeekdays.includes(dayOfWeek);
-
-                                return (
-                                    <button
-                                        key={dayOfWeek}
-                                        type="button"
-                                        aria-pressed={selected}
-                                        disabled={!occurs || saving}
-                                        title={occurs ? undefined : "This day doesn't occur between those dates."}
-                                        className={`rounded-control border px-2.5 py-1.5 text-xs font-semibold transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 focus-visible:ring-offset-canvas disabled:cursor-not-allowed disabled:opacity-40 ${
-                                            selected
-                                                ? "border-emerald bg-shift-fill text-forest"
-                                                : "border-border bg-surface text-ink-muted hover:border-border-strong hover:text-ink"
-                                        }`}
-                                        onClick={() => toggleWeekday(dayOfWeek)}
-                                    >
-                                        {weekdays[dayOfWeek]}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                        {availableWeekdays.length > 0 && availableWeekdays.length < 7 && (
-                            <span className="text-xs text-ink-faint">Days outside the selected dates can't be picked.</span>
-                        )}
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        <label className="grid gap-1">
-                            <span className="text-xs font-medium text-ink-muted">Starts</span>
-                            <TimeInput value={startTime} onChange={setStartTime} disabled={saving} />
-                        </label>
-                        <label className="grid gap-1">
-                            <span className="text-xs font-medium text-ink-muted">Ends</span>
-                            <TimeInput value={endTime} onChange={setEndTime} disabled={saving} />
-                        </label>
-                    </div>
-                    {plan.issues.length > 0 ? (
-                        <ul className="grid gap-1 rounded-control border border-border bg-surface-muted p-3">
-                            {plan.issues.map((issue) => (
-                                <li key={issue} className="text-xs font-medium text-ink-muted">{issue}</li>
-                            ))}
-                        </ul>
-                    ) : (
-                        <div className="grid gap-1 rounded-control border border-border bg-surface-muted p-3">
-                            <p className="text-xs font-medium text-ink">
-                                {plan.temporaryShiftCount} temporary shift{plan.temporaryShiftCount === 1 ? "" : "s"} at{" "}
-                                {locationName(schedule, locationId)} · {formatLocalDateLabel(effectiveFrom)} – {formatLocalDateLabel(effectiveTo)}
-                            </p>
-                            <p className="text-xs text-ink-muted">
-                                {plan.pausedShiftCount > 0
-                                    ? `Pauses ${plan.pausedShiftCount} regular shift${plan.pausedShiftCount === 1 ? "" : "s"}.${
-                                        plan.resumedShiftCount > 0
-                                            ? ` The regular schedule resumes ${formatLocalDateLabel(plan.resumeDate, { year: true })}.`
-                                            : ""
-                                    }`
-                                    : "No regular shifts overlap this period."}
-                            </p>
-                        </div>
-                    )}
-                    {error && (
-                        <p className="rounded-control bg-danger-soft px-3 py-2 text-xs font-medium text-danger" role="alert">{error}</p>
-                    )}
-                    <div className="flex justify-end gap-2">
-                        <Button variant="ghost" onClick={requestCancel}>
-                            Cancel
-                        </Button>
-                        <Button loading={saving} disabled={plan.issues.length > 0} onClick={() => void submit()}>
-                            Create temporary schedule
-                        </Button>
-                    </div>
+        <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
+            <DialogContent size="lg" className="!max-w-[min(1440px,96vw)] !p-0" closeDisabled={saving}>
+                <div className="border-b border-forest/10 p-5">
+                    <DialogTitle>{barber?.displayName ?? "Weekly schedule"}</DialogTitle>
+                    <DialogDescription>Weekly hours: {formatWeeklyHours(weeklyHours)}</DialogDescription>
+                    <p className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12.5px] font-medium text-amber-900">
+                        <Repeat size={15} className="mt-px shrink-0" /> This changes {barber?.displayName ?? "this barber"}'s schedule every week from now on — not just this week.
+                    </p>
                 </div>
+                {notice && <p className="mx-5 mt-4 rounded-lg bg-red-50 px-3 py-2 text-[12.5px] font-medium text-red-700" role="alert">{notice}</p>}
+                {barber ? (
+                    <WeeklyScheduleBuilder
+                        draft={draft}
+                        schedule={schedule}
+                        canManage={canManage}
+                        summary={summary}
+                        expandedDay={expandedDay}
+                        onExpandedDay={setExpandedDay}
+                        onDraftChange={setDraft}
+                        onDiscard={() => setDraft(buildWeeklyScheduleDraft(schedule, barberId))}
+                        onSave={save}
+                        saving={saving}
+                        pendingChanges={savePlan.length}
+                        validationIssues={validationIssues}
+                    />
+                ) : (
+                    <p className="p-5 text-sm text-charcoal/60">Select a team member to edit their weekly schedule.</p>
+                )}
             </DialogContent>
         </Dialog>
     );
@@ -765,6 +1338,7 @@ function WeeklyScheduleBuilder({
     draft,
     schedule,
     canManage,
+    summary,
     expandedDay,
     saving,
     pendingChanges,
@@ -777,6 +1351,7 @@ function WeeklyScheduleBuilder({
     draft: WeeklyScheduleDraft;
     schedule: AdminSchedule;
     canManage: boolean;
+    summary: string;
     expandedDay: number;
     saving: boolean;
     pendingChanges: number;
@@ -1202,11 +1777,14 @@ function WeeklyScheduleBuilder({
                 ))}
             </div>
             <div className="mt-auto flex flex-col gap-3 border-t border-forest/10 bg-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-                <p className={`text-xs font-bold ${validationIssues.length > 0 ? "text-red-700" : "text-charcoal/50"}`}>
-                    {validationIssues.length > 0
-                        ? `${validationIssues.length} schedule ${validationIssues.length === 1 ? "item needs" : "items need"} attention before saving.`
-                        : `${pendingChanges} ${pendingChanges === 1 ? "change" : "changes"} pending. Weekly hours are calculated from this schedule and range.`}
-                </p>
+                <div className="flex min-w-0 flex-col gap-0.5">
+                    {summary && <p className="text-[13px] font-semibold text-charcoal/80">{summary}</p>}
+                    <p className={`text-xs font-bold ${validationIssues.length > 0 ? "text-red-700" : "text-charcoal/50"}`}>
+                        {validationIssues.length > 0
+                            ? `${validationIssues.length} schedule ${validationIssues.length === 1 ? "item needs" : "items need"} attention before saving.`
+                            : `${pendingChanges} ${pendingChanges === 1 ? "change" : "changes"} pending. Weekly hours are calculated from this schedule and range.`}
+                    </p>
+                </div>
                 {canManage && (
                     <div className="flex flex-wrap gap-2 sm:justify-end">
                         <button className="text-button !min-h-11 !px-3 !py-2" type="button" onClick={onDiscard} disabled={pendingChanges === 0 || saving}>
@@ -1434,117 +2012,6 @@ function MobileWeeklyDayCard({
     );
 }
 
-function WeeklyDayRow({
-    day,
-    schedule,
-    canManage,
-    expanded,
-    onExpand,
-    onActiveChange,
-    onWindowChange,
-    onAddWindow,
-    onRemoveWindow,
-    onClearDay,
-    onCopyDay,
-    validationIssues,
-}: {
-    day: DayScheduleDraft;
-    schedule: AdminSchedule;
-    canManage: boolean;
-    expanded: boolean;
-    onExpand: () => void;
-    onActiveChange: (active: boolean) => void;
-    onWindowChange: (index: number, patch: Partial<ShiftWindowDraft>) => void;
-    onAddWindow: () => void;
-    onRemoveWindow: (index: number) => void;
-    onClearDay: () => void;
-    onCopyDay: (targetDay: number) => void;
-    validationIssues: WeeklyScheduleValidationIssue[];
-}) {
-    const copyTargetOptions = useMemo(() => getWeeklyCopyTargetDayOptions(day.dayOfWeek), [day.dayOfWeek]);
-    const [copyTarget, setCopyTarget] = useState(String(copyTargetOptions[0]?.dayOfWeek ?? ""));
-    const dayLevelIssues = validationIssues.filter((issue) => !issue.windowDraftId);
-
-    return (
-        <div className={`border-b border-forest/10 last:border-b-0 ${expanded ? "bg-mint/25" : "bg-white"}`}>
-            <div className="grid grid-cols-[72px_minmax(0,1fr)_40px] gap-2 px-3 py-3 sm:gap-3 sm:px-4 md:grid-cols-[86px_minmax(0,1fr)_90px] xl:grid-cols-[86px_minmax(0,1fr)_150px]">
-                <div className="flex items-start gap-2 pt-2">
-                    <span className="w-9 text-sm font-black text-forest">{weekdays[day.dayOfWeek]}</span>
-                    <ToggleSwitch checked={day.active} disabled={!canManage} onChange={onActiveChange} />
-                </div>
-                <div className="min-w-0">
-                    {day.active ? (
-                        <div className="grid gap-2">
-                            {day.windows.length > 1 && (
-                                <div className="flex flex-wrap gap-1.5">
-                                    {day.windows.map((window, index) => (
-                                        <span key={`${window.draftId}-chip`} className="rounded-md bg-forest/5 px-2 py-1 text-xs font-black text-forest">
-                                            Split {index + 1}: {safeScheduleWindowLabel(window.startTime, window.endTime)}
-                                        </span>
-                                    ))}
-                                </div>
-                            )}
-                            {dayLevelIssues.map((issue) => (
-                                <p key={`${issue.field}-${issue.message}`} className="text-xs font-bold text-red-700">{issue.message}</p>
-                            ))}
-                            {day.windows.map((window, index) => (
-                                <WeeklyWindowEditor
-                                    key={window.draftId}
-                                    index={index}
-                                    window={window}
-                                    schedule={schedule}
-                                    canManage={canManage}
-                                    issues={validationIssues.filter((issue) => issue.windowDraftId === window.draftId)}
-                                    onWindowChange={onWindowChange}
-                                    onRemoveWindow={onRemoveWindow}
-                                />
-                            ))}
-                            {canManage && (
-                                <button className="text-button inline-flex !min-h-8 items-center gap-1.5 justify-self-start !px-2 !py-1 text-sm" type="button" onClick={onAddWindow}>
-                                    <Plus size={14} />
-                                    Add split
-                                </button>
-                            )}
-                        </div>
-                    ) : (
-                        <div className="flex min-h-10 items-center text-sm font-bold text-charcoal/45">Not working</div>
-                    )}
-                    {expanded && canManage && (
-                        <div className="mt-3 flex flex-col gap-2 rounded-md border border-forest/10 bg-white/90 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-xs font-black uppercase tracking-[0.12em] text-charcoal/45">Copy hours to</span>
-                                <select className="input !min-h-9 !w-auto !py-1 text-sm" value={copyTarget} onChange={(event) => setCopyTarget(event.target.value)}>
-                                    {copyTargetOptions.map((option) => (
-                                        <option key={option.dayOfWeek} value={option.dayOfWeek}>{option.label}</option>
-                                    ))}
-                                </select>
-                                <button
-                                    className="icon-text-button !min-h-9 !px-2 !py-1 text-sm"
-                                    type="button"
-                                    onClick={() => onCopyDay(Number(copyTarget))}
-                                    disabled={!copyTarget}
-                                >
-                                    <Copy size={14} />
-                                    Apply
-                                </button>
-                            </div>
-                            <button className="text-button inline-flex !min-h-9 items-center justify-center gap-1.5 !px-2 !py-1 text-sm text-red-700 hover:bg-red-50" type="button" onClick={onClearDay}>
-                                <X size={14} />
-                                Clear {weekdays[day.dayOfWeek]}
-                            </button>
-                        </div>
-                    )}
-                </div>
-                <div className="flex items-start justify-end gap-1 pt-1">
-                    <IconMini title={expanded ? "Collapse options" : "Show options"} onClick={onExpand}>
-                        <ChevronDown size={14} className={expanded ? "rotate-180 transition" : "transition"} />
-                    </IconMini>
-                </div>
-            </div>
-        </div>
-    );
-}
-
 function WeeklyWindowEditor({
     index,
     window,
@@ -1620,77 +2087,36 @@ function WeeklyWindowEditor({
     );
 }
 
-function StaffScheduleOverview({ schedule, barbers }: { schedule: AdminSchedule; barbers: AdminBarberOption[] }) {
-    return (
-        <section className="grid gap-3 p-4 sm:p-5 md:grid-cols-2 2xl:grid-cols-3">
-            {barbers.map((barber) => {
-                const draft = buildWeeklyScheduleDraft(schedule, barber.id);
-                const hours = calculateWeeklyScheduleHours(draft);
-                const activeDays = draft.days.filter((day) => day.active);
-
-                return (
-                    <Panel key={barber.id}>
-                        <div className="flex items-start justify-between gap-3">
-                            <div className="flex min-w-0 items-center gap-3">
-                                <StaffAvatar barber={barber} active />
-                                <div className="min-w-0">
-                                    <h3 className="truncate text-base font-black text-forest">{barber.displayName}</h3>
-                                    <p className="text-sm font-bold text-charcoal/55">{formatWeeklyHours(hours)} weekly</p>
-                                </div>
-                            </div>
-                            <span className="rounded-md bg-mint px-2 py-1 text-xs font-black text-forest">{activeDays.length} days</span>
-                        </div>
-                        <div className="mt-3 flex flex-wrap gap-1.5">
-                            {barber.locationIds.map((locationId) => <LocationPill key={locationId} schedule={schedule} locationId={locationId} />)}
-                        </div>
-                        <div className="mt-4 grid gap-2 text-sm">
-                            {weeklyDisplayOrder.map((dayOfWeek) => {
-                                const day = weekdays[dayOfWeek];
-                                const windows = draft.days.find((draftDay) => draftDay.dayOfWeek === dayOfWeek)?.windows ?? [];
-                                return (
-                                    <div key={`${barber.id}-${day}`} className="flex items-start justify-between gap-3 border-t border-forest/10 pt-2">
-                                        <span className="font-black text-forest">{day}</span>
-                                        <span className="text-right font-bold text-charcoal/60">
-                                            {windows.length > 0
-                                                ? windows.map((window) => formatScheduleWindow(window.startTime, window.endTime)).join(", ")
-                                                : "Not working"}
-                                        </span>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </Panel>
-                );
-            })}
-        </section>
-    );
-}
-
 function StaffAvatar({
     barber,
     active,
+    neutral,
     size = "md",
 }: {
     barber: Pick<AdminBarberOption, "displayName" | "slug" | "profileImageUrl">;
     active?: boolean;
-    size?: "md" | "lg";
+    neutral?: boolean;
+    size?: "sm" | "md" | "lg";
 }) {
     const source = getAdminBarberPhotoUrl(barber);
     const [imageFailed, setImageFailed] = useState(false);
     const photo = imageFailed ? undefined : source;
     const initials = barber.displayName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
-    const sizeClass = size === "lg" ? "size-14 text-lg" : "size-11 text-sm";
+    const sizeClass = size === "lg" ? "size-14 text-lg" : size === "sm" ? "size-9 text-xs" : "size-11 text-sm";
 
     useEffect(() => {
         setImageFailed(false);
     }, [source]);
+
+    const ringClass = neutral ? "ring-2 ring-[#e5e7eb]" : active ? "ring-2 ring-forest/20" : "ring-1 ring-forest/10";
+    const fallbackClass = neutral ? "bg-[#e9ebf0] text-[#4a5160]" : active ? "bg-forest text-white" : "bg-white text-forest";
 
     if (photo) {
         return (
             <img
                 src={photo}
                 alt={barber.displayName}
-                className={`${sizeClass} shrink-0 rounded-full border border-white object-cover shadow-sm ${active ? "ring-2 ring-forest/20" : "ring-1 ring-forest/10"}`}
+                className={`${sizeClass} shrink-0 rounded-full border border-white object-cover shadow-sm ${ringClass}`}
                 decoding="async"
                 loading="lazy"
                 onError={() => setImageFailed(true)}
@@ -1699,41 +2125,9 @@ function StaffAvatar({
     }
 
     return (
-        <span className={`grid shrink-0 place-items-center rounded-full ${sizeClass} ${active ? "bg-forest text-white" : "bg-white text-forest"} font-black shadow-sm`}>
+        <span className={`grid shrink-0 place-items-center rounded-full ${sizeClass} ${fallbackClass} font-black shadow-sm`}>
             {initials || "LF"}
         </span>
-    );
-}
-
-function LocationPill({ schedule, locationId }: { schedule: AdminSchedule; locationId: string }) {
-    return (
-        <span className="inline-flex items-center gap-1.5 rounded-md border border-forest/10 bg-white px-2 py-1 text-xs font-black text-charcoal/65">
-            <span className={`size-2 rounded-full ${locationColorClass(locationId)}`} />
-            {locationName(schedule, locationId)}
-        </span>
-    );
-}
-
-function Metric({ label, value, className }: { label: string; value: string; className?: string }) {
-    return (
-        <div className={`rounded-md border border-forest/10 bg-white p-3${className ? ` ${className}` : ""}`}>
-            <p className="text-xs font-black uppercase tracking-[0.14em] text-charcoal/45">{label}</p>
-            <p className="mt-1 text-xl font-black text-forest">{value}</p>
-        </div>
-    );
-}
-
-function ShiftTabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-    return (
-        <button
-            type="button"
-            className={`min-h-10 rounded-md px-3 text-sm font-black transition ${
-                active ? "bg-mint text-forest" : "text-charcoal/60 hover:bg-forest/5 hover:text-forest"
-            }`}
-            onClick={onClick}
-        >
-            {children}
-        </button>
     );
 }
 
@@ -2012,8 +2406,8 @@ function FormHeading({ icon, title }: { icon: React.ReactNode; title: string }) 
     return <h2 className="flex items-center gap-2 text-lg font-black text-forest">{icon}{title}</h2>;
 }
 
-function InlineLoading({ label }: { label: string }) {
-    return <div className="flex items-center gap-2 text-sm font-bold text-charcoal/60"><RefreshCw size={16} className="animate-spin" />{label}</div>;
+function InlineLoading({ label, className }: { label: string; className?: string }) {
+    return <div className={`flex items-center gap-2 text-sm font-bold text-charcoal/60 ${className ?? ""}`}><RefreshCw size={16} className="animate-spin" />{label}</div>;
 }
 
 function EmptyState({ label }: { label: string }) {
@@ -2061,10 +2455,6 @@ function safeScheduleWindowLabel(startTime: string, endTime: string) {
     }
 
     return `${startTime || "Start"} - ${endTime || "End"}`;
-}
-
-function locationColorClass(locationId: string) {
-    return /mill/i.test(locationId) ? "bg-[#b99356]" : "bg-forest";
 }
 
 function barberName(schedule: AdminSchedule, barberId: string) {

@@ -574,7 +574,7 @@ function AdminWorkspace({
     const isSchedulePath = isShiftsPath || isBlockedTimePath;
     const isManagementPath = isSchedulePath || isTeamPath;
     const selectedDate = calendarDate;
-    const pageTitle = isDashboardPath ? "Dashboard" : isTeamPath ? "Team" : isShiftsPath ? "Staff shifts" : isBlockedTimePath ? "Blocked time" : "Calendar";
+    const pageTitle = isDashboardPath ? "Dashboard" : isTeamPath ? "Team" : isShiftsPath ? "Scheduled shifts" : isBlockedTimePath ? "Blocked time" : "Calendar";
 
     useEffect(() => {
         fetchAdminCalendarOptions()

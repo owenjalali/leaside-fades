@@ -56,13 +56,31 @@ import {
     snapWeeklyScheduleClock,
     summarizeNotificationHealth,
     validateWeeklyScheduleDraft,
+    startOfWeekLocalDate,
+    weekDatesFromLocalDate,
+    formatWeekRangeLabel,
+    formatDayNameDate,
+    formatDateRangeLabel,
+    formatClockRange12,
+    resolveBarberDay,
+    resolveBarberWeekMinutes,
+    formatWeekHoursLabel,
+    buildCoverPlan,
+    buildTimeOffWritePlan,
+    buildComingUp,
+    describeDayEditResult,
+    describeTimeOffResult,
+    describeCoverResult,
+    describeWeeklyScheduleDraft,
 } from "./admin-utils";
 import type {
+    AdminBlockedTime,
     AdminBookingSummary,
     AdminCalendarOptions,
     AdminDashboardActivity,
     AdminSchedule,
     AdminShift,
+    AdminShiftOverride,
     SafeAdminUser,
 } from "./types";
 
@@ -1204,5 +1222,415 @@ describe("Schedule periods and temporary schedules", () => {
         expect(buildTemporarySchedulePlan({ shifts: [] }, { ...temporaryInput, endTime: "10:00" }).issues)
             .toContain("End time must be after start time.");
         expect(buildTemporarySchedulePlan({ shifts: [shiftA] }, { ...temporaryInput, weekdays: [] }).operations).toEqual([]);
+    });
+});
+
+describe("Team Week grid utilities", () => {
+    const MON = "2026-07-06";
+    const TUE = "2026-07-07";
+    const WED = "2026-07-08";
+
+    function makeSchedule(input: {
+        shifts?: AdminShift[];
+        shiftOverrides?: AdminShiftOverride[];
+        blockedTimes?: AdminBlockedTime[];
+    }): AdminSchedule {
+        return {
+            locations: [
+                { id: "location-a", name: "Leaside Fades Eglinton", sortOrder: 1 },
+                { id: "location-b", name: "Millwood", sortOrder: 2 },
+            ],
+            barbers: [
+                { id: "yogesh", displayName: "Yogesh Kumar", locationIds: ["location-b"], sortOrder: 1 },
+                { id: "laura", displayName: "Laura Nguyen", locationIds: ["location-a", "location-b"], sortOrder: 2 },
+                { id: "sam", displayName: "Sam To", locationIds: ["location-a"], sortOrder: 3 },
+            ],
+            shifts: input.shifts ?? [],
+            shiftOverrides: input.shiftOverrides ?? [],
+            blockedTimes: input.blockedTimes ?? [],
+        };
+    }
+
+    function shift(
+        id: string,
+        barberId: string,
+        locationId: string,
+        dayOfWeek: number,
+        startTime = "10:00",
+        endTime = "19:00",
+        extra: Partial<AdminShift> = {},
+    ): AdminShift {
+        return { id, barberId, locationId, dayOfWeek, startTime, endTime, effectiveFrom: null, effectiveTo: null, active: true, ...extra };
+    }
+
+    function override(
+        id: string,
+        barberId: string,
+        overrideDate: string,
+        overrideType: AdminShiftOverride["overrideType"],
+        extra: Partial<AdminShiftOverride> = {},
+    ): AdminShiftOverride {
+        return { id, barberId, locationId: null, overrideDate, overrideType, startTime: null, endTime: null, reason: null, ...extra };
+    }
+
+    function block(
+        id: string,
+        scope: AdminBlockedTime["scope"],
+        startTime: string,
+        endTime: string,
+        extra: Partial<AdminBlockedTime> = {},
+    ): AdminBlockedTime {
+        return { id, scope, barberId: null, locationId: null, startTime, endTime, reason: null, createdByUserId: null, ...extra };
+    }
+
+    // Toronto is UTC-4 in July, so 04:00Z = local midnight and 16:00Z = local noon.
+    const MON_ALLDAY = { start: "2026-07-06T04:00:00.000Z", end: "2026-07-07T04:00:00.000Z" };
+
+    test("computes Monday-start week math across a month boundary", () => {
+        expect(startOfWeekLocalDate("2026-07-08")).toBe("2026-07-06");
+        expect(weekDatesFromLocalDate("2026-07-08")).toEqual([
+            "2026-07-06",
+            "2026-07-07",
+            "2026-07-08",
+            "2026-07-09",
+            "2026-07-10",
+            "2026-07-11",
+            "2026-07-12",
+        ]);
+        expect(weekDatesFromLocalDate("2026-08-01")[0]).toBe("2026-07-27");
+        expect(formatWeekRangeLabel(weekDatesFromLocalDate("2026-07-08"))).toBe("Jul 6 – 12, 2026");
+        expect(formatWeekRangeLabel(weekDatesFromLocalDate("2026-08-01"))).toBe("Jul 27 – Aug 2, 2026");
+        expect(formatDayNameDate("2026-07-11")).toBe("Sat Jul 11");
+    });
+
+    test("resolves a normal recurring day with no badge", () => {
+        const schedule = makeSchedule({ shifts: [shift("s1", "sam", "location-a", 1)] });
+        const day = resolveBarberDay(schedule, "sam", MON);
+
+        expect(day.working).toBe(true);
+        expect(day.changed).toBe(false);
+        expect(day.provenance).toBe("normal");
+        expect(day.badge).toBeUndefined();
+        expect(day.windows).toEqual([{ locationId: "location-a", startTime: "10:00", endTime: "19:00" }]);
+    });
+
+    test("keeps split windows and merges an add override that extends the day (Late)", () => {
+        const split = makeSchedule({
+            shifts: [shift("s1", "laura", "location-a", 1, "10:00", "13:00"), shift("s2", "laura", "location-a", 1, "15:00", "19:00")],
+        });
+        expect(resolveBarberDay(split, "laura", MON).windows).toEqual([
+            { locationId: "location-a", startTime: "10:00", endTime: "13:00" },
+            { locationId: "location-a", startTime: "15:00", endTime: "19:00" },
+        ]);
+
+        const late = makeSchedule({
+            shifts: [shift("s1", "sam", "location-a", 1)],
+            shiftOverrides: [override("o1", "sam", MON, "add", { locationId: "location-a", startTime: "19:00", endTime: "21:00" })],
+        });
+        const day = resolveBarberDay(late, "sam", MON);
+        expect(day.windows).toEqual([{ locationId: "location-a", startTime: "10:00", endTime: "21:00" }]);
+        expect(day.badge).toEqual({ text: "Late", tone: "late" });
+    });
+
+    test("resolves a remove override as trimmed hours (Changed)", () => {
+        const schedule = makeSchedule({
+            shifts: [shift("s1", "sam", "location-a", 1)],
+            shiftOverrides: [override("o1", "sam", MON, "remove", { locationId: "location-a", startTime: "10:00", endTime: "11:00" })],
+        });
+        const day = resolveBarberDay(schedule, "sam", MON);
+        expect(day.windows).toEqual([{ locationId: "location-a", startTime: "11:00", endTime: "19:00" }]);
+        expect(day.badge).toEqual({ text: "Changed", tone: "hours" });
+    });
+
+    test("resolves a cover (add elsewhere + remove home) as Covering at the new location", () => {
+        const schedule = makeSchedule({
+            shifts: [shift("s1", "yogesh", "location-b", 1)],
+            shiftOverrides: [
+                override("o1", "yogesh", MON, "add", { locationId: "location-a", startTime: "10:00", endTime: "19:00" }),
+                override("o2", "yogesh", MON, "remove", { locationId: "location-b", startTime: "10:00", endTime: "19:00" }),
+            ],
+        });
+        const day = resolveBarberDay(schedule, "yogesh", MON);
+        expect(day.working).toBe(true);
+        expect(day.windows).toEqual([{ locationId: "location-a", startTime: "10:00", endTime: "19:00" }]);
+        expect(day.badge).toEqual({ text: "Covering", tone: "cover" });
+        expect(day.tooltip).toContain("normally 10:00 AM–7:00 PM at Millwood");
+    });
+
+    test("resolves a barber-wide not_working override as Off with its reason", () => {
+        const schedule = makeSchedule({
+            shifts: [shift("s1", "laura", "location-a", 1)],
+            shiftOverrides: [override("o1", "laura", MON, "not_working", { reason: "Vacation" })],
+        });
+        const day = resolveBarberDay(schedule, "laura", MON);
+        expect(day.working).toBe(false);
+        expect(day.provenance).toBe("off");
+        expect(day.offReason).toBe("Vacation");
+        expect(day.badge).toEqual({ text: "Off · Vacation", tone: "off" });
+    });
+
+    test("resolves a location-scoped not_working override as Off", () => {
+        const schedule = makeSchedule({
+            shifts: [shift("s1", "sam", "location-a", 1)],
+            shiftOverrides: [override("o1", "sam", MON, "not_working", { locationId: "location-a" })],
+        });
+        const day = resolveBarberDay(schedule, "sam", MON);
+        expect(day.working).toBe(false);
+        expect(day.provenance).toBe("off");
+        expect(day.offReason).toBe("Time off");
+    });
+
+    test("overlays an all-day barber blocked time as Off", () => {
+        const schedule = makeSchedule({
+            shifts: [shift("s1", "sam", "location-a", 1)],
+            blockedTimes: [
+                {
+                    id: "b1",
+                    scope: "barber",
+                    barberId: "sam",
+                    locationId: null,
+                    startTime: "2026-07-06T04:00:00.000Z",
+                    endTime: "2026-07-07T04:00:00.000Z",
+                    reason: "Appointment",
+                    createdByUserId: null,
+                },
+            ],
+        });
+        const day = resolveBarberDay(schedule, "sam", MON);
+        expect(day.working).toBe(false);
+        expect(day.provenance).toBe("off");
+        expect(day.offReason).toBe("Appointment");
+    });
+
+    test("treats an all-day business block as Off with its reason (M2)", () => {
+        const schedule = makeSchedule({
+            shifts: [shift("s1", "sam", "location-a", 1)],
+            blockedTimes: [block("b-biz", "business", MON_ALLDAY.start, MON_ALLDAY.end, { reason: "Holiday closure" })],
+        });
+        const day = resolveBarberDay(schedule, "sam", MON);
+        expect(day.working).toBe(false);
+        expect(day.provenance).toBe("off");
+        expect(day.offReason).toBe("Holiday closure");
+        expect(day.badge).toEqual({ text: "Off · Holiday closure", tone: "off" });
+    });
+
+    test("clears only the matching location for an all-day location block (M2)", () => {
+        const schedule = makeSchedule({
+            shifts: [
+                shift("s1", "laura", "location-a", 1, "10:00", "13:00"),
+                shift("s2", "laura", "location-b", 1, "15:00", "19:00"),
+            ],
+            blockedTimes: [block("b-loc", "location", MON_ALLDAY.start, MON_ALLDAY.end, { locationId: "location-a", reason: "Store closed" })],
+        });
+        const day = resolveBarberDay(schedule, "laura", MON);
+        expect(day.working).toBe(true);
+        expect(day.windows).toEqual([{ locationId: "location-b", startTime: "15:00", endTime: "19:00" }]);
+    });
+
+    test("notes a partial-day block over a working day without changing the windows (M2)", () => {
+        const schedule = makeSchedule({
+            shifts: [shift("s1", "sam", "location-a", 1)],
+            blockedTimes: [block("b-part", "barber", "2026-07-06T16:00:00.000Z", "2026-07-06T17:00:00.000Z", { barberId: "sam" })],
+        });
+        const day = resolveBarberDay(schedule, "sam", MON);
+        expect(day.working).toBe(true);
+        expect(day.changed).toBe(false);
+        expect(day.windows).toEqual([{ locationId: "location-a", startTime: "10:00", endTime: "19:00" }]);
+        expect(day.hasPartialBlock).toBe(true);
+        expect(day.partialBlockLabel).toBe("Blocked 12:00–13:00");
+        expect(day.tooltip).toBe("Blocked 12:00–13:00");
+    });
+
+    test("clears only the matching location for a location-scoped not_working override (m1)", () => {
+        const schedule = makeSchedule({
+            shifts: [shift("s1", "laura", "location-a", 1), shift("s2", "laura", "location-b", 1)],
+            shiftOverrides: [override("o1", "laura", MON, "not_working", { locationId: "location-a" })],
+        });
+        expect(buildCalendarWorkingWindows({ schedule, selectedDate: MON, locationId: "location-a" }).laura).toBeUndefined();
+        expect(buildCalendarWorkingWindows({ schedule, selectedDate: MON, locationId: "location-b" }).laura).toEqual([
+            { barberId: "laura", locationId: "location-b", startTime: "10:00", endTime: "19:00", source: "shift" },
+        ]);
+    });
+
+    test("resolves not_working layered with a same-date add override as Off (C1)", () => {
+        const schedule = makeSchedule({
+            shifts: [shift("s1", "laura", "location-a", 1)],
+            shiftOverrides: [
+                override("add", "laura", MON, "add", { locationId: "location-a", startTime: "19:00", endTime: "21:00" }),
+                override("off", "laura", MON, "not_working"),
+            ],
+        });
+        const day = resolveBarberDay(schedule, "laura", MON);
+        expect(day.working).toBe(false);
+        expect(day.provenance).toBe("off");
+    });
+
+    test("time-off write plan deletes stale same-date overrides before marking off (C1)", () => {
+        const schedule = makeSchedule({
+            shiftOverrides: [
+                override("add-cover", "laura", MON, "add", { locationId: "location-b", startTime: "10:00", endTime: "19:00" }),
+                override("rem-home", "laura", MON, "remove", { locationId: "location-a", startTime: "10:00", endTime: "19:00" }),
+                override("off-tue", "laura", TUE, "not_working"),
+                override("stale-add-wed", "laura", WED, "add", { locationId: "location-a", startTime: "19:00", endTime: "21:00" }),
+            ],
+        });
+        expect(buildTimeOffWritePlan(schedule, "laura", [MON, TUE, WED])).toEqual([
+            { date: MON, deleteOverrideIds: ["add-cover", "rem-home"], createNotWorking: true },
+            { date: TUE, deleteOverrideIds: [], createNotWorking: false },
+            { date: WED, deleteOverrideIds: ["stale-add-wed"], createNotWorking: true },
+        ]);
+    });
+
+    test("orders each cover date home-clear before the cover-location add (M1)", () => {
+        const schedule = makeSchedule({ shifts: [shift("s1", "laura", "location-a", 1)] });
+        const plan = buildCoverPlan(schedule, { barberId: "laura", coverLocationId: "location-b", fromDate: MON, toDate: MON });
+        const clearIndex = plan.payloads.findIndex((payload) => payload.locationId === "location-a" && payload.windows.length === 0);
+        const coverIndex = plan.payloads.findIndex((payload) => payload.locationId === "location-b" && payload.windows.length > 0);
+        expect(clearIndex).toBeGreaterThanOrEqual(0);
+        expect(coverIndex).toBeGreaterThan(clearIndex);
+    });
+
+    test("respects effectiveFrom/effectiveTo bounds on recurring shifts", () => {
+        const schedule = makeSchedule({
+            shifts: [shift("s1", "sam", "location-a", 1, "10:00", "19:00", { effectiveFrom: "2026-07-13" })],
+        });
+        expect(resolveBarberDay(schedule, "sam", MON).working).toBe(false);
+        expect(resolveBarberDay(schedule, "sam", "2026-07-13").working).toBe(true);
+    });
+
+    test("totals weekly hours from the resolved week", () => {
+        const schedule = makeSchedule({
+            shifts: [shift("s1", "sam", "location-a", 1), shift("s2", "sam", "location-a", 3)],
+        });
+        expect(resolveBarberWeekMinutes(schedule, "sam", weekDatesFromLocalDate(MON))).toBe(1080);
+        expect(formatWeekHoursLabel(1080)).toBe("18h");
+        expect(formatWeekHoursLabel(1110)).toBe("18h 30m");
+    });
+
+    test("builds a cover plan that skips off-days and clears home locations", () => {
+        const schedule = makeSchedule({
+            shifts: [shift("s1", "laura", "location-a", 1), shift("s3", "laura", "location-a", 3)],
+        });
+        const plan = buildCoverPlan(schedule, { barberId: "laura", coverLocationId: "location-b", fromDate: MON, toDate: WED });
+        expect(plan.coveredDates).toEqual([MON, WED]);
+        expect(plan.skippedDates).toEqual([TUE]);
+        expect(plan.payloads).toEqual([
+            { barberId: "laura", locationId: "location-a", date: MON, windows: [] },
+            { barberId: "laura", locationId: "location-b", date: MON, windows: [{ startTime: "10:00", endTime: "19:00" }] },
+            { barberId: "laura", locationId: "location-a", date: WED, windows: [] },
+            { barberId: "laura", locationId: "location-b", date: WED, windows: [{ startTime: "10:00", endTime: "19:00" }] },
+        ]);
+
+        const explicit = buildCoverPlan(schedule, {
+            barberId: "laura",
+            coverLocationId: "location-b",
+            fromDate: MON,
+            toDate: WED,
+            startTime: "11:00",
+            endTime: "16:00",
+        });
+        expect(explicit.coveredDates).toEqual([MON, TUE, WED]);
+        expect(explicit.payloads).toContainEqual({
+            barberId: "laura",
+            locationId: "location-b",
+            date: TUE,
+            windows: [{ startTime: "11:00", endTime: "16:00" }],
+        });
+    });
+
+    test("groups consecutive same-shape cover days into one Coming-up range", () => {
+        const covers = [MON, TUE, WED].flatMap((date) => [
+            override(`add-${date}`, "laura", date, "add", { locationId: "location-b", startTime: "10:00", endTime: "19:00" }),
+            override(`rem-${date}`, "laura", date, "remove", { locationId: "location-a", startTime: "10:00", endTime: "19:00" }),
+        ]);
+        const schedule = makeSchedule({
+            shifts: [shift("s1", "laura", "location-a", 1), shift("s2", "laura", "location-a", 2), shift("s3", "laura", "location-a", 3)],
+            shiftOverrides: covers,
+        });
+        const groups = buildComingUp(schedule, schedule.barbers, MON);
+        expect(groups).toHaveLength(1);
+        expect(groups[0]).toMatchObject({ kind: "cover", startDate: MON, endDate: WED, locationName: "Millwood" });
+        expect(groups[0].dates).toEqual([MON, TUE, WED]);
+        expect(groups[0].overrideIds).toHaveLength(6);
+        expect(groups[0].sentence).toContain("Laura Nguyen covering Millwood");
+    });
+
+    test("splits a Coming-up group when a normal working day sits in the gap", () => {
+        const covers = [MON, WED].flatMap((date) => [
+            override(`add-${date}`, "laura", date, "add", { locationId: "location-b", startTime: "10:00", endTime: "19:00" }),
+            override(`rem-${date}`, "laura", date, "remove", { locationId: "location-a", startTime: "10:00", endTime: "19:00" }),
+        ]);
+        const schedule = makeSchedule({
+            shifts: [shift("s1", "laura", "location-a", 1), shift("s2", "laura", "location-a", 2), shift("s3", "laura", "location-a", 3)],
+            shiftOverrides: covers,
+        });
+        const groups = buildComingUp(schedule, [schedule.barbers[1]], MON);
+        expect(groups).toHaveLength(2);
+        expect(groups.map((group) => group.startDate)).toEqual([MON, WED]);
+    });
+
+    test("bridges a Coming-up group over a day the barber is normally off", () => {
+        const covers = [MON, WED].flatMap((date) => [
+            override(`add-${date}`, "sam", date, "add", { locationId: "location-b", startTime: "10:00", endTime: "19:00" }),
+            override(`rem-${date}`, "sam", date, "remove", { locationId: "location-a", startTime: "10:00", endTime: "19:00" }),
+        ]);
+        const schedule = makeSchedule({
+            shifts: [shift("s1", "sam", "location-a", 1), shift("s3", "sam", "location-a", 3)],
+            shiftOverrides: covers,
+        });
+        const barber = { id: "sam", displayName: "Sam To", locationIds: ["location-a", "location-b"] };
+        const groups = buildComingUp(schedule, [barber], MON);
+        expect(groups).toHaveLength(1);
+        expect(groups[0].dates).toEqual([MON, WED]);
+    });
+
+    test("reports a single-day Coming-up edit", () => {
+        const schedule = makeSchedule({
+            shifts: [shift("s1", "sam", "location-a", 1)],
+            shiftOverrides: [override("o1", "sam", MON, "add", { locationId: "location-a", startTime: "19:00", endTime: "21:00" })],
+        });
+        const groups = buildComingUp(schedule, [schedule.barbers[2]], MON);
+        expect(groups).toHaveLength(1);
+        expect(groups[0]).toMatchObject({ kind: "hours", startDate: MON, endDate: MON });
+        expect(groups[0].sentence).toContain("Sam To");
+    });
+
+    test("formats plain-English dialog result sentences", () => {
+        expect(
+            describeDayEditResult({
+                barberName: "Sam",
+                date: "2026-07-11",
+                locationName: "Eglinton",
+                windows: [{ startTime: "10:00", endTime: "21:00" }],
+                baselineWindows: [{ locationId: "location-a", startTime: "10:00", endTime: "19:00" }],
+            }),
+        ).toBe("Just Sat Jul 11: Sam works 10:00 AM–9:00 PM at Eglinton — instead of 10:00 AM–7:00 PM.");
+
+        expect(describeTimeOffResult({ barberName: "Sam", fromDate: "2026-07-20", toDate: "2026-07-24", reason: "Vacation" })).toBe(
+            "Sam is off Jul 20–24 (Vacation). Customers can't book these days.",
+        );
+
+        expect(
+            describeCoverResult({
+                barberName: "Yogesh",
+                coverLocationName: "Eglinton",
+                fromDate: MON,
+                toDate: WED,
+                homeLocationName: "Millwood",
+                coveredCount: 3,
+            }),
+        ).toBe("Yogesh covers Eglinton Jul 6–8, then back at Millwood.");
+        expect(formatDateRangeLabel("2026-07-11", "2026-07-11")).toBe("Sat Jul 11");
+        expect(formatClockRange12("10:00", "19:00")).toBe("10:00 AM–7:00 PM");
+    });
+
+    test("summarizes a weekly schedule draft in one plain sentence", () => {
+        const schedule = makeSchedule({
+            shifts: [2, 3, 4, 5, 6].map((dayOfWeek) => shift(`s${dayOfWeek}`, "sam", "location-a", dayOfWeek)),
+        });
+        const draft = buildWeeklyScheduleDraft(schedule, "sam");
+        expect(describeWeeklyScheduleDraft(draft, schedule, "Sam")).toBe(
+            "Sam works Tue–Sat, 10:00 AM–7:00 PM at Eglinton and is off Mon, Sun — every week from now on.",
+        );
     });
 });
