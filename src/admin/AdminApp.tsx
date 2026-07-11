@@ -56,7 +56,7 @@ import {
 import SchedulePage from "./SchedulePage";
 import TeamPage from "./TeamPage";
 import { Button } from "../components/ui/Button.tsx";
-import { ConfirmDialogProvider } from "../components/ui/ConfirmDialog.tsx";
+import { ConfirmDialogProvider, useConfirm } from "../components/ui/ConfirmDialog.tsx";
 import { Field as UiField } from "../components/ui/Field.tsx";
 import { Input } from "../components/ui/Input.tsx";
 import { Notice as UiNotice } from "../components/ui/Notice.tsx";
@@ -1204,20 +1204,20 @@ function CalendarTopbar({
         <header data-admin-calendar-topbar className="sticky top-0 z-20 shrink-0 overflow-visible border-b border-[#cfdacf] bg-white/95 px-2 py-2 backdrop-blur lg:px-6 lg:py-3 2xl:px-8 2xl:py-4">
             <div className="relative space-y-2 lg:hidden">
                 <div className="flex min-w-0 items-center gap-1.5">
-                    <button className="text-button !min-h-10 shrink-0 bg-white px-3 py-1.5 text-sm" onClick={() => onDate(todayLocalDate())} disabled={isSchedulePath}>
+                    <button className="text-button !min-h-11 shrink-0 bg-white px-3 py-1.5 text-sm" onClick={() => onDate(todayLocalDate())} disabled={isSchedulePath}>
                         Today
                     </button>
-                    <button className="icon-button !min-h-10 !w-10 shrink-0" onClick={() => onDate(navigateCalendarDate(view, selectedDate, -1))} title="Previous" disabled={isSchedulePath}>
+                    <button className="icon-button !min-h-11 !w-11 shrink-0" onClick={() => onDate(navigateCalendarDate(view, selectedDate, -1))} title="Previous" disabled={isSchedulePath}>
                         <ChevronLeft size={21} />
                     </button>
-                    <button className="icon-button !min-h-10 !w-10 shrink-0" onClick={() => onDate(navigateCalendarDate(view, selectedDate, 1))} title="Next" disabled={isSchedulePath}>
+                    <button className="icon-button !min-h-11 !w-11 shrink-0" onClick={() => onDate(navigateCalendarDate(view, selectedDate, 1))} title="Next" disabled={isSchedulePath}>
                         <ChevronRight size={21} />
                     </button>
                     <div className="min-w-0 flex-1 px-1">
                         <p className="truncate text-lg font-black leading-tight text-forest">{isSchedulePath ? title : formatDateTitle(selectedDate, view)}</p>
                         <p className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-charcoal/50">{isSchedulePath ? "Setup" : title}</p>
                     </div>
-                    <button className="icon-button !min-h-10 !w-10 shrink-0" onClick={onRefresh} title={isDashboardPath ? "Refresh dashboard" : "Refresh bookings"}>
+                    <button className="icon-button !min-h-11 !w-11 shrink-0" onClick={onRefresh} title={isDashboardPath ? "Refresh dashboard" : "Refresh bookings"}>
                         <RefreshCw size={20} className={loading ? "animate-spin" : ""} />
                     </button>
                 </div>
@@ -1225,7 +1225,7 @@ function CalendarTopbar({
                 {showCalendarControls && (
                     <div className="flex min-w-0 items-center gap-1.5">
                         <button
-                            className="icon-text-button !min-h-10 shrink-0 px-3 py-1.5 text-sm"
+                            className="icon-text-button !min-h-11 shrink-0 px-3 py-1.5 text-sm"
                             type="button"
                             onClick={() => setMobileFiltersOpen((value) => !value)}
                             aria-expanded={mobileFiltersOpen}
@@ -1237,14 +1237,14 @@ function CalendarTopbar({
                             {viewItems.map((item) => (
                                 <button
                                     key={item}
-                                    className={view === item ? "segmented-active !min-h-9 shrink-0 px-3 py-1.5 text-sm" : "segmented !min-h-9 shrink-0 border-0 bg-transparent px-3 py-1.5 text-sm"}
+                                    className={view === item ? "segmented-active !min-h-11 shrink-0 px-3 py-1.5 text-sm" : "segmented !min-h-11 shrink-0 border-0 bg-transparent px-3 py-1.5 text-sm"}
                                     onClick={() => onView(item)}
                                 >
                                     {item}
                                 </button>
                             ))}
                         </div>
-                        <button className="icon-text-button !min-h-10 shrink-0 px-3 py-1.5 text-sm" onClick={onNewBooking}>
+                        <button className="icon-text-button !min-h-11 shrink-0 px-3 py-1.5 text-sm" onClick={onNewBooking}>
                             <CalendarPlus size={18} />
                             Add<span className="hidden sm:inline"> appointment</span>
                         </button>
@@ -1254,7 +1254,7 @@ function CalendarTopbar({
                 {showCalendarControls && mobileFiltersOpen && (
                     <div className="absolute left-0 right-0 top-full z-30 mt-2 grid gap-2 rounded-md border border-[#d4ddd4] bg-[#f8fbf8] p-2 shadow-[0_16px_32px_rgba(16,56,38,0.18)]">
                         <select
-                            className="input h-9 !min-h-9 px-3 py-1.5 text-sm"
+                            className="input h-11 !min-h-11 px-3 py-1.5 text-sm"
                             value={locationId}
                             onChange={(event) => onChangeFilters({ ...filters, locationId: event.target.value })}
                         >
@@ -1265,7 +1265,7 @@ function CalendarTopbar({
                             ))}
                         </select>
                         <select
-                            className="input h-9 !min-h-9 px-3 py-1.5 text-sm"
+                            className="input h-11 !min-h-11 px-3 py-1.5 text-sm"
                             value={filters.barberId ?? ""}
                             onChange={(event) => onChangeFilters({ ...filters, barberId: event.target.value })}
                             disabled={user.role === "barber"}
@@ -1278,7 +1278,7 @@ function CalendarTopbar({
                             ))}
                         </select>
                         <select
-                            className="input h-9 !min-h-9 px-3 py-1.5 text-sm"
+                            className="input h-11 !min-h-11 px-3 py-1.5 text-sm"
                             value={filters.status ?? ""}
                             onChange={(event) => onChangeFilters({ ...filters, status: event.target.value as AdminBookingFilters["status"] })}
                         >
@@ -1292,7 +1292,7 @@ function CalendarTopbar({
                 )}
 
                 {isDashboardPath && (
-                    <button className="primary-button inline-flex !min-h-10 w-full items-center justify-center gap-2 px-3 py-2 text-sm" onClick={onNewBooking}>
+                    <button className="primary-button inline-flex !min-h-11 w-full items-center justify-center gap-2 px-3 py-2 text-sm" onClick={onNewBooking}>
                         <CalendarPlus size={18} />
                         Add appointment
                     </button>
@@ -2502,7 +2502,7 @@ function DayCalendarBoard({
                         })}
                     </div>
                     <div className="grid" style={{ gridTemplateColumns }}>
-                        <div className="sticky left-0 z-[5] border-r border-[#c5d0c5] bg-white" style={{ height: boardHeight }}>
+                        <div className="sticky left-0 z-[8] border-r border-[#c5d0c5] bg-white" style={{ height: boardHeight }}>
                             {slots.map((slot) => (
                                 <div
                                     key={`time-${slot}`}
@@ -2552,13 +2552,18 @@ function DayCalendarBoard({
                                         return (
                                             <button
                                                 key={`${item.barber.id}-${slot}`}
-                                                className={`group absolute left-0 right-0 z-[4] border-b ${calendarRowLineClasses(slot)} outline-none transition ${
+                                                className={`group absolute left-0 right-0 z-[4] border-b ${calendarRowLineClasses(slot)} outline-none transition focus-visible:z-[8] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-green ${
                                                     canCreateHere ? "hover:bg-[#dff6e7]/55 focus:bg-[#dff6e7]/70" : "cursor-not-allowed"
                                                 } ${
                                                     draggingBookingId && canCreateHere ? "hover:ring-2 hover:ring-inset hover:ring-green/45" : ""
                                                 }`}
                                                 style={{ top: timeTopFromClock(slot, window.start), height: SLOT_HEIGHT }}
                                                 aria-disabled={!canCreateHere}
+                                                aria-label={
+                                                    canCreateHere
+                                                        ? `Create appointment for ${item.barber.displayName} at ${formatLocalTime(startTime)}`
+                                                        : `${formatLocalTime(startTime)} is blocked for ${item.barber.displayName}`
+                                                }
                                                 onClick={() => {
                                                     if (canCreateHere) onSlot(item.barber.id, startTime);
                                                 }}
@@ -2602,7 +2607,8 @@ function DayCalendarBoard({
                                             className="pointer-events-none absolute inset-x-2 z-[3] rounded-md border border-[#a8aaa8] bg-[#e2e4e2]/95 px-3 py-2 text-sm font-black text-charcoal/70 shadow-sm"
                                             style={block.style}
                                         >
-                                            {block.reason || "Blocked"}
+                                            Busy {formatLocalTime(block.startTime)}–{formatLocalTime(block.endTime)}
+                                            {block.reason ? ` · ${block.reason}` : ""}
                                         </div>
                                     ))}
                                     {appointmentPreview?.barberId === item.barber.id && appointmentPreview.locationId === locationId && (
@@ -2614,7 +2620,7 @@ function DayCalendarBoard({
                                         </div>
                                     )}
                                     {currentLineStyle && (
-                                        <div className="pointer-events-none absolute left-0 right-0 z-[5] h-0.5 bg-red-500" style={currentLineStyle} />
+                                        <div className="pointer-events-none absolute left-0 right-0 z-[7] h-0.5 bg-red-500" style={currentLineStyle} />
                                     )}
                                     {barberBookings.map(({ booking, style }) => (
                                         <BookingCard
@@ -2675,9 +2681,12 @@ function BookingCard({
     const height = Math.max(22, Math.ceil(booking.totalDurationMinutes / 15) * SLOT_HEIGHT - 2);
     const compact = height < 34;
 
+    const statusText = booking.source === "walk_in" ? "Walk-in" : formatAdminStatus(booking.status);
+    const ariaLabel = `${formatLocalTime(booking.startTime)} ${booking.customerName}, ${booking.services.join(", ")}, ${statusText}${offSchedule ? ", outside hours" : ""}. Open booking.`;
+
     return (
         <button
-            className={`absolute z-[6] overflow-hidden rounded-md border-l-[3px] px-2 py-1 text-left text-[11px] leading-tight shadow-sm transition hover:z-[7] hover:shadow-md ${bookingToneClasses(tone)} ${
+            className={`absolute z-[6] overflow-hidden rounded-md border-l-[3px] px-2 py-1 text-left text-[11px] leading-tight shadow-sm outline-none transition hover:z-[7] hover:shadow-md focus-visible:z-[8] focus-visible:ring-2 focus-visible:ring-forest ${bookingToneClasses(tone)} ${
                 pending ? "opacity-60" : ""
             } ${offSchedule ? "ring-2 ring-amber-400" : ""}`}
             style={{
@@ -2685,6 +2694,7 @@ function BookingCard({
                 ...style,
             }}
             draggable={draggable}
+            aria-label={ariaLabel}
             onClick={(event) => {
                 event.stopPropagation();
                 onOpen(booking.id);
@@ -2838,6 +2848,7 @@ function BookingDetailBody({
     const [error, setError] = useState("");
     const [showEdit, setShowEdit] = useState(false);
     const [showReschedule, setShowReschedule] = useState(false);
+    const confirm = useConfirm();
     const canMutate = booking.status === "confirmed";
     const canNoShow = canMutate && new Date(booking.startTime).getTime() <= Date.now();
     const canComplete = canMutate && new Date(booking.startTime).getTime() <= Date.now();
@@ -2849,7 +2860,14 @@ function BookingDetailBody({
     }
 
     async function handleCancel() {
-        if (!window.confirm("Cancel this booking?")) return;
+        const confirmed = await confirm({
+            title: "Cancel this booking?",
+            description: "The customer's slot is freed for online booking again. This can't be undone.",
+            confirmLabel: "Cancel booking",
+            cancelLabel: "Keep booking",
+            tone: "danger",
+        });
+        if (!confirmed) return;
         setError("");
 
         try {
@@ -4312,7 +4330,7 @@ function blockedTimeOverlaysForBarber(
         selectedDate: string;
         businessWindow: { start: string; end: string };
     },
-): Array<{ id: string; reason: string | null; style: CSSProperties }> {
+): Array<{ id: string; reason: string | null; startTime: string; endTime: string; style: CSSProperties }> {
     const boardStart = new Date(localDateTimeToIso(input.selectedDate, input.businessWindow.start));
     const boardEnd = new Date(localDateTimeToIso(input.selectedDate, input.businessWindow.end));
 
@@ -4330,6 +4348,11 @@ function blockedTimeOverlaysForBarber(
             return {
                 id: blockedTime.id,
                 reason: blockedTime.reason,
+                // Clipped to the visible board window so the label always
+                // matches the drawn box (multi-day blocks would otherwise show
+                // another day's times on this day's overlay).
+                startTime: clippedStart.toISOString(),
+                endTime: clippedEnd.toISOString(),
                 style: rangeStyleFromIso(
                     clippedStart.toISOString(),
                     clippedEnd.toISOString(),

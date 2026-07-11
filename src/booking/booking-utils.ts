@@ -142,7 +142,9 @@ export function resetBookingSelectionsForLocation({
 }
 
 export function formatDateTime(value: string, timeZone = "America/Toronto") {
-    return new Intl.DateTimeFormat("en-CA", {
+    // en-US for uppercase "AM/PM", consistent with the admin calendar and
+    // notifications (en-CA rendered lowercase "a.m." with periods).
+    return new Intl.DateTimeFormat("en-US", {
         weekday: "short",
         month: "short",
         day: "numeric",
@@ -153,7 +155,7 @@ export function formatDateTime(value: string, timeZone = "America/Toronto") {
 }
 
 export function formatTime(value: string, timeZone = "America/Toronto") {
-    return new Intl.DateTimeFormat("en-CA", {
+    return new Intl.DateTimeFormat("en-US", {
         hour: "numeric",
         minute: "2-digit",
         timeZone,

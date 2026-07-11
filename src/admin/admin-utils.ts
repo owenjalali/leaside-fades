@@ -403,7 +403,9 @@ export function todayLocalDate() {
 }
 
 export function formatLocalDateTime(value: string | Date) {
-    return new Intl.DateTimeFormat("en-CA", {
+    // en-US for uppercase "AM/PM" — matches the calendar ruler (formatClockLabel)
+    // and notification templates; en-CA's lowercase "a.m." was the odd one out.
+    return new Intl.DateTimeFormat("en-US", {
         timeZone,
         weekday: "short",
         month: "short",
@@ -414,7 +416,7 @@ export function formatLocalDateTime(value: string | Date) {
 }
 
 export function formatLocalTime(value: string | Date) {
-    return new Intl.DateTimeFormat("en-CA", {
+    return new Intl.DateTimeFormat("en-US", {
         timeZone,
         hour: "numeric",
         minute: "2-digit",
