@@ -62,6 +62,12 @@ import {
     formatDayNameDate,
     formatDateRangeLabel,
     formatClockRange12,
+    formatClockRangeCompact12,
+    partialBlockLabel12,
+    busyChipLabel,
+    buildBlockedTimeGroups,
+    describeBlockedTimeDraft,
+    validateBlockedTimeDraft,
     resolveBarberDay,
     resolveBarberWeekMinutes,
     formatWeekHoursLabel,
@@ -1437,8 +1443,173 @@ describe("Team Week grid utilities", () => {
         expect(day.changed).toBe(false);
         expect(day.windows).toEqual([{ locationId: "location-a", startTime: "10:00", endTime: "19:00" }]);
         expect(day.hasPartialBlock).toBe(true);
-        expect(day.partialBlockLabel).toBe("Blocked 12:00–13:00");
-        expect(day.tooltip).toBe("Blocked 12:00–13:00");
+        expect(day.partialBlockLabel).toBe("Busy 12:00–1:00 PM");
+        expect(day.partialBlockWindows).toEqual([{ startMinutes: 12 * 60, endMinutes: 13 * 60 }]);
+        expect(day.tooltip).toBe("Busy 12:00–1:00 PM");
+    });
+
+    test("busyChipLabel renders one partial block with a shared meridiem, +N for more (Phase E)", () => {
+        const oneBlock = makeSchedule({
+            shifts: [shift("s1", "sam", "location-a", 1)],
+            blockedTimes: [block("b1", "barber", "2026-07-06T16:00:00.000Z", "2026-07-06T18:00:00.000Z", { barberId: "sam" })],
+        });
+        expect(busyChipLabel(resolveBarberDay(oneBlock, "sam", MON))).toBe("Busy 12:00–2:00 PM");
+
+        const twoBlocks = makeSchedule({
+            shifts: [shift("s1", "sam", "location-a", 1)],
+            blockedTimes: [
+                block("b1", "barber", "2026-07-06T16:00:00.000Z", "2026-07-06T17:00:00.000Z", { barberId: "sam" }),
+                block("b2", "barber", "2026-07-06T18:00:00.000Z", "2026-07-06T19:00:00.000Z", { barberId: "sam" }),
+            ],
+        });
+        expect(busyChipLabel(resolveBarberDay(twoBlocks, "sam", MON))).toBe("Busy 12:00–1:00 PM +1");
+        expect(busyChipLabel({ partialBlockWindows: undefined })).toBeUndefined();
+    });
+
+    test("partialBlockLabel12 lists every window in 12-hour form for the tooltip (Phase E)", () => {
+        const twoBlocks = makeSchedule({
+            shifts: [shift("s1", "sam", "location-a", 1)],
+            blockedTimes: [
+                block("b1", "barber", "2026-07-06T16:00:00.000Z", "2026-07-06T17:00:00.000Z", { barberId: "sam" }),
+                block("b2", "barber", "2026-07-06T22:00:00.000Z", "2026-07-06T23:00:00.000Z", { barberId: "sam" }),
+            ],
+        });
+        expect(partialBlockLabel12(resolveBarberDay(twoBlocks, "sam", MON))).toBe("Busy 12:00–1:00 PM, 6:00–7:00 PM");
+        expect(partialBlockLabel12({ partialBlockWindows: [] })).toBeUndefined();
+    });
+
+    test("busyChipLabel reads a midnight end as 'midnight', not 11:59 PM (Phase E)", () => {
+        const lateBlock = makeSchedule({
+            shifts: [shift("s1", "sam", "location-a", 1, "10:00", "23:59")],
+            // 22:00 local (02:00Z next day) to local midnight (04:00Z next day).
+            blockedTimes: [block("b1", "barber", "2026-07-07T02:00:00.000Z", "2026-07-07T04:00:00.000Z", { barberId: "sam" })],
+        });
+        expect(busyChipLabel(resolveBarberDay(lateBlock, "sam", MON))).toBe("Busy 10:00 PM–midnight");
+    });
+
+    test("formatClockRangeCompact12 collapses a shared meridiem, keeps both when they differ (Phase E)", () => {
+        expect(formatClockRangeCompact12("12:00", "14:00")).toBe("12:00–2:00 PM");
+        expect(formatClockRangeCompact12("10:00", "19:00")).toBe("10:00 AM–7:00 PM");
+    });
+
+    test("describeBlockedTimeDraft speaks plain human language per scope (Phase E)", () => {
+        expect(
+            describeBlockedTimeDraft({
+                scope: "barber",
+                barberName: "Josef Diaz",
+                startDate: "2026-07-06",
+                endDate: "2026-07-06",
+                startTime: "12:00",
+                endTime: "14:00",
+                allDay: false,
+                reason: "Lunch",
+            }),
+        ).toBe("Josef is busy 12:00–2:00 PM on Mon Jul 6 (Lunch) — customers can't book Josef then.");
+
+        // M1: a barber block pinned to one location must name it and say "there".
+        expect(
+            describeBlockedTimeDraft({
+                scope: "barber",
+                barberName: "Josef Diaz",
+                locationName: "Eglinton",
+                startDate: "2026-07-06",
+                endDate: "2026-07-06",
+                startTime: "12:00",
+                endTime: "14:00",
+                allDay: false,
+                reason: "",
+            }),
+        ).toBe("Josef is busy 12:00–2:00 PM on Mon Jul 6 at Eglinton — customers can't book Josef there then.");
+
+        expect(
+            describeBlockedTimeDraft({
+                scope: "location",
+                locationName: "Eglinton",
+                startDate: "2026-07-06",
+                endDate: "2026-07-06",
+                startTime: "14:00",
+                endTime: "16:00",
+                allDay: false,
+                reason: "",
+            }),
+        ).toBe("Eglinton takes no bookings 2:00–4:00 PM on Mon Jul 6 — no one there can take bookings then.");
+
+        expect(
+            describeBlockedTimeDraft({
+                scope: "business",
+                startDate: "2026-07-06",
+                endDate: "2026-07-06",
+                startTime: "10:00",
+                endTime: "13:00",
+                allDay: true,
+                reason: "Holiday",
+            }),
+        ).toBe("The whole business takes no bookings all day Mon Jul 6 (Holiday) — both locations.");
+    });
+
+    test("describeBlockedTimeDraft and formatDayNameDate never throw on a half-typed date (C1)", () => {
+        expect(formatDayNameDate("")).toBe("");
+        expect(formatDayNameDate("2026-13-99")).toBe("");
+        expect(() =>
+            describeBlockedTimeDraft({
+                scope: "barber",
+                barberName: "Laura Nguyen",
+                startDate: "",
+                endDate: "",
+                startTime: "12:00",
+                endTime: "14:00",
+                allDay: false,
+                reason: "",
+            }),
+        ).not.toThrow();
+    });
+
+    test("validateBlockedTimeDraft rejects backwards ranges and same-day end<=start (Phase E)", () => {
+        expect(validateBlockedTimeDraft({ startDate: "2026-07-06", endDate: "2026-07-06", startTime: "12:00", endTime: "14:00", allDay: false })).toBeNull();
+        expect(validateBlockedTimeDraft({ startDate: "2026-07-06", endDate: "2026-07-06", startTime: "14:00", endTime: "12:00", allDay: false })).toBe("The end time must be after the start time.");
+        expect(validateBlockedTimeDraft({ startDate: "2026-07-08", endDate: "2026-07-06", startTime: "12:00", endTime: "14:00", allDay: false })).toBe("The last day must be on or after the first day.");
+        expect(validateBlockedTimeDraft({ startDate: "2026-07-06", endDate: "2026-07-06", startTime: "23:00", endTime: "00:00", allDay: true })).toBeNull();
+    });
+
+    test("buildBlockedTimeGroups buckets rows Today/This week/Upcoming with plain titles (Phase E)", () => {
+        const schedule = makeSchedule({
+            shifts: [shift("s1", "sam", "location-a", 1)],
+            blockedTimes: [
+                // Today (Mon Jul 6): partial barber block
+                block("t1", "barber", "2026-07-06T16:00:00.000Z", "2026-07-06T18:00:00.000Z", { barberId: "sam", locationId: "location-a", reason: "Lunch" }),
+                // Later this week (Fri Jul 10): location closure
+                block("w1", "location", "2026-07-10T18:00:00.000Z", "2026-07-10T20:00:00.000Z", { locationId: "location-a", reason: "Deep clean" }),
+                // Upcoming (next month): business closure
+                block("u1", "business", "2026-08-03T14:00:00.000Z", "2026-08-03T17:00:00.000Z", { reason: "Civic holiday" }),
+            ],
+        });
+        const owner = { role: "owner" as const, barberId: null };
+        const groups = buildBlockedTimeGroups(schedule, owner, "2026-07-06");
+        const byKey = Object.fromEntries(groups.map((group) => [group.key, group]));
+
+        expect(byKey.today.rows).toHaveLength(1);
+        expect(byKey.today.rows[0].title).toBe("Sam is busy 12:00–2:00 PM on Mon Jul 6");
+        expect(byKey.today.rows[0].detail).toContain("Lunch");
+        expect(byKey.today.rows[0].detail).toContain("still working");
+        expect(byKey.week.rows).toHaveLength(1);
+        expect(byKey.week.rows[0].title).toContain("Eglinton takes no bookings");
+        expect(byKey.upcoming.rows).toHaveLength(1);
+        expect(byKey.upcoming.rows[0].title).toContain("The whole business takes no bookings");
+    });
+
+    test("buildBlockedTimeGroups scopes mutate rights to owner/admin or own barber blocks (Phase E)", () => {
+        const schedule = makeSchedule({
+            blockedTimes: [
+                block("own", "barber", "2026-07-06T16:00:00.000Z", "2026-07-06T17:00:00.000Z", { barberId: "sam", locationId: "location-a" }),
+                block("other", "barber", "2026-07-06T16:00:00.000Z", "2026-07-06T17:00:00.000Z", { barberId: "laura", locationId: "location-a" }),
+                block("loc", "location", "2026-07-06T16:00:00.000Z", "2026-07-06T17:00:00.000Z", { locationId: "location-a" }),
+            ],
+        });
+        const sam = { role: "barber" as const, barberId: "sam" };
+        const rows = buildBlockedTimeGroups(schedule, sam, "2026-07-06").flatMap((group) => group.rows);
+        expect(rows.find((row) => row.blockedTime.id === "own")?.canMutate).toBe(true);
+        expect(rows.find((row) => row.blockedTime.id === "other")?.canMutate).toBe(false);
+        expect(rows.find((row) => row.blockedTime.id === "loc")?.canMutate).toBe(false);
     });
 
     test("clears only the matching location for a location-scoped not_working override (m1)", () => {

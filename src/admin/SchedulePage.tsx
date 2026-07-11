@@ -18,6 +18,7 @@ import {
     RotateCcw,
     Save,
     Search,
+    Store,
     Trash2,
     X,
 } from "lucide-react";
@@ -45,15 +46,18 @@ import {
 import { getAdminBarberPhotoUrl } from "./barber-photos";
 import {
     addDaysToLocalDate,
+    buildBlockedTimeGroups,
     buildComingUp,
     buildCoverPlan,
     buildTimeOffWritePlan,
     buildWeeklyScheduleDraft,
     buildWeeklyScheduleSavePlan,
     buildBlockedTimePayload,
+    busyChipLabel,
     calculateWeeklyScheduleHours,
     clearWeeklyScheduleDay,
     copyWeeklyScheduleDay,
+    describeBlockedTimeDraft,
     describeCoverResult,
     describeDayEditResult,
     describeTimeOffResult,
@@ -61,7 +65,6 @@ import {
     duplicateWeeklyScheduleWindow,
     formatClockRange12,
     formatDayNameDate,
-    formatLocalDateTime,
     formatScheduleWindow,
     formatWeekHoursLabel,
     formatWeekRangeLabel,
@@ -73,10 +76,12 @@ import {
     snapWeeklyScheduleClock,
     startOfWeekLocalDate,
     todayLocalDate,
+    validateBlockedTimeDraft,
     validateWeeklyScheduleDraft,
     weekDatesFromLocalDate,
 } from "./admin-utils";
 import type {
+    BlockedTimeRowView,
     ComingUpGroup,
     CoverPlan,
     DayScheduleDraft,
@@ -119,6 +124,7 @@ type ActiveDialog =
     | { kind: "edit"; barberId: string; date: string; lockBarber: boolean }
     | { kind: "timeoff"; barberId: string; date: string; lockBarber: boolean }
     | { kind: "cover"; barberId: string; date: string; lockBarber: boolean }
+    | { kind: "block"; barberId: string; date: string; lockBarber: boolean }
     | { kind: "weekly"; barberId: string }
     | null;
 
@@ -188,18 +194,15 @@ export default function SchedulePage({
     }
 
     return (
-        <section className="space-y-4">
-            <section className="flex flex-col gap-3 rounded-md border border-forest/10 bg-white p-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex flex-wrap items-center gap-2">
-                    <DateField label="From" value={blockedFilters.from} onChange={(from) => setBlockedFilters((value) => ({ ...value, from }))} />
-                    <DateField label="To" value={blockedFilters.to} onChange={(to) => setBlockedFilters((value) => ({ ...value, to }))} />
-                </div>
-                <button className="icon-button" onClick={() => void refresh()} title="Refresh schedule">
-                    <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
-                </button>
-            </section>
-            <BlockedTimeWorkspace schedule={schedule} user={user} onChanged={afterMutation} />
-        </section>
+        <BlockedTimeScreen
+            schedule={schedule}
+            user={user}
+            loading={loading}
+            filters={blockedFilters}
+            onFilters={setBlockedFilters}
+            onRefresh={refresh}
+            onChanged={afterMutation}
+        />
     );
 }
 
@@ -327,7 +330,7 @@ function TeamWeek({
         });
     }
 
-    function openFromCell(kind: "edit" | "timeoff" | "cover") {
+    function openFromCell(kind: "edit" | "timeoff" | "cover" | "block") {
         if (!menu) {
             return;
         }
@@ -575,12 +578,16 @@ function TeamWeek({
                                 {menuDay.working
                                     ? menuDay.windows.map((window) => formatClockRange12(window.startTime, window.endTime)).join(" · ")
                                     : "Off"}
+                                {menuDay.hasPartialBlock && menuDay.partialBlockLabel
+                                    ? ` · ${menuDay.partialBlockLabel}`
+                                    : ""}
                             </div>
                         </div>
                         <button className="saas-menu-item" onClick={() => openFromCell("edit")}>
                             {menuDay.working ? <Edit3 size={16} /> : <Plus size={16} />} {menuDay.working ? "Edit this day" : "Add a shift"}
                         </button>
                         <button className="saas-menu-item" onClick={() => openFromCell("timeoff")}><Plane size={16} /> Add time off</button>
+                        <button className="saas-menu-item" onClick={() => openFromCell("block")}><Ban size={16} /> Block part of this day…</button>
                         <button className="saas-menu-item" onClick={() => openFromCell("cover")}><MapPin size={16} /> Cover a location…</button>
                         <button className="saas-menu-item" onClick={openWeeklyFromCell}><Repeat size={16} /> Set weekly schedule…</button>
                         {(canDeleteDay || menuHasOverrides) && <div className="saas-menu-sep" />}
@@ -636,6 +643,22 @@ function TeamWeek({
                     onRefresh={onRefresh}
                 />
             )}
+            {dialog?.kind === "block" && (
+                <BlockedTimeDialog
+                    schedule={schedule}
+                    user={user}
+                    draft={null}
+                    initialBarberId={dialog.barberId}
+                    initialDate={dialog.date}
+                    lockToBarberScope
+                    onClose={() => setDialog(null)}
+                    onChanged={onChanged}
+                    onUseTimeOff={() => {
+                        const target = dialog;
+                        setDialog({ kind: "timeoff", barberId: target.barberId, date: target.date, lockBarber: target.lockBarber });
+                    }}
+                />
+            )}
             {dialog?.kind === "weekly" && (
                 <WeeklyScheduleDialog
                     schedule={schedule}
@@ -678,6 +701,9 @@ function TeamCell({
                         </div>
                     ))}
                     {day.badge && <span className={`saas-badge saas-badge--${day.badge.tone}`}>{day.badge.text}</span>}
+                    {day.hasPartialBlock && (
+                        <span className="saas-busychip" title={day.tooltip}>{busyChipLabel(day)}</span>
+                    )}
                 </>
             ) : (
                 <>
@@ -2147,35 +2173,49 @@ function ToggleSwitch({ checked, disabled, onChange }: { checked: boolean; disab
         </button>
     );
 }
-function BlockedTimeWorkspace({
+function BlockedTimeScreen({
     schedule,
     user,
+    loading,
+    filters,
+    onFilters,
+    onRefresh,
     onChanged,
 }: {
     schedule: AdminSchedule;
     user: SafeAdminUser;
+    loading: boolean;
+    filters: { from: string; to: string };
+    onFilters: (value: { from: string; to: string }) => void;
+    onRefresh: () => Promise<void>;
     onChanged: (message: string) => Promise<void>;
 }) {
-    const [draft, setDraft] = useState<AdminBlockedTime | null>(null);
-    const [notice, setNotice] = useState("");
+    const [scopeFilter, setScopeFilter] = useState<"all" | AdminBlockedTimeScope>("all");
+    const [search, setSearch] = useState("");
+    const [dialog, setDialog] = useState<{ draft: AdminBlockedTime | null } | null>(null);
     const confirm = useConfirm();
+    const { toast } = useToast();
 
-    async function submit(input: BlockedTimeFormInput, editingId?: string) {
-        try {
-            const payload = buildBlockedTimePayload(input);
-            if (editingId) {
-                await updateAdminBlockedTime(editingId, payload);
-                await onChanged("Blocked time updated.");
-            } else {
-                await createAdminBlockedTime(payload);
-                await onChanged("Blocked time created.");
+    const today = todayLocalDate();
+    const groups = useMemo(
+        () => buildBlockedTimeGroups(schedule, user, today),
+        [schedule, user, today],
+    );
+    const query = search.trim().toLowerCase();
+    const visibleGroups = groups.map((group) => ({
+        ...group,
+        rows: group.rows.filter((row) => {
+            if (scopeFilter !== "all" && row.scope !== scopeFilter) {
+                return false;
             }
-            setDraft(null);
-            setNotice("");
-        } catch (error) {
-            setNotice(error instanceof Error ? error.message : "Blocked time could not be saved.");
-        }
-    }
+            if (!query) {
+                return true;
+            }
+            return `${row.title} ${row.detail} ${row.locationLabel}`.toLowerCase().includes(query);
+        }),
+    }));
+    const totalRows = groups.reduce((count, group) => count + group.rows.length, 0);
+    const visibleRows = visibleGroups.reduce((count, group) => count + group.rows.length, 0);
 
     async function remove(blockedTime: AdminBlockedTime) {
         const confirmed = await confirm({
@@ -2189,199 +2229,448 @@ function BlockedTimeWorkspace({
             await deleteAdminBlockedTime(blockedTime.id);
             await onChanged("Blocked time deleted.");
         } catch (error) {
-            setNotice(error instanceof Error ? error.message : "Blocked time could not be deleted.");
+            toast({ tone: "error", message: error instanceof Error ? error.message : "Blocked time could not be deleted." });
+            await onRefresh();
         }
     }
 
+    const filterActive = scopeFilter !== "all" || query.length > 0;
+    const emptyCopy: Record<string, string> = filterActive
+        ? {
+              today: "No matches today.",
+              week: "No matches this week.",
+              upcoming: "No matches further out.",
+          }
+        : {
+              today: "Nothing blocked today.",
+              week: "Nothing blocked later this week.",
+              upcoming: "Nothing blocked further out.",
+          };
+
     return (
-        <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
-            <section className="space-y-4">
-                {notice && <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{notice}</p>}
-                <BlockedTimeList schedule={schedule} user={user} onEdit={setDraft} onDelete={remove} />
-            </section>
-            <aside>
-                <Panel>
-                    <BlockedTimeForm
-                        key={draft?.id ?? "create-blocked-time"}
-                        schedule={schedule}
-                        user={user}
-                        draft={draft}
-                        onSubmit={submit}
-                        onClear={() => setDraft(null)}
+        <div className="shifts-saas">
+            <div className="saas-screenhead">
+                <div>
+                    <h2 className="saas-screentitle">Blocked time</h2>
+                    <p className="saas-screensub">
+                        Short stretches customers can't book while the person is still at work. Away all day?{" "}
+                        <a className="saas-link" href="/admin/shifts">Use Time off in Scheduled shifts.</a>
+                    </p>
+                </div>
+                <Button className={accentButtonClass} onClick={() => setDialog({ draft: null })}>
+                    <Plus size={16} /> Block time
+                </Button>
+            </div>
+
+            <div className="saas-toolbar">
+                <div className="saas-loc-seg" role="group" aria-label="Filter by type">
+                    {([
+                        ["all", "All"],
+                        ["barber", "Barbers"],
+                        ["location", "Locations"],
+                        ["business", "Whole business"],
+                    ] as Array<["all" | AdminBlockedTimeScope, string]>).map(([value, label]) => (
+                        <button
+                            key={value}
+                            type="button"
+                            aria-pressed={scopeFilter === value}
+                            className={scopeFilter === value ? "on" : ""}
+                            onClick={() => setScopeFilter(value)}
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
+                <label className="saas-search">
+                    <Search size={15} />
+                    <input
+                        placeholder="Search blocked time"
+                        aria-label="Search blocked time"
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
                     />
-                </Panel>
-            </aside>
+                </label>
+                <div className="saas-blocked-range">
+                    <label className="saas-blocked-rangefield">
+                        <span>From</span>
+                        <DateInput value={filters.from} onChange={(event) => onFilters({ ...filters, from: event.target.value })} />
+                    </label>
+                    <label className="saas-blocked-rangefield">
+                        <span>To</span>
+                        <DateInput value={filters.to} onChange={(event) => onFilters({ ...filters, to: event.target.value })} />
+                    </label>
+                </div>
+                {loading && <RefreshCw size={16} role="status" className="animate-spin text-ink-faint" aria-label="Loading" />}
+            </div>
+
+            {totalRows === 0 ? (
+                <div className="saas-blocked-allempty">
+                    <Ban size={22} />
+                    <p className="saas-blocked-allempty-title">No blocked time in this range.</p>
+                    <p className="saas-blocked-allempty-sub">
+                        Blocked time is for short stretches customers can't book while the person is still at work —
+                        lunches, meetings, deep cleans. Whole days away belong in Time off.
+                    </p>
+                </div>
+            ) : visibleRows === 0 ? (
+                <div className="saas-blocked-allempty">
+                    <Search size={22} />
+                    <p className="saas-blocked-allempty-title">Nothing matches this view.</p>
+                    <p className="saas-blocked-allempty-sub">Try a different type filter or search.</p>
+                </div>
+            ) : (
+                visibleGroups.map((group) =>
+                    group.key === "past" && group.rows.length === 0 ? null : (
+                        <section key={group.key} className="saas-blocked-group">
+                            <h3 className="saas-blocked-heading">{group.heading}</h3>
+                            {group.rows.length === 0 ? (
+                                <p className="saas-blocked-empty">{emptyCopy[group.key] ?? "Nothing here."}</p>
+                            ) : (
+                                <div className="saas-blocked-rows">
+                                    {group.rows.map((row) => (
+                                        <BlockedTimeRow
+                                            key={row.blockedTime.id}
+                                            row={row}
+                                            schedule={schedule}
+                                            onEdit={() => setDialog({ draft: row.blockedTime })}
+                                            onDelete={() => void remove(row.blockedTime)}
+                                        />
+                                    ))}
+                                </div>
+                            )}
+                        </section>
+                    ),
+                )
+            )}
+
+            {dialog && (
+                <BlockedTimeDialog
+                    schedule={schedule}
+                    user={user}
+                    draft={dialog.draft}
+                    onClose={() => setDialog(null)}
+                    onChanged={onChanged}
+                />
+            )}
         </div>
     );
 }
 
-function BlockedTimeList({
+function BlockedTimeRow({
+    row,
     schedule,
-    user,
     onEdit,
     onDelete,
 }: {
+    row: BlockedTimeRowView;
     schedule: AdminSchedule;
-    user: SafeAdminUser;
-    onEdit: (blockedTime: AdminBlockedTime) => void;
-    onDelete: (blockedTime: AdminBlockedTime) => void;
+    onEdit: () => void;
+    onDelete: () => void;
 }) {
-    if (schedule.blockedTimes.length === 0) {
-        return <Panel><EmptyState label="No blocked time is scheduled in this range." /></Panel>;
-    }
-
     return (
-        <Panel>
-            <div className="grid gap-2">
-                {schedule.blockedTimes.map((blockedTime) => {
-                    const canMutate = user.role === "owner" || user.role === "admin" ||
-                        (blockedTime.scope === "barber" && blockedTime.barberId === user.barberId);
-
-                    return (
-                        <div key={blockedTime.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-forest/10 bg-cream p-3 text-sm">
-                            <div>
-                                <p className="font-black text-forest">{formatBlockedScope(blockedTime.scope)}</p>
-                                <p className="text-charcoal/70">{formatLocalDateTime(blockedTime.startTime)} to {formatLocalDateTime(blockedTime.endTime)}</p>
-                                <p className="text-charcoal/60">
-                                    {blockedTime.scope === "barber" ? barberName(schedule, blockedTime.barberId ?? "") : ""}
-                                    {blockedTime.scope === "location" ? locationName(schedule, blockedTime.locationId ?? "") : ""}
-                                    {blockedTime.reason ? ` - ${blockedTime.reason}` : ""}
-                                </p>
-                            </div>
-                            {canMutate && (
-                                <div className="flex gap-1">
-                                    <IconMini title="Edit blocked time" onClick={() => onEdit(blockedTime)}><Edit3 size={14} /></IconMini>
-                                    <IconMini title="Delete blocked time" onClick={() => onDelete(blockedTime)}><Trash2 size={14} /></IconMini>
-                                </div>
-                            )}
-                        </div>
-                    );
-                })}
+        <div className="saas-blocked-row" data-scope={row.scope}>
+            <span className="saas-blocked-bar" aria-hidden="true" />
+            {row.barber ? (
+                <StaffAvatar barber={row.barber} size="md" />
+            ) : (
+                <span className="saas-blocked-scopeic" aria-hidden="true">
+                    {row.scope === "business" ? <Store size={17} /> : <MapPin size={17} />}
+                </span>
+            )}
+            <div className="saas-blocked-main">
+                <p className="saas-blocked-title">{row.title}</p>
+                <p className="saas-blocked-detail">{row.detail}</p>
             </div>
-        </Panel>
+            <span className="saas-blocked-loc">
+                {row.locationId && (
+                    <span className="saas-dot" style={{ backgroundColor: locationDotColor(schedule, row.locationId) }} />
+                )}
+                {row.locationLabel}
+            </span>
+            {row.canMutate && (
+                <div className="saas-blocked-actions">
+                    <button type="button" className="saas-iconbtn" aria-label="Edit blocked time" title="Edit blocked time" onClick={onEdit}>
+                        <Edit3 size={15} />
+                    </button>
+                    <button type="button" className="saas-iconbtn" aria-label="Delete blocked time" title="Delete blocked time" onClick={onDelete}>
+                        <Trash2 size={15} />
+                    </button>
+                </div>
+            )}
+        </div>
     );
 }
 
-function BlockedTimeForm({
+const blockedReasonPresets = ["Lunch", "Break", "Meeting", "Training"];
+
+function BlockedTimeDialog({
     schedule,
     user,
     draft,
-    onSubmit,
-    onClear,
+    initialBarberId,
+    initialDate,
+    lockToBarberScope,
+    onClose,
+    onChanged,
+    onUseTimeOff,
 }: {
     schedule: AdminSchedule;
     user: SafeAdminUser;
     draft: AdminBlockedTime | null;
-    onSubmit: (input: BlockedTimeFormInput, editingId?: string) => Promise<void>;
-    onClear: () => void;
+    initialBarberId?: string;
+    initialDate?: string;
+    lockToBarberScope?: boolean;
+    onClose: () => void;
+    onChanged: (message: string) => Promise<void>;
+    onUseTimeOff?: () => void;
 }) {
     const owner = user.role === "owner" || user.role === "admin";
-    const [scope, setScope] = useState<AdminBlockedTimeScope>(draft?.scope ?? "barber");
-    const [barberId, setBarberId] = useState(draft?.barberId ?? user.barberId ?? schedule.barbers[0]?.id ?? "");
-    const [locationId, setLocationId] = useState(draft?.locationId ?? schedule.locations[0]?.id ?? "");
-    const [startDate, setStartDate] = useState(draft ? localDateFromIso(draft.startTime) : todayLocalDate());
-    const [startTime, setStartTime] = useState(draft ? localTimeFromIso(draft.startTime) : "12:00");
-    const [endDate, setEndDate] = useState(draft ? localDateFromIso(draft.endTime) : todayLocalDate());
-    const [endTime, setEndTime] = useState(draft ? localTimeFromIso(draft.endTime) : "13:00");
-    const [allDay, setAllDay] = useState(false);
-    const [reason, setReason] = useState(draft?.reason ?? "");
+    const scopeLocked = Boolean(lockToBarberScope) || !owner;
+    const draftStartDate = draft ? localDateFromIso(draft.startTime) : null;
+    const draftEndDate = draft ? localDateFromIso(draft.endTime) : null;
+    const draftStartTime = draft ? localTimeFromIso(draft.startTime) : null;
+    const draftEndTime = draft ? localTimeFromIso(draft.endTime) : null;
+    const draftIsAllDay = Boolean(
+        draft &&
+            draftStartTime === "00:00" &&
+            draftEndTime === "00:00" &&
+            draftStartDate &&
+            draftEndDate === addDaysToLocalDate(draftStartDate, 1),
+    );
+    const draftIsMultiDay = Boolean(
+        draft && !draftIsAllDay && draftStartDate && draftEndDate && draftEndDate > draftStartDate,
+    );
 
-    async function submit(event: React.FormEvent) {
-        event.preventDefault();
-        await onSubmit({
-            scope,
-            barberId: scope === "barber" ? barberId : undefined,
-            locationId: scope === "location" || (scope === "barber" && locationId) ? locationId : undefined,
-            startDate,
-            startTime,
-            endDate,
-            endTime,
-            allDay,
-            reason,
-        }, draft?.id || undefined);
+    const [scope, setScope] = useState<AdminBlockedTimeScope>(draft?.scope ?? "barber");
+    const [barberId, setBarberId] = useState(
+        draft?.barberId ?? initialBarberId ?? user.barberId ?? schedule.barbers[0]?.id ?? "",
+    );
+    const [locationId, setLocationId] = useState(draft?.locationId ?? "");
+    const [startDate, setStartDate] = useState(draftStartDate ?? initialDate ?? todayLocalDate());
+    const [endDate, setEndDate] = useState(draftIsMultiDay && draftEndDate ? draftEndDate : "");
+    const [multiDay, setMultiDay] = useState(draftIsMultiDay);
+    const [allDay, setAllDay] = useState(draftIsAllDay);
+    const [startTime, setStartTime] = useState(draftIsAllDay ? "12:00" : (draftStartTime ?? "12:00"));
+    const [endTime, setEndTime] = useState(draftIsAllDay ? "13:00" : (draftEndTime ?? "13:00"));
+    const [reason, setReason] = useState(draft?.reason ?? "");
+    const [error, setError] = useState("");
+    const [saving, setSaving] = useState(false);
+
+    function switchScope(next: AdminBlockedTimeScope) {
+        setScope(next);
+        if (next === "location" && !locationId) {
+            setLocationId(schedule.locations[0]?.id ?? "");
+        }
+        if (next === "business") {
+            setLocationId("");
+        }
+    }
+
+    const effectiveEndDate = allDay ? startDate : multiDay && endDate ? endDate : startDate;
+    const barberName = schedule.barbers.find((barber) => barber.id === barberId)?.displayName;
+    const sentence = describeBlockedTimeDraft({
+        scope,
+        barberName,
+        locationName: locationId ? locationName(schedule, locationId) : undefined,
+        startDate,
+        endDate: effectiveEndDate,
+        startTime,
+        endTime,
+        allDay,
+        reason,
+    });
+    const validation = validateBlockedTimeDraft({
+        startDate,
+        endDate: effectiveEndDate,
+        startTime,
+        endTime,
+        allDay,
+    });
+
+    async function save() {
+        setSaving(true);
+        setError("");
+        try {
+            const payload = buildBlockedTimePayload({
+                scope,
+                barberId: scope === "barber" ? barberId : undefined,
+                locationId: scope === "location" || (scope === "barber" && locationId) ? locationId : undefined,
+                startDate,
+                startTime,
+                endDate: effectiveEndDate,
+                endTime,
+                allDay,
+                reason,
+            } satisfies BlockedTimeFormInput);
+            if (draft) {
+                await updateAdminBlockedTime(draft.id, payload);
+                await onChanged("Blocked time updated.");
+            } else {
+                await createAdminBlockedTime(payload);
+                await onChanged("Blocked time created.");
+            }
+            onClose();
+        } catch (saveError) {
+            setError(saveError instanceof Error ? saveError.message : "Blocked time could not be saved.");
+            setSaving(false);
+        }
     }
 
     return (
-        <form onSubmit={submit} className="space-y-3">
-            <FormHeading icon={<Ban size={18} />} title={draft ? "Edit blocked time" : "Blocked time"} />
-            {owner ? (
-                <Segmented value={scope} values={["barber", "location", "business"]} onChange={(value) => setScope(value as AdminBlockedTimeScope)} />
-            ) : (
-                <input type="hidden" value="barber" />
-            )}
-            {scope === "barber" && (
-                <Field label="Barber">
-                    <select className="input" value={barberId} onChange={(event) => setBarberId(event.target.value)} disabled={!owner}>
-                        {schedule.barbers.map((barber) => <option key={barber.id} value={barber.id}>{barber.displayName}</option>)}
-                    </select>
-                </Field>
-            )}
-            {(scope === "location" || scope === "barber") && (
-                <Field label={scope === "barber" ? "Location optional" : "Location"}>
-                    <select className="input" value={locationId} onChange={(event) => setLocationId(event.target.value)}>
-                        {scope === "barber" && <option value="">All assigned locations</option>}
-                        {schedule.locations.map((location) => <option key={location.id} value={location.id}>{locationName(schedule, location.id)}</option>)}
-                    </select>
-                </Field>
-            )}
-            <label className="flex items-center gap-2 text-sm font-bold text-charcoal/70">
-                <input type="checkbox" checked={allDay} onChange={(event) => setAllDay(event.target.checked)} />
-                All day
-            </label>
-            <div className="grid gap-2 sm:grid-cols-2">
-                <Field label="Start date"><input className="input" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></Field>
-                {!allDay && <Field label="Start time"><input className="input" type="time" step="900" value={startTime} onChange={(event) => setStartTime(event.target.value)} /></Field>}
-                {!allDay && <Field label="End date"><input className="input" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></Field>}
-                {!allDay && <Field label="End time"><input className="input" type="time" step="900" value={endTime} onChange={(event) => setEndTime(event.target.value)} /></Field>}
-            </div>
-            <Field label="Reason">
-                <input className="input" value={reason} onChange={(event) => setReason(event.target.value)} />
-            </Field>
-            <div className="flex flex-wrap gap-2">
-                <button className="primary-button" type="submit">{draft ? "Save blocked time" : "Create blocked time"}</button>
-                {draft && <button className="text-button" type="button" onClick={onClear}>Clear</button>}
-            </div>
-        </form>
+        <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose(); }}>
+            <DialogContent size="md" className="shifts-saas">
+                <DialogTitle>{draft ? "Edit blocked time" : "Block time"}</DialogTitle>
+                <DialogDescription>
+                    Customers can't book this stretch{scope === "barber" ? " — the barber stays at work" : ""}.
+                </DialogDescription>
+                <div className="mt-4 grid gap-4">
+                    {!scopeLocked && (
+                        <label className="saas-field">
+                            <span className="saas-field-label">Who is this for?</span>
+                            <div className="saas-seg-inline" role="group" aria-label="Who is this for?">
+                                <button type="button" aria-pressed={scope === "barber"} className={scope === "barber" ? "on" : ""} onClick={() => switchScope("barber")} disabled={saving}>One barber</button>
+                                <button type="button" aria-pressed={scope === "location"} className={scope === "location" ? "on" : ""} onClick={() => switchScope("location")} disabled={saving}>A whole location</button>
+                                <button type="button" aria-pressed={scope === "business"} className={scope === "business" ? "on" : ""} onClick={() => switchScope("business")} disabled={saving}>The whole business</button>
+                            </div>
+                        </label>
+                    )}
+                    {scope === "barber" && (
+                        <label className="saas-field">
+                            <span className="saas-field-label">Team member</span>
+                            <Select value={barberId} onChange={(event) => setBarberId(event.target.value)} disabled={saving || scopeLocked}>
+                                {schedule.barbers.map((barber) => (
+                                    <option key={barber.id} value={barber.id}>{barber.displayName}</option>
+                                ))}
+                            </Select>
+                        </label>
+                    )}
+                    {scope !== "business" && (
+                        <label className="saas-field">
+                            <span className="saas-field-label">{scope === "barber" ? "Location" : "Which location?"}</span>
+                            <Select value={locationId} onChange={(event) => setLocationId(event.target.value)} disabled={saving}>
+                                {scope === "barber" && <option value="">All assigned locations</option>}
+                                {schedule.locations.map((location) => (
+                                    <option key={location.id} value={location.id}>{locationName(schedule, location.id)}</option>
+                                ))}
+                            </Select>
+                        </label>
+                    )}
+                    <div className="saas-blocked-dialog-times">
+                        <label className="saas-field">
+                            <span className="saas-field-label">{multiDay && !allDay ? "First day" : "Day"}</span>
+                            <DateInput value={startDate} onChange={(event) => setStartDate(event.target.value)} disabled={saving} />
+                        </label>
+                        {!allDay && multiDay && (
+                            <label className="saas-field">
+                                <span className="saas-field-label">Last day</span>
+                                <DateInput value={endDate || startDate} onChange={(event) => setEndDate(event.target.value)} disabled={saving} />
+                            </label>
+                        )}
+                        {!allDay && (
+                            <>
+                                <label className="saas-field">
+                                    <span className="saas-field-label">From</span>
+                                    <TimeInput value={startTime} onChange={setStartTime} disabled={saving} />
+                                </label>
+                                <label className="saas-field">
+                                    <span className="saas-field-label">To</span>
+                                    <TimeInput value={endTime} onChange={setEndTime} disabled={saving} />
+                                </label>
+                            </>
+                        )}
+                    </div>
+                    <div className="saas-blocked-dialog-toggles">
+                        <label className="saas-checkline">
+                            <input
+                                type="checkbox"
+                                className="saas-checkbox"
+                                checked={allDay}
+                                disabled={saving}
+                                onChange={(event) => {
+                                    setAllDay(event.target.checked);
+                                    if (event.target.checked) {
+                                        setMultiDay(false);
+                                    }
+                                }}
+                            />
+                            All day
+                        </label>
+                        {!allDay && (
+                            <label className="saas-checkline">
+                                <input
+                                    type="checkbox"
+                                    className="saas-checkbox"
+                                    checked={multiDay}
+                                    disabled={saving}
+                                    onChange={(event) => {
+                                        setMultiDay(event.target.checked);
+                                        if (event.target.checked && !endDate) {
+                                            setEndDate(startDate);
+                                        }
+                                    }}
+                                />
+                                Spans more than one day
+                            </label>
+                        )}
+                    </div>
+                    <label className="saas-field">
+                        <span className="saas-field-label">Why (optional)</span>
+                        <div className="saas-blocked-presets" role="group" aria-label="Common reasons">
+                            {blockedReasonPresets.map((preset) => (
+                                <button
+                                    key={preset}
+                                    type="button"
+                                    aria-pressed={reason === preset}
+                                    className={reason === preset ? "on" : ""}
+                                    disabled={saving}
+                                    onClick={() => setReason(reason === preset ? "" : preset)}
+                                >
+                                    {preset}
+                                </button>
+                            ))}
+                        </div>
+                        <input
+                            className="saas-input"
+                            value={reason}
+                            placeholder="Lunch, meeting, deep clean…"
+                            onChange={(event) => setReason(event.target.value)}
+                            disabled={saving}
+                        />
+                    </label>
+                    <p className="saas-sentence">{sentence}</p>
+                    {validation && <p className="saas-error" role="alert">{validation}</p>}
+                    {error && <p className="saas-error" role="alert">{error}</p>}
+                    <p className="saas-hint">
+                        {scope === "barber" && allDay
+                            ? "A whole day off for one barber is usually Time off — that shows as a day off, not busy. "
+                            : "Away the whole day? "}
+                        {onUseTimeOff ? (
+                            <button type="button" className="saas-link" onClick={onUseTimeOff} disabled={saving}>
+                                Use Time off instead.
+                            </button>
+                        ) : (
+                            <a className="saas-link" href="/admin/shifts">Use Time off in Scheduled shifts.</a>
+                        )}
+                    </p>
+                    <div className="flex justify-end gap-2">
+                        <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
+                        <Button
+                            className={accentButtonClass}
+                            loading={saving}
+                            disabled={Boolean(validation)}
+                            onClick={() => void save()}
+                        >
+                            {draft ? "Save changes" : "Block this time"}
+                        </Button>
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
     );
 }
 
 function Panel({ children }: { children: React.ReactNode }) {
     return <section className="rounded-md border border-forest/10 bg-white p-4">{children}</section>;
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-    return (
-        <label className="block text-sm font-bold text-charcoal/70">
-            <span className="mb-1 block">{label}</span>
-            {children}
-        </label>
-    );
-}
-
-function DateField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-    return (
-        <label className="flex items-center gap-2 text-sm font-bold text-charcoal/70">
-            {label}
-            <input className="input h-10 w-auto min-w-36" type="date" value={value} onChange={(event) => onChange(event.target.value)} />
-        </label>
-    );
-}
-
-function Segmented({ value, values, onChange }: { value: string; values: string[]; onChange: (value: string) => void }) {
-    return (
-        <div className="flex flex-wrap gap-2">
-            {values.map((item) => (
-                <button
-                    key={item}
-                    type="button"
-                    className={value === item ? "segmented-active" : "segmented"}
-                    onClick={() => onChange(item)}
-                >
-                    {item.replace("_", " ")}
-                </button>
-            ))}
-        </div>
-    );
 }
 
 function IconMini({
@@ -2400,10 +2689,6 @@ function IconMini({
             {children}
         </button>
     );
-}
-
-function FormHeading({ icon, title }: { icon: React.ReactNode; title: string }) {
-    return <h2 className="flex items-center gap-2 text-lg font-black text-forest">{icon}{title}</h2>;
 }
 
 function InlineLoading({ label, className }: { label: string; className?: string }) {
@@ -2457,17 +2742,9 @@ function safeScheduleWindowLabel(startTime: string, endTime: string) {
     return `${startTime || "Start"} - ${endTime || "End"}`;
 }
 
-function barberName(schedule: AdminSchedule, barberId: string) {
-    return schedule.barbers.find((barber) => barber.id === barberId)?.displayName ?? "Barber";
-}
-
 function locationName(schedule: AdminSchedule, locationId: string) {
     const name = schedule.locations.find((location) => location.id === locationId)?.name ?? "Location";
     return name.replace(/^Leaside Fades\s+/i, "");
-}
-
-function formatBlockedScope(scope: AdminBlockedTimeScope) {
-    return scope === "business" ? "Business closure" : scope === "location" ? "Location closure" : "Barber blocked time";
 }
 
 function localDateFromIso(value: string) {

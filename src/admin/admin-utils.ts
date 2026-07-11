@@ -1,6 +1,7 @@
 import type {
     AdminBarberOption,
     AdminBlockedTime,
+    AdminBlockedTimeScope,
     AdminBookingFilters,
     AdminBookingStatus,
     AdminBookingSummary,
@@ -1772,6 +1773,7 @@ export interface ResolvedBarberDay {
     offReason?: string;
     hasPartialBlock?: boolean;
     partialBlockLabel?: string;
+    partialBlockWindows?: Array<{ startMinutes: number; endMinutes: number }>;
     badge?: BarberDayBadge;
     tooltip?: string;
 }
@@ -1812,11 +1814,22 @@ export function formatWeekRangeLabel(dates: string[]) {
     return `${formatLocalDateLabel(firstDate, { year: true })} – ${formatLocalDateLabel(lastDate, { year: true })}`;
 }
 
-/** "Sat Jul 11" */
+/** "Sat Jul 11". Returns "" for an empty/invalid date so a half-typed dialog
+ *  field never throws through Intl and unmounts the admin (no ErrorBoundary).
+ *  Round-trips the parsed date so overflow inputs (2026-13-99) are rejected too. */
 export function formatDayNameDate(localDate: string) {
-    const weekday = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short" }).format(
-        parseLocalDate(localDate),
-    );
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(localDate)) {
+        return "";
+    }
+    const parsed = parseLocalDate(localDate);
+    if (Number.isNaN(parsed.getTime())) {
+        return "";
+    }
+    const roundTrip = `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, "0")}-${String(parsed.getUTCDate()).padStart(2, "0")}`;
+    if (roundTrip !== localDate) {
+        return "";
+    }
+    const weekday = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short" }).format(parsed);
     return `${weekday} ${formatLocalDateLabel(localDate)}`;
 }
 
@@ -1840,6 +1853,16 @@ export function formatDateRangeLabel(startDate: string, endDate: string) {
 /** "10:00 AM–9:00 PM" — 12-hour range for humane dialog microcopy. */
 export function formatClockRange12(startTime: string, endTime: string) {
     return `${formatLocalClockTime(startTime)}–${formatLocalClockTime(endTime)}`;
+}
+
+/** "12:00–2:00 PM" when both ends share a meridiem, else "10:00 AM–7:00 PM". */
+export function formatClockRangeCompact12(startTime: string, endTime: string) {
+    const start = formatLocalClockTime(startTime);
+    const end = formatLocalClockTime(endTime);
+    if (start.slice(-2) === end.slice(-2)) {
+        return `${start.slice(0, -3)}–${end}`;
+    }
+    return `${start}–${end}`;
 }
 
 /**
@@ -1899,6 +1922,7 @@ export function resolveBarberDay(
     // lied to: note any (of any scope, engine semantics) that overlap a window
     // the barber is still working that date.
     const partialBlockRanges = new Set<string>();
+    const partialBlockWindows: Array<{ startMinutes: number; endMinutes: number }> = [];
     for (const blockedTime of schedule.blockedTimes) {
         if (blockedTimeCoversLocalDate(blockedTime, date)) {
             continue;
@@ -1914,13 +1938,17 @@ export function resolveBarberDay(
                 clockToMinutes(window.endTime) > interval.startMinutes,
         );
         if (overlapsWorking) {
-            partialBlockRanges.add(`${minutesToClock(interval.startMinutes)}–${minutesToClock(interval.endMinutes)}`);
+            const rangeKey = `${minutesToClock(interval.startMinutes)}–${minutesToClock(interval.endMinutes)}`;
+            if (!partialBlockRanges.has(rangeKey)) {
+                partialBlockWindows.push({ startMinutes: interval.startMinutes, endMinutes: interval.endMinutes });
+            }
+            partialBlockRanges.add(rangeKey);
         }
     }
-    const hasPartialBlock = partialBlockRanges.size > 0;
-    const partialBlockLabel = hasPartialBlock
-        ? `Blocked ${[...partialBlockRanges].sort().join(", ")}`
-        : undefined;
+    partialBlockWindows.sort((a, b) => a.startMinutes - b.startMinutes || a.endMinutes - b.endMinutes);
+    const hasPartialBlock = partialBlockWindows.length > 0;
+    // 12-hour label for the tooltip/menu, consistent with the grid's Busy chip.
+    const partialBlockLabel = hasPartialBlock ? partialBlockLabel12({ partialBlockWindows }) : undefined;
 
     if (windows.length > 0) {
         if (resolvedDayWindowsEqual(windows, baselineWindows)) {
@@ -1934,6 +1962,7 @@ export function resolveBarberDay(
                 baselineWindows,
                 hasPartialBlock,
                 partialBlockLabel,
+                partialBlockWindows: hasPartialBlock ? partialBlockWindows : undefined,
                 tooltip: partialBlockLabel,
             };
         }
@@ -1948,6 +1977,7 @@ export function resolveBarberDay(
             baselineWindows,
             hasPartialBlock,
             partialBlockLabel,
+            partialBlockWindows: hasPartialBlock ? partialBlockWindows : undefined,
             badge: deriveWorkingBadge(windows, baselineWindows),
             tooltip: `Changed for this day — normally ${describeBaselineWindows(schedule, baselineWindows)}.${partialBlockLabel ? ` ${partialBlockLabel}.` : ""}`,
         };
@@ -2654,4 +2684,256 @@ export function describeWeeklyScheduleDraft(
     const offText = offDays.length > 0 ? ` and is off ${formatWeekdayRangeList([...offDays])}` : "";
 
     return `${name} works ${joinWithAnd(workPhrases)}${offText}${suffix}`;
+}
+
+// ---------------------------------------------------------------------------
+// Blocked time screen (Phase E): plain-language rows, grouping, dialog copy.
+// Blocked time means "still at work, not bookable"; whole days away are Time off.
+// ---------------------------------------------------------------------------
+
+/** 12-hour label for a minutes-from-midnight instant; 1440 reads as "midnight". */
+function formatMinutesLabel12(minutes: number) {
+    if (minutes >= 24 * 60) {
+        return "midnight";
+    }
+    return formatLocalClockTime(minutesToClock(minutes));
+}
+
+/** "12:00–2:00 PM" from a minutes range, collapsing a shared meridiem. */
+function formatMinutesRangeCompact12(startMinutes: number, endMinutes: number) {
+    const end = formatMinutesLabel12(endMinutes);
+    if (end === "midnight") {
+        return `${formatLocalClockTime(minutesToClock(startMinutes))}–midnight`;
+    }
+    return formatClockRangeCompact12(minutesToClock(startMinutes), minutesToClock(endMinutes));
+}
+
+/** "Busy 12:00–2:00 PM" (+" +1" when a day carries more than one partial block). */
+export function busyChipLabel(day: Pick<ResolvedBarberDay, "partialBlockWindows">) {
+    const blockWindows = day.partialBlockWindows ?? [];
+    if (blockWindows.length === 0) {
+        return undefined;
+    }
+    const first = blockWindows[0];
+    const label = `Busy ${formatMinutesRangeCompact12(first.startMinutes, first.endMinutes)}`;
+    return blockWindows.length > 1 ? `${label} +${blockWindows.length - 1}` : label;
+}
+
+/** "Busy 12:00–1:00 PM, 6:00–7:00 PM" — every partial block, 12-hour, for tooltips/menus. */
+export function partialBlockLabel12(day: Pick<ResolvedBarberDay, "partialBlockWindows">) {
+    const blockWindows = day.partialBlockWindows ?? [];
+    if (blockWindows.length === 0) {
+        return undefined;
+    }
+    return `Busy ${blockWindows.map((window) => formatMinutesRangeCompact12(window.startMinutes, window.endMinutes)).join(", ")}`;
+}
+
+export type BlockedTimeGroupKey = "past" | "today" | "week" | "upcoming";
+
+export interface BlockedTimeRowView {
+    blockedTime: AdminBlockedTime;
+    scope: AdminBlockedTimeScope;
+    barber?: AdminBarberOption;
+    title: string;
+    detail: string;
+    locationLabel: string;
+    locationId: string | null;
+    canMutate: boolean;
+}
+
+export interface BlockedTimeGroupView {
+    key: BlockedTimeGroupKey;
+    heading: string;
+    rows: BlockedTimeRowView[];
+}
+
+function blockedTimeLocalBounds(blockedTime: Pick<AdminBlockedTime, "startTime" | "endTime">) {
+    const startDate = formatLocalDate(new Date(blockedTime.startTime));
+    const endInstant = new Date(blockedTime.endTime);
+    let endDate = formatLocalDate(endInstant);
+    let endMinutes = localClockMinutesFromUtc(blockedTime.endTime);
+    if (endMinutes === 0 && endDate > startDate) {
+        endDate = addDaysToLocalDate(endDate, -1);
+        endMinutes = 24 * 60;
+    }
+    return {
+        startDate,
+        endDate,
+        startMinutes: localClockMinutesFromUtc(blockedTime.startTime),
+        endMinutes,
+    };
+}
+
+function blockedRangeText(bounds: ReturnType<typeof blockedTimeLocalBounds>) {
+    const allDay = bounds.startDate === bounds.endDate && bounds.startMinutes === 0 && bounds.endMinutes === 24 * 60;
+    if (allDay) {
+        return `all day ${formatDayNameDate(bounds.startDate)}`;
+    }
+    if (bounds.startDate === bounds.endDate) {
+        return `${formatClockRangeCompact12(minutesToClock(bounds.startMinutes), minutesToClock(Math.min(bounds.endMinutes, 24 * 60 - 1)))} on ${formatDayNameDate(bounds.startDate)}`;
+    }
+    return `from ${formatDayNameDate(bounds.startDate)}, ${formatLocalClockTime(minutesToClock(bounds.startMinutes))} to ${formatDayNameDate(bounds.endDate)}, ${formatLocalClockTime(minutesToClock(Math.min(bounds.endMinutes, 24 * 60 - 1)))}`;
+}
+
+function blockedRowTitle(
+    schedule: Pick<AdminSchedule, "locations" | "barbers">,
+    blockedTime: AdminBlockedTime,
+    bounds: ReturnType<typeof blockedTimeLocalBounds>,
+) {
+    const rangeText = blockedRangeText(bounds);
+    if (blockedTime.scope === "barber") {
+        const name = schedule.barbers.find((barber) => barber.id === blockedTime.barberId)?.displayName ?? "This barber";
+        return `${name.split(/\s+/)[0]} is busy ${rangeText}`;
+    }
+    if (blockedTime.scope === "location") {
+        return `${scheduleLocationName(schedule, blockedTime.locationId ?? "")} takes no bookings ${rangeText}`;
+    }
+    return `The whole business takes no bookings ${rangeText}`;
+}
+
+/**
+ * Groups blocked-time rows for the Blocked time screen: Past (only when the
+ * fetched range includes finished rows), Today (anything still active today),
+ * This week (Mon-start week, matching the Team Week grid), then Upcoming.
+ */
+export function buildBlockedTimeGroups(
+    schedule: Pick<AdminSchedule, "blockedTimes" | "barbers" | "locations" | "shifts" | "shiftOverrides">,
+    user: Pick<SafeAdminUser, "role" | "barberId">,
+    today: string,
+): BlockedTimeGroupView[] {
+    const weekEnd = addDaysToLocalDate(startOfWeekLocalDate(today), 6);
+    const groups: Record<BlockedTimeGroupKey, BlockedTimeRowView[]> = {
+        past: [],
+        today: [],
+        week: [],
+        upcoming: [],
+    };
+
+    const sorted = [...schedule.blockedTimes].sort(
+        (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
+    );
+
+    for (const blockedTime of sorted) {
+        const bounds = blockedTimeLocalBounds(blockedTime);
+        const canMutate =
+            user.role === "owner" ||
+            user.role === "admin" ||
+            (blockedTime.scope === "barber" && blockedTime.barberId === user.barberId);
+
+        let detail = bounds.startDate === bounds.endDate
+            ? formatDayNameDate(bounds.startDate)
+            : `${formatDayNameDate(bounds.startDate)} – ${formatDayNameDate(bounds.endDate)}`;
+        if (blockedTime.reason?.trim()) {
+            detail += ` · ${blockedTime.reason.trim()}`;
+        }
+
+        const barber = blockedTime.scope === "barber"
+            ? schedule.barbers.find((candidate) => candidate.id === blockedTime.barberId)
+            : undefined;
+        if (barber && bounds.startDate === bounds.endDate) {
+            const resolved = resolveBarberDay(schedule, barber.id, bounds.startDate);
+            if (resolved.working && resolved.windows.length > 0) {
+                detail += ` · still working ${resolved.windows
+                    .map((window) => formatClockRangeCompact12(window.startTime, window.endTime))
+                    .join(", ")}`;
+            } else if (!resolved.working) {
+                detail += " · not working this day";
+            }
+        }
+
+        const locationLabel = blockedTime.scope === "business"
+            ? "Both locations"
+            : blockedTime.locationId
+              ? scheduleLocationName(schedule, blockedTime.locationId)
+              : "All assigned locations";
+
+        const row: BlockedTimeRowView = {
+            blockedTime,
+            scope: blockedTime.scope,
+            barber,
+            title: blockedRowTitle(schedule, blockedTime, bounds),
+            detail,
+            locationLabel,
+            locationId: blockedTime.locationId,
+            canMutate,
+        };
+
+        if (bounds.endDate < today) {
+            groups.past.push(row);
+        } else if (bounds.startDate <= today) {
+            groups.today.push(row);
+        } else if (bounds.startDate <= weekEnd) {
+            groups.week.push(row);
+        } else {
+            groups.upcoming.push(row);
+        }
+    }
+
+    const views: BlockedTimeGroupView[] = [];
+    if (groups.past.length > 0) {
+        views.push({ key: "past", heading: "Past", rows: groups.past });
+    }
+    views.push({ key: "today", heading: `Today · ${formatDayNameDate(today)}`, rows: groups.today });
+    views.push({ key: "week", heading: "This week", rows: groups.week });
+    views.push({ key: "upcoming", heading: "Upcoming", rows: groups.upcoming });
+    return views;
+}
+
+export interface BlockedTimeDraftInput {
+    scope: AdminBlockedTimeScope;
+    barberName?: string;
+    locationName?: string;
+    startDate: string;
+    endDate: string;
+    startTime: string;
+    endTime: string;
+    allDay: boolean;
+    reason: string;
+}
+
+/** Live plain-language sentence for the blocked-time dialog. */
+export function describeBlockedTimeDraft(input: BlockedTimeDraftInput) {
+    const reasonSuffix = input.reason.trim() ? ` (${input.reason.trim()})` : "";
+    let when: string;
+    if (input.allDay) {
+        when = `all day ${formatDayNameDate(input.startDate)}`;
+    } else if (input.startDate === input.endDate) {
+        when = `${formatClockRangeCompact12(input.startTime, input.endTime)} on ${formatDayNameDate(input.startDate)}`;
+    } else {
+        when = `from ${formatDayNameDate(input.startDate)}, ${formatLocalClockTime(input.startTime)} to ${formatDayNameDate(input.endDate)}, ${formatLocalClockTime(input.endTime)}`;
+    }
+
+    if (input.scope === "barber") {
+        const first = (input.barberName ?? "This barber").split(/\s+/)[0];
+        // A barber block pinned to one location only blocks them there — say so,
+        // or the sentence overstates the block and invites a double-booking.
+        if (input.locationName) {
+            return `${first} is busy ${when} at ${input.locationName}${reasonSuffix} — customers can't book ${first} there then.`;
+        }
+        return `${first} is busy ${when}${reasonSuffix} — customers can't book ${first} then.`;
+    }
+    if (input.scope === "location") {
+        return `${input.locationName ?? "This location"} takes no bookings ${when}${reasonSuffix} — no one there can take bookings then.`;
+    }
+    return `The whole business takes no bookings ${when}${reasonSuffix} — both locations.`;
+}
+
+/** Client-side sanity check for the blocked-time dialog; server stays the truth. */
+export function validateBlockedTimeDraft(input: Pick<BlockedTimeDraftInput, "startDate" | "endDate" | "startTime" | "endTime" | "allDay">) {
+    if (!input.startDate) {
+        return "Pick a day.";
+    }
+    if (input.allDay) {
+        return null;
+    }
+    if (!input.endDate) {
+        return "Pick the last day.";
+    }
+    if (input.endDate < input.startDate) {
+        return "The last day must be on or after the first day.";
+    }
+    if (input.startDate === input.endDate && input.endTime <= input.startTime) {
+        return "The end time must be after the start time.";
+    }
+    return null;
 }
