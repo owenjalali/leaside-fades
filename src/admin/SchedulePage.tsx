@@ -481,9 +481,9 @@ function TeamWeek({
                 </div>
                 <div className="saas-range">{formatWeekRangeLabel(weekDates)}</div>
                 <div className="saas-loc-seg" role="group" aria-label="Filter by location">
-                    <button className={locationFilter === "all" ? "on" : ""} onClick={() => setLocationFilter("all")}>All</button>
+                    <button className={locationFilter === "all" ? "on" : ""} aria-pressed={locationFilter === "all"} onClick={() => setLocationFilter("all")}>All</button>
                     {schedule.locations.map((location) => (
-                        <button key={location.id} className={locationFilter === location.id ? "on" : ""} onClick={() => setLocationFilter(location.id)}>
+                        <button key={location.id} className={locationFilter === location.id ? "on" : ""} aria-pressed={locationFilter === location.id} onClick={() => setLocationFilter(location.id)}>
                             <span className="saas-dot" style={{ backgroundColor: locationDotColor(schedule, location.id) }} />
                             {locationName(schedule, location.id)}
                         </button>
@@ -504,9 +504,9 @@ function TeamWeek({
                             <>
                                 <button className="saas-backdrop" aria-hidden="true" tabIndex={-1} onClick={() => setAddMenuOpen(false)} />
                                 <div className="saas-menu saas-menu-add" role="menu">
-                                    <button className="saas-menu-item" onClick={() => openFromAdd("timeoff")}><Plane size={16} /> Time off</button>
-                                    <button className="saas-menu-item" onClick={() => openFromAdd("cover")}><MapPin size={16} /> Cover a location</button>
-                                    <button className="saas-menu-item" onClick={() => openFromAdd("edit")}><Edit3 size={16} /> Edit a day</button>
+                                    <button role="menuitem" className="saas-menu-item" onClick={() => openFromAdd("timeoff")}><Plane size={16} /> Time off</button>
+                                    <button role="menuitem" className="saas-menu-item" onClick={() => openFromAdd("cover")}><MapPin size={16} /> Cover a location</button>
+                                    <button role="menuitem" className="saas-menu-item" onClick={() => openFromAdd("edit")}><Edit3 size={16} /> Edit a day</button>
                                 </div>
                             </>
                         )}
@@ -600,16 +600,17 @@ function TeamWeek({
                                     : ""}
                             </div>
                         </div>
-                        <button className="saas-menu-item" onClick={() => openFromCell("edit")}>
+                        <button role="menuitem" className="saas-menu-item" onClick={() => openFromCell("edit")}>
                             {menuDay.working ? <Edit3 size={16} /> : <Plus size={16} />} {menuDay.working ? "Edit this day" : "Add a shift"}
                         </button>
-                        <button className="saas-menu-item" onClick={() => openFromCell("timeoff")}><Plane size={16} /> Add time off</button>
-                        <button className="saas-menu-item" onClick={() => openFromCell("block")}><Ban size={16} /> Block part of this day…</button>
-                        <button className="saas-menu-item" onClick={() => openFromCell("cover")}><MapPin size={16} /> Cover a location…</button>
-                        <button className="saas-menu-item" onClick={openWeeklyFromCell}><Repeat size={16} /> Set weekly schedule…</button>
+                        <button role="menuitem" className="saas-menu-item" onClick={() => openFromCell("timeoff")}><Plane size={16} /> Add time off</button>
+                        <button role="menuitem" className="saas-menu-item" onClick={() => openFromCell("block")}><Ban size={16} /> Block part of this day…</button>
+                        <button role="menuitem" className="saas-menu-item" onClick={() => openFromCell("cover")}><MapPin size={16} /> Cover a location…</button>
+                        <button role="menuitem" className="saas-menu-item" onClick={openWeeklyFromCell}><Repeat size={16} /> Set weekly schedule…</button>
                         {(canDeleteDay || menuHasOverrides) && <div className="saas-menu-sep" />}
                         {canDeleteDay && (
                             <button
+                                role="menuitem"
                                 className="saas-menu-item saas-menu-item--danger"
                                 onClick={() => { const target = menu; setMenu(null); void deleteDayShift(target.barberId, target.date); }}
                             >
@@ -618,6 +619,7 @@ function TeamWeek({
                         )}
                         {menuHasOverrides && (
                             <button
+                                role="menuitem"
                                 className="saas-menu-item"
                                 onClick={() => { const target = menu; setMenu(null); void putBackToNormal(target.barberId, target.date); }}
                             >
@@ -762,9 +764,9 @@ function ComingUpStrip({
             {groups.length === 0 ? (
                 <p className="saas-coming-empty">Nothing scheduled beyond the standard week.</p>
             ) : (
-                <div className="saas-coming-list">
+                <div className="saas-coming-list" role="list">
                     {groups.map((group) => (
-                        <div key={`${group.barberId}-${group.startDate}-${group.kind}`} className="saas-coming-item">
+                        <div key={`${group.barberId}-${group.startDate}-${group.kind}`} className="saas-coming-item" role="listitem">
                             <span
                                 className="saas-dot"
                                 style={{ backgroundColor: group.locationId ? locationDotColor(schedule, group.locationId) : "#c9ccd4" }}
@@ -956,9 +958,9 @@ function EditDayDialog({
                     <BarberSelectField barbers={barbers} value={barberId} onChange={selectBarber} disabled={saving} />
                     <label className="saas-field">
                         <span className="saas-field-label">This day</span>
-                        <div className="saas-seg-inline" role="group">
-                            <button type="button" className={working ? "on" : ""} onClick={() => setWorking(true)} disabled={saving}>Working</button>
-                            <button type="button" className={!working ? "on" : ""} onClick={() => setWorking(false)} disabled={saving}>Off</button>
+                        <div className="saas-seg-inline" role="group" aria-label="This day">
+                            <button type="button" className={working ? "on" : ""} aria-pressed={working} onClick={() => setWorking(true)} disabled={saving}>Working</button>
+                            <button type="button" className={!working ? "on" : ""} aria-pressed={!working} onClick={() => setWorking(false)} disabled={saving}>Off</button>
                         </div>
                     </label>
                     {working && (
@@ -2344,7 +2346,7 @@ function BlockedTimeScreen({
                             {group.rows.length === 0 ? (
                                 <p className="saas-blocked-empty">{emptyCopy[group.key] ?? "Nothing here."}</p>
                             ) : (
-                                <div className="saas-blocked-rows">
+                                <div className="saas-blocked-rows" role="list">
                                     {group.rows.map((row) => (
                                         <BlockedTimeRow
                                             key={row.blockedTime.id}
@@ -2386,7 +2388,7 @@ function BlockedTimeRow({
     onDelete: () => void;
 }) {
     return (
-        <div className="saas-blocked-row" data-scope={row.scope}>
+        <div className="saas-blocked-row" data-scope={row.scope} role="listitem">
             <span className="saas-blocked-bar" aria-hidden="true" />
             {row.barber ? (
                 <StaffAvatar barber={row.barber} size="md" />

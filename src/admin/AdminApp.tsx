@@ -1520,7 +1520,7 @@ function TrackedRevenueCard({
                         <h2 className="mt-1 text-2xl font-black text-forest sm:text-3xl">Tracked revenue</h2>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-2">
-                        <div className="inline-grid grid-cols-4 overflow-hidden rounded-md border border-[#d7e0d7] bg-[#f7faf7] p-1">
+                        <div className="inline-grid grid-cols-4 overflow-hidden rounded-md border border-[#d7e0d7] bg-[#f7faf7] p-1" role="group" aria-label="Revenue period">
                             {periodOptions.map((option) => (
                                 <button
                                     key={`dashboard-period-${option}`}
@@ -1529,6 +1529,7 @@ function TrackedRevenueCard({
                                             ? "bg-forest text-white shadow-sm"
                                             : "text-charcoal/58 hover:bg-white hover:text-forest"
                                     }`}
+                                    aria-pressed={option === period}
                                     onClick={() => onChangePeriod(option)}
                                     type="button"
                                 >
@@ -1538,7 +1539,7 @@ function TrackedRevenueCard({
                         </div>
                         <div className="flex min-w-0 items-center gap-1 rounded-md border border-[#d7e0d7] bg-white p-1 shadow-sm" title={`Anchor date ${anchorDate}`}>
                             {!isAllTime && (
-                                <button className="icon-button size-8" onClick={() => onNavigatePeriod(-1)} type="button" title={`Previous ${period}`}>
+                                <button className="icon-button size-9" onClick={() => onNavigatePeriod(-1)} type="button" title={`Previous ${period}`} aria-label={`Previous ${period}`}>
                                     <ChevronLeft size={18} />
                                 </button>
                             )}
@@ -1546,7 +1547,7 @@ function TrackedRevenueCard({
                                 {periodLabel}
                             </span>
                             {!isAllTime && (
-                                <button className="icon-button size-8" onClick={() => onNavigatePeriod(1)} type="button" title={`Next ${period}`}>
+                                <button className="icon-button size-9" onClick={() => onNavigatePeriod(1)} type="button" title={`Next ${period}`} aria-label={`Next ${period}`}>
                                     <ChevronRight size={18} />
                                 </button>
                             )}
@@ -1655,9 +1656,9 @@ function UpcomingAppointmentsChartCard({
 function DashboardMetricTile({ label, value, detail }: { label: string; value: string; detail: string }) {
     return (
         <div className="min-w-0 rounded-md border border-[#e1e8e1] bg-[#fbfdfb] p-3">
-            <p className="truncate text-xs font-black uppercase tracking-[0.12em] text-charcoal/45">{label}</p>
-            <p className="mt-1 truncate text-2xl font-black text-forest sm:text-3xl">{value}</p>
-            <p className="truncate text-sm font-bold text-charcoal/52">{detail}</p>
+            <p className="truncate text-xs font-black uppercase tracking-[0.12em] text-charcoal/70">{label}</p>
+            <p className="mt-1 text-2xl font-black text-forest sm:text-3xl" title={value}>{value}</p>
+            <p className="truncate text-sm font-bold text-charcoal/60">{detail}</p>
         </div>
     );
 }
@@ -1993,7 +1994,7 @@ function NotificationHealthPanel({
                     <h2 className="text-2xl font-black text-forest">Notification health</h2>
                 </div>
                 <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.1em] ${deliveryModeTone(deliveryMode)}`}>
-                    {deliveryMode} mode
+                    {deliveryModeLabel(deliveryMode)} mode
                 </span>
             </div>
             <div className="space-y-4 p-4 sm:p-5">
@@ -2183,7 +2184,7 @@ function NotificationCenter({
                     <h2 className="text-2xl font-black text-forest">Notification Center</h2>
                 </div>
                 <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.1em] ${deliveryModeTone(deliveryMode)}`}>
-                    {deliveryMode} mode
+                    {deliveryModeLabel(deliveryMode)} mode
                 </span>
             </div>
             <div className="space-y-4 p-4 sm:p-5">
@@ -4690,6 +4691,10 @@ function deliveryModeTone(mode: AdminDashboardSnapshot["notificationDeliveryMode
     if (mode === "live") return "bg-green/20 text-forest";
     if (mode === "dev") return "bg-amber-100 text-amber-800";
     return "bg-[#eef5f1] text-charcoal/65";
+}
+
+function deliveryModeLabel(mode: AdminDashboardSnapshot["notificationDeliveryMode"]) {
+    return mode === "live" ? "Live" : "Test";
 }
 
 function reminderSchedulerTone(state: AdminDashboardSnapshot["notificationHealth"]["reminderScheduler"]["state"]) {

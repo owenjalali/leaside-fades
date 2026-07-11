@@ -292,7 +292,9 @@
     /* skin tokens */
     --saas-ink: #0f1115;
     --saas-ink-2: #5b616e;
-    --saas-ink-3: #98a0ac;
+    /* ink-3 darkened #98a0ac -> #6b7280 for WCAG AA (~4.9:1): colours "Off"
+       days, weekday/column headers, group headings, hints and empty states. */
+    --saas-ink-3: #6b7280;
     --saas-line: #e5e7eb;
     --saas-line-2: #d8dbe1;
     --saas-off: #f3f4f6;
@@ -435,6 +437,7 @@
 
   .shifts-saas .saas-loc-seg {
     display: inline-flex;
+    flex-wrap: wrap;
     gap: 2px;
     background: #eef0f4;
     border-radius: 6px;
@@ -1347,6 +1350,23 @@
     .shifts-saas .saas-blocked-actions {
       order: 4;
       margin-left: auto;
+    }
+
+    /* Comfortable >=40px touch targets for the toolbar controls on phones. */
+    .shifts-saas .saas-navbtn,
+    .shifts-saas .saas-iconbtn {
+      min-width: 40px;
+      min-height: 40px;
+    }
+
+    .shifts-saas .saas-today,
+    .shifts-saas .saas-add-btn {
+      min-height: 40px;
+    }
+
+    .shifts-saas .saas-loc-seg button {
+      padding-top: 9px;
+      padding-bottom: 9px;
     }
   }
 

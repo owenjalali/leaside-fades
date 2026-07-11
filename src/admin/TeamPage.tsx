@@ -18,6 +18,7 @@ import {
     uploadAdminBarberProfileImage,
 } from "./api";
 import { getAdminBarberPhotoUrl } from "./barber-photos";
+import { useConfirm } from "../components/ui/ConfirmDialog.tsx";
 import type {
     AdminCalendarOptions,
     AdminLocationOption,
@@ -50,6 +51,7 @@ export default function TeamPage({
     const [submitting, setSubmitting] = useState(false);
     const [deactivatingId, setDeactivatingId] = useState("");
     const [notice, setNotice] = useState<TeamNotice>(null);
+    const confirm = useConfirm();
     const [displayName, setDisplayName] = useState("");
     const [email, setEmail] = useState("");
     const [phoneE164, setPhoneE164] = useState("");
@@ -193,7 +195,13 @@ export default function TeamPage({
             return;
         }
 
-        if (!window.confirm(`Remove ${barber.displayName} from booking?`)) {
+        const confirmed = await confirm({
+            title: `Remove ${barber.displayName} from booking?`,
+            description: "They stop appearing for new customer bookings. Their past bookings and history stay intact.",
+            confirmLabel: "Remove",
+            tone: "danger",
+        });
+        if (!confirmed) {
             return;
         }
 
@@ -253,10 +261,10 @@ export default function TeamPage({
             <section className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-forest/10 bg-white p-4">
                     <div>
-                        <p className="text-sm font-black uppercase tracking-[0.14em] text-charcoal/50">Team</p>
+                        <p className="text-sm font-black uppercase tracking-[0.14em] text-charcoal/70">Team</p>
                         <h2 className="text-2xl font-black text-forest">{team.length} active barber{team.length === 1 ? "" : "s"}</h2>
                     </div>
-                    <button className="icon-button" type="button" onClick={refresh} title="Refresh team">
+                    <button className="icon-button" type="button" onClick={refresh} title="Refresh team" aria-label="Refresh team">
                         <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
                     </button>
                 </div>
@@ -296,7 +304,7 @@ export default function TeamPage({
                     <TeamField label="Email invite">
                         <input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
                     </TeamField>
-                    <TeamField label="Phone optional">
+                    <TeamField label="Phone (optional)">
                         <input className="input" value={phoneE164} onChange={(event) => setPhoneE164(event.target.value)} placeholder="+16475550123" />
                     </TeamField>
                     <LocationSelector locations={locations} value={locationIds} onChange={setLocationIds} />
@@ -467,6 +475,7 @@ function WeeklyShiftEditor({
                     className="icon-button !min-h-10 !w-10"
                     type="button"
                     title="Add weekly hours"
+                    aria-label="Add weekly hours"
                     disabled={selectedLocationIds.length === 0}
                     onClick={() => onChange([...shifts, defaultShift(selectedLocationIds[0])])}
                 >
@@ -490,6 +499,7 @@ function WeeklyShiftEditor({
                             className="icon-button !min-h-11 !w-11"
                             type="button"
                             title="Remove weekly hours"
+                            aria-label="Remove weekly hours"
                             disabled={shifts.length === 1}
                             onClick={() => onChange(shifts.filter((_, shiftIndex) => shiftIndex !== index))}
                         >
