@@ -1469,7 +1469,10 @@ function getServiceCategoryTone(categoryNames: string[]) {
 // These pure helpers mirror the override semantics in
 // src/server/availability/availability-engine.ts (what public booking sees) by
 // reusing the tested buildCalendarWorkingWindows resolver per location, so the
-// grid always shows the same truth the customer-facing engine computes.
+// grid never shows a barber as off while the engine still sells them - the
+// booking-safety direction proven by engine-parity.test.ts. The reverse can
+// legitimately differ: confirmed bookings and partial blocks leave the engine
+// with fewer bookable slots than the grid's working window shows.
 // ============================================================================
 
 export interface ResolvedDayWindow {

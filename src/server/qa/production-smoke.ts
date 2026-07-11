@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 
+import { resolveBarberDay } from "../../admin/admin-utils.ts";
+import type { AdminSchedule } from "../../admin/types.ts";
+
 const DEFAULT_BASE_URL = "https://www.leasidefades.com";
+const TIME_ZONE = "America/Toronto";
 
 interface JsonResult {
     status: number;
@@ -20,8 +24,171 @@ async function main() {
     await assertAdminRouteRequiresAuth(baseUrl);
     await assertReminderEndpointRequiresAuth(baseUrl);
     await assertReminderEndpointAuthenticatedDryRun(baseUrl);
+    await assertPublicAvailabilityIsConsistent(baseUrl);
+    await assertAvailabilityMatchesScheduleForOwner(baseUrl);
 
     console.log("Production smoke passed.");
+}
+
+function torontoLocalDate(daysFromNow: number): string {
+    const now = new Date(Date.now() + daysFromNow * 86_400_000);
+    return new Intl.DateTimeFormat("en-CA", {
+        timeZone: TIME_ZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).format(now);
+}
+
+function torontoClock(iso: string): string {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: TIME_ZONE,
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+    }).formatToParts(new Date(iso));
+    const hour = parts.find((part) => part.type === "hour")?.value ?? "00";
+    const minute = parts.find((part) => part.type === "minute")?.value ?? "00";
+    return `${hour === "24" ? "00" : hour}:${minute}`;
+}
+
+/**
+ * Non-mutating structural consistency of the PUBLIC availability API (no auth):
+ * every returned slot must belong to the requested barber+location, sit inside a
+ * location the barber is assigned to, be 15-minute aligned, ordered, and carry the
+ * requested service duration. A barber must never be offered at a location they
+ * are not assigned to.
+ */
+async function assertPublicAvailabilityIsConsistent(baseUrl: string) {
+    const catalog = await readJson(`${baseUrl}/api/booking/catalog`);
+    assertRecord(catalog.body, "catalog body");
+    const locations = catalog.body.locations as Array<{ id: string }>;
+    const barbers = catalog.body.barbers as Array<{ id: string; displayName: string; locationIds: string[] }>;
+    const categories = catalog.body.serviceCategories as Array<{ services: Array<{ id: string; durationMinutes: number }> }>;
+    const service = categories.flatMap((category) => category.services)[0];
+    assert.ok(service, "Catalog must expose at least one service.");
+
+    const dates = [torontoLocalDate(1), torontoLocalDate(5), torontoLocalDate(14)];
+    let checked = 0;
+
+    for (const barber of barbers.slice(0, 3)) {
+        for (const location of locations) {
+            for (const date of dates) {
+                const url = new URL(`${baseUrl}/api/booking/availability`);
+                url.searchParams.set("locationId", location.id);
+                url.searchParams.set("serviceIds", service.id);
+                url.searchParams.set("date", date);
+                url.searchParams.set("barberId", barber.id);
+                const response = await readJson(url.toString());
+                assert.equal(response.status, 200, failureMessage("/api/booking/availability", response));
+                assertRecord(response.body, "availability body");
+                const barberSlots = (response.body.barberSlots as Array<{ barberId: string; locationId: string; slots: Array<{ startTime: string; endTime: string; totalDurationMinutes: number }> }>) ?? [];
+
+                for (const entry of barberSlots) {
+                    assert.equal(entry.barberId, barber.id, "Availability returned a slot for a different barber than requested.");
+                    assert.equal(entry.locationId, location.id, "Availability returned a slot for a different location than requested.");
+                    assert.ok(
+                        barber.locationIds.includes(location.id),
+                        `${barber.displayName} returned slots at a location they are not assigned to (${location.id}).`,
+                    );
+                    let previousStart = "";
+                    for (const slot of entry.slots) {
+                        const start = torontoClock(slot.startTime);
+                        assert.match(start, /^\d{2}:(00|15|30|45)$/, `Slot start ${start} is not 15-minute aligned.`);
+                        assert.ok(start > previousStart, `Slots are not strictly ordered (${previousStart} then ${start}).`);
+                        previousStart = start;
+                        assert.equal(
+                            slot.totalDurationMinutes,
+                            service.durationMinutes,
+                            "Slot duration does not match the requested service duration.",
+                        );
+                    }
+                }
+                checked += 1;
+            }
+        }
+    }
+    logStep(`Public availability is internally consistent across ${checked} barber/location/date probes.`);
+}
+
+/**
+ * OPTIONAL read-only cross-check: when PRODUCTION_SMOKE_OWNER_EMAIL/PASSWORD are
+ * provided, log in as owner (read-only), pull the admin schedule, and confirm the
+ * PUBLIC availability agrees with the grid's own resolveBarberDay for the same
+ * barbers/locations/dates. Zero writes: login -> GETs -> logout.
+ */
+async function assertAvailabilityMatchesScheduleForOwner(baseUrl: string) {
+    const email = process.env.PRODUCTION_SMOKE_OWNER_EMAIL;
+    const password = process.env.PRODUCTION_SMOKE_OWNER_PASSWORD;
+    if (!email || !password) {
+        logStep("Availability-vs-schedule cross-check skipped; PRODUCTION_SMOKE_OWNER_EMAIL/PASSWORD not set.");
+        return;
+    }
+
+    const loginResponse = await fetch(`${baseUrl}/api/admin/auth/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, password }),
+    });
+    assert.equal(loginResponse.status, 200, `Owner login for the smoke cross-check failed (HTTP ${loginResponse.status}).`);
+    const cookie = loginResponse.headers
+        .getSetCookie()
+        .map((entry) => entry.split(";")[0])
+        .join("; ");
+    assert.ok(cookie, "Owner login returned no session cookie.");
+
+    try {
+        const dates = [torontoLocalDate(1), torontoLocalDate(4), torontoLocalDate(8)];
+        const scheduleResponse = await fetch(
+            `${baseUrl}/api/admin/schedule?from=${dates[0]}&to=${dates[dates.length - 1]}`,
+            { headers: { cookie } },
+        );
+        assert.equal(scheduleResponse.status, 200, `GET /api/admin/schedule failed (HTTP ${scheduleResponse.status}).`);
+        const schedule = (await scheduleResponse.json()) as AdminSchedule;
+        const catalog = await readJson(`${baseUrl}/api/booking/catalog`);
+        const service = (catalog.body as { serviceCategories: Array<{ services: Array<{ id: string }> }> }).serviceCategories
+            .flatMap((category) => category.services)[0];
+
+        let mismatches = 0;
+        for (const barber of schedule.barbers.slice(0, 4)) {
+            for (const location of schedule.locations) {
+                for (const date of dates) {
+                    const resolved = resolveBarberDay(schedule, barber.id, date);
+                    const windowsHere = resolved.windows.filter((window) => window.locationId === location.id);
+
+                    const url = new URL(`${baseUrl}/api/booking/availability`);
+                    url.searchParams.set("locationId", location.id);
+                    url.searchParams.set("serviceIds", service.id);
+                    url.searchParams.set("date", date);
+                    url.searchParams.set("barberId", barber.id);
+                    const availability = await readJson(url.toString());
+                    assertRecord(availability.body, "availability body");
+                    const slots =
+                        ((availability.body.barberSlots as Array<{ barberId: string; slots: Array<{ startTime: string }> }>) ?? [])
+                            .filter((entry) => entry.barberId === barber.id)
+                            .flatMap((entry) => entry.slots) ?? [];
+
+                    if (windowsHere.length === 0 && slots.length > 0) {
+                        mismatches += 1;
+                        console.error(`[production-smoke] MISMATCH: grid shows ${barber.displayName} not working at ${location.id} on ${date} but public has ${slots.length} slots.`);
+                        continue;
+                    }
+                    const outside = slots.filter((slot) => {
+                        const clock = torontoClock(slot.startTime);
+                        return !windowsHere.some((window) => clock >= window.startTime && (clock < window.endTime || window.endTime === "00:00"));
+                    });
+                    if (outside.length > 0) {
+                        mismatches += 1;
+                        console.error(`[production-smoke] MISMATCH: ${outside.length} public slots for ${barber.displayName} at ${location.id} on ${date} fall outside grid windows.`);
+                    }
+                }
+            }
+        }
+        assert.equal(mismatches, 0, `${mismatches} availability-vs-schedule mismatches found in production.`);
+        logStep("Public availability matches the admin schedule grid (read-only owner cross-check).");
+    } finally {
+        await fetch(`${baseUrl}/api/admin/auth/logout`, { method: "POST", headers: { cookie } });
+    }
 }
 
 async function assertPublicShellLoads(baseUrl: string) {
