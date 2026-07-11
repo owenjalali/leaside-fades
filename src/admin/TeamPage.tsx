@@ -59,7 +59,7 @@ export default function TeamPage({
     const [weeklyShifts, setWeeklyShifts] = useState<ShiftDraft[]>([]);
     const canManageTeam = user.role === "owner" || user.role === "admin";
 
-    const locations = options?.locations ?? [];
+    const locations = useMemo(() => options?.locations ?? [], [options?.locations]);
     const locationsById = useMemo(
         () => new Map(locations.map((location) => [location.id, location])),
         [locations],
@@ -67,7 +67,6 @@ export default function TeamPage({
 
     useEffect(() => {
         void refresh();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {

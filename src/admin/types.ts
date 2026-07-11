@@ -184,6 +184,12 @@ export interface AdminScheduleFilters {
     to?: string;
 }
 
+export interface AdminWeeklyScheduleBatchResult {
+    applied: number;
+    shifts: AdminShift[];
+    deactivatedShiftIds: string[];
+}
+
 export interface AdminTeamWeeklyShift {
     id?: string;
     barberId?: string;

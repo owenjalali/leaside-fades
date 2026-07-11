@@ -633,6 +633,14 @@ app.post(
 );
 
 app.post(
+  "/api/admin/schedule/weekly-batch",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminApplyWeeklyScheduleBatch(req, res, next);
+  }),
+);
+
+app.post(
   "/api/admin/schedule/shifts/:shiftId",
   asyncRoute(async (req, res, next) => {
     const adminApi = await loadAdminApi();

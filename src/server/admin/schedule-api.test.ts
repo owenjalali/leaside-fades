@@ -340,3 +340,125 @@ describe("Phase 7 admin schedule API", () => {
         await request(app).get("/api/admin/schedule").expect(401);
     });
 });
+
+describe("Admin weekly schedule batch API", () => {
+    test("unauthenticated weekly batch saves are rejected", async () => {
+        const { app } = await createTestApp();
+
+        await request(app)
+            .post("/api/admin/schedule/weekly-batch")
+            .send({ operations: [{ type: "deactivate", shiftId: "shift-1" }] })
+            .expect(401)
+            .expect({ message: "Authentication required." });
+    });
+
+    test("owner applies a weekly batch of shift operations in one request", async () => {
+        const { app, scheduleRepository } = await createTestApp();
+        scheduleRepository.shifts.push(
+            {
+                id: "shift-1",
+                barberId: barberA,
+                locationId: locationA,
+                dayOfWeek: 1,
+                startTime: "10:00",
+                endTime: "18:00",
+                effectiveFrom: null,
+                effectiveTo: null,
+                active: true,
+            },
+            {
+                id: "shift-2",
+                barberId: barberA,
+                locationId: locationA,
+                dayOfWeek: 2,
+                startTime: "10:00",
+                endTime: "18:00",
+                effectiveFrom: null,
+                effectiveTo: null,
+                active: true,
+            },
+        );
+        const agent = request.agent(app);
+
+        await agent.post("/api/admin/auth/login").send({ email: "owner@example.com", password: "owner-password" }).expect(200);
+
+        const response = await agent
+            .post("/api/admin/schedule/weekly-batch")
+            .send({
+                operations: [
+                    {
+                        type: "update",
+                        shiftId: "shift-1",
+                        payload: { barberId: barberA, locationId: locationA, dayOfWeek: 1, startTime: "09:00", endTime: "17:00" },
+                    },
+                    { type: "deactivate", shiftId: "shift-2" },
+                    {
+                        type: "create",
+                        payload: { barberId: barberA, locationId: locationA, dayOfWeek: 3, startTime: "10:00", endTime: "18:00" },
+                    },
+                ],
+            })
+            .expect(200);
+
+        expect(response.body).toMatchObject({
+            applied: 3,
+            deactivatedShiftIds: ["shift-2"],
+        });
+        expect(response.body.shifts.map((shift: { id: string }) => shift.id)).toEqual(["shift-1", "shift-3"]);
+        expect(scheduleRepository.shifts).toHaveLength(3);
+        expect(scheduleRepository.shifts.find((shift) => shift.id === "shift-1")).toMatchObject({
+            startTime: "09:00",
+            endTime: "17:00",
+        });
+        expect(scheduleRepository.shifts.find((shift) => shift.id === "shift-2")?.active).toBe(false);
+    });
+
+    test("barber users cannot apply weekly batch saves", async () => {
+        const { app } = await createTestApp();
+        const agent = request.agent(app);
+
+        await agent.post("/api/admin/auth/login").send({ email: "barber@example.com", password: "barber-password" }).expect(200);
+
+        await agent
+            .post("/api/admin/schedule/weekly-batch")
+            .send({
+                operations: [
+                    {
+                        type: "create",
+                        payload: { barberId: barberA, locationId: locationA, dayOfWeek: 1, startTime: "10:00", endTime: "18:00" },
+                    },
+                ],
+            })
+            .expect(403)
+            .expect({ message: "Owner or admin access is required." });
+    });
+
+    test("weekly batch propagates indexed conflict and validation error shapes", async () => {
+        const { app, scheduleRepository } = await createTestApp();
+        scheduleRepository.hasOverlappingShift = async () => true;
+        const agent = request.agent(app);
+
+        await agent.post("/api/admin/auth/login").send({ email: "owner@example.com", password: "owner-password" }).expect(200);
+
+        await agent
+            .post("/api/admin/schedule/weekly-batch")
+            .send({
+                operations: [
+                    {
+                        type: "create",
+                        payload: { barberId: barberA, locationId: locationA, dayOfWeek: 1, startTime: "10:00", endTime: "18:00" },
+                    },
+                ],
+            })
+            .expect(409)
+            .expect({ message: "Operation 1 of 1: This barber already has an overlapping active shift." });
+
+        await agent
+            .post("/api/admin/schedule/weekly-batch")
+            .send({ operations: [] })
+            .expect(400)
+            .expect({ message: "At least one weekly schedule operation is required." });
+
+        expect(scheduleRepository.shifts).toHaveLength(0);
+    });
+});

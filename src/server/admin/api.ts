@@ -41,6 +41,7 @@ import { createDrizzleAdminBookingsRepository } from "./repository.ts";
 import { createDrizzleAdminScheduleRepository } from "./schedule-repository.ts";
 import {
     AdminScheduleRequestError,
+    applyWeeklyScheduleBatch,
     createAdminBlockedTime,
     createAdminShift,
     createAdminShiftOverride,
@@ -290,6 +291,13 @@ export function registerAdminApiRoutes(app: ExpressLikeApp, dependencies: AdminA
         "/api/admin/schedule/shifts/:shiftId/deactivate",
         asyncRoute((request, response) =>
             handleAdminDeactivateShift(request, response, undefined, dependencies),
+        ),
+    );
+
+    app.post(
+        "/api/admin/schedule/weekly-batch",
+        asyncRoute((request, response) =>
+            handleAdminApplyWeeklyScheduleBatch(request, response, undefined, dependencies),
         ),
     );
 
@@ -870,6 +878,33 @@ export async function handleAdminDeactivateShift(
 
         response.set("Cache-Control", "no-store");
         response.status(200).json({ shift });
+    } catch (error) {
+        sendAdminApiError(error, response, next);
+    }
+}
+
+// Request/response are typed structurally (not `any`) to keep the lint-warning baseline flat.
+export async function handleAdminApplyWeeklyScheduleBatch(
+    request: { body?: { operations?: unknown } },
+    response: {
+        set: (name: string, value: string) => void;
+        status: (code: number) => { json: (body: unknown) => void };
+    },
+    next?: unknown,
+    dependencies: AdminApiDependencies = {},
+) {
+    try {
+        assertAdminMutationOrigin(request, dependencies);
+        const session = await requireAdminSession(request, response, dependencies);
+        const result = await applyWeeklyScheduleBatch(
+            session.user,
+            request.body?.operations,
+            dependencies.scheduleRepository ?? createDrizzleAdminScheduleRepository(),
+            { now: dependencies.now?.() ?? new Date() },
+        );
+
+        response.set("Cache-Control", "no-store");
+        response.status(200).json(result);
     } catch (error) {
         sendAdminApiError(error, response, next);
     }

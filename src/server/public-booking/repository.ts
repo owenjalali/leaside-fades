@@ -349,6 +349,13 @@ class DrizzleBookingRepository implements BookingRepository, AvailabilityLookupR
                               inArray(shiftOverrides.barberId, barberIds),
                               eq(shiftOverrides.overrideDate, localDate),
                           ),
+                      )
+                      // Deterministic row order so availability output never
+                      // depends on physical row order in the table.
+                      .orderBy(
+                          asc(shiftOverrides.overrideDate),
+                          asc(shiftOverrides.overrideType),
+                          asc(shiftOverrides.id),
                       );
         const loadBookingRows = () =>
             barberIds.length === 0

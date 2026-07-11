@@ -77,6 +77,17 @@ export interface AdminDayShiftReplacement {
     shiftOverrides: AdminShiftOverrideRecord[];
 }
 
+export type AdminWeeklyScheduleBatchOperation =
+    | { type: "create"; payload: Record<string, unknown> }
+    | { type: "update"; shiftId: string; payload: Record<string, unknown> }
+    | { type: "deactivate"; shiftId: string };
+
+export interface AdminWeeklyScheduleBatchResult {
+    applied: number;
+    shifts: AdminShiftRecord[];
+    deactivatedShiftIds: string[];
+}
+
 export interface AdminScheduleRepository {
     listSchedule(scope: { barberId?: string; from?: string; to?: string }): Promise<AdminScheduleData>;
     findActiveBarber(barberId: string): Promise<AdminScheduleBarberOption | null>;
@@ -110,6 +121,7 @@ export interface AdminScheduleRepository {
         input: Omit<AdminBlockedTimeRecord, "id">,
     ): Promise<AdminBlockedTimeRecord | null>;
     deleteBlockedTime(blockedTimeId: string): Promise<boolean>;
+    withTransaction?<T>(callback: (transaction: AdminScheduleRepository) => Promise<T>): Promise<T>;
 }
 
 export class AdminScheduleRequestError extends Error {
@@ -125,6 +137,8 @@ export class AdminScheduleRequestError extends Error {
 const DEFAULT_TIME_ZONE = "America/Toronto";
 const VALID_OVERRIDE_TYPES = new Set<AdminShiftOverrideType>(["add", "remove", "not_working"]);
 const VALID_BLOCKED_SCOPES = new Set<AdminBlockedTimeScope>(["barber", "location", "business"]);
+
+export const WEEKLY_SCHEDULE_BATCH_MAX_OPERATIONS = 100;
 
 export async function listAdminSchedule(
     user: SafeAdminUser,
@@ -192,6 +206,24 @@ export async function deactivateAdminShift(
     }
 
     return deactivated;
+}
+
+export async function applyWeeklyScheduleBatch(
+    user: SafeAdminUser,
+    operations: unknown,
+    repository: AdminScheduleRepository,
+    options: { now?: Date } = {},
+): Promise<AdminWeeklyScheduleBatchResult> {
+    assertOwnerOrAdmin(user);
+    const batchOperations = normalizeWeeklyScheduleBatchOperations(operations);
+    const applyOperations = (transaction: AdminScheduleRepository) =>
+        applyWeeklyScheduleBatchOperations(user, batchOperations, transaction, options);
+
+    if (repository.withTransaction) {
+        return repository.withTransaction(applyOperations);
+    }
+
+    return applyOperations(repository);
 }
 
 export async function createAdminShiftOverride(
@@ -427,6 +459,110 @@ async function normalizeShiftPayload(
         effectiveFrom: effectiveFrom ?? null,
         effectiveTo: effectiveTo ?? null,
     };
+}
+
+async function applyWeeklyScheduleBatchOperations(
+    user: SafeAdminUser,
+    operations: AdminWeeklyScheduleBatchOperation[],
+    repository: AdminScheduleRepository,
+    options: { now?: Date },
+): Promise<AdminWeeklyScheduleBatchResult> {
+    const shifts: AdminShiftRecord[] = [];
+    const deactivatedShiftIds: string[] = [];
+
+    for (const [index, operation] of operations.entries()) {
+        try {
+            if (operation.type === "create") {
+                shifts.push(await createAdminShift(user, operation.payload, repository, options));
+            } else if (operation.type === "update") {
+                shifts.push(await updateAdminShift(user, operation.shiftId, operation.payload, repository, options));
+            } else {
+                deactivatedShiftIds.push((await deactivateAdminShift(user, operation.shiftId, repository, options)).id);
+            }
+        } catch (error) {
+            throw describeWeeklyScheduleBatchOperationError(error, index, operations.length);
+        }
+    }
+
+    return { applied: operations.length, shifts, deactivatedShiftIds };
+}
+
+function normalizeWeeklyScheduleBatchOperations(value: unknown): AdminWeeklyScheduleBatchOperation[] {
+    if (!Array.isArray(value) || value.length === 0) {
+        throw new AdminScheduleRequestError(400, "At least one weekly schedule operation is required.");
+    }
+
+    if (value.length > WEEKLY_SCHEDULE_BATCH_MAX_OPERATIONS) {
+        throw new AdminScheduleRequestError(
+            400,
+            `Weekly schedule saves support at most ${WEEKLY_SCHEDULE_BATCH_MAX_OPERATIONS} operations.`,
+        );
+    }
+
+    return value.map((item, index) => {
+        try {
+            return normalizeWeeklyScheduleBatchOperation(item);
+        } catch (error) {
+            throw describeWeeklyScheduleBatchOperationError(error, index, value.length);
+        }
+    });
+}
+
+function normalizeWeeklyScheduleBatchOperation(value: unknown): AdminWeeklyScheduleBatchOperation {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new AdminScheduleRequestError(400, "A valid weekly schedule operation is required.");
+    }
+
+    const operation = value as Record<string, unknown>;
+
+    if (operation.type === "create") {
+        return { type: "create", payload: asShiftOperationPayload(operation.payload) };
+    }
+
+    if (operation.type === "update") {
+        return {
+            type: "update",
+            shiftId: asNonEmptyString(operation.shiftId, "Shift is required."),
+            payload: asShiftOperationPayload(operation.payload),
+        };
+    }
+
+    if (operation.type === "deactivate") {
+        return {
+            type: "deactivate",
+            shiftId: asNonEmptyString(operation.shiftId, "Shift is required."),
+        };
+    }
+
+    throw new AdminScheduleRequestError(400, "A valid weekly schedule operation type is required.");
+}
+
+function asShiftOperationPayload(value: unknown) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new AdminScheduleRequestError(400, "A valid shift payload is required.");
+    }
+
+    return value as Record<string, unknown>;
+}
+
+function describeWeeklyScheduleBatchOperationError(error: unknown, index: number, total: number): Error {
+    const prefix = `Operation ${index + 1} of ${total}:`;
+
+    if (error instanceof AdminScheduleRequestError) {
+        // Never surface a per-op 404 from this endpoint: HTTP 404 must mean
+        // "route not found" so the client's endpoint-missing fallback can't
+        // mistake a stale/missing shift row for an old server and re-apply the
+        // batch non-atomically. A vanished row is a concurrency conflict → 409.
+        const status = error.status === 404 ? 409 : error.status;
+        return new AdminScheduleRequestError(status, `${prefix} ${error.message}`);
+    }
+
+    if (error instanceof Error) {
+        error.message = `${prefix} ${error.message}`;
+        return error;
+    }
+
+    return new Error(`${prefix} ${String(error)}`);
 }
 
 async function normalizeShiftOverridePayload(

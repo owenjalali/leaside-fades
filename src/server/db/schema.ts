@@ -528,7 +528,7 @@ export const locationsRelations = relations(locations, ({ many }) => ({
     blockedTimes: many(blockedTimes),
 }));
 
-export const barbersRelations = relations(barbers, ({ many, one }) => ({
+export const barbersRelations = relations(barbers, ({ many }) => ({
     barberLocations: many(barberLocations),
     barberServices: many(barberServices),
     shifts: many(shifts),

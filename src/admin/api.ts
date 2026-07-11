@@ -1,4 +1,4 @@
-import { buildAdminBookingQuery, buildAdminScheduleQuery } from "./admin-utils";
+import { buildAdminBookingQuery, buildAdminScheduleQuery, type WeeklyScheduleSaveOperation } from "./admin-utils";
 import type {
     AdminAvailability,
     AdminBookingDetail,
@@ -15,6 +15,7 @@ import type {
     AdminTeamBarber,
     AdminTeamBarberCreatePayload,
     AdminTeamProfileImageUpload,
+    AdminWeeklyScheduleBatchResult,
     SafeAdminUser,
 } from "./types";
 
@@ -253,6 +254,13 @@ export function deactivateAdminShift(shiftId: string) {
         `/api/admin/schedule/shifts/${shiftId}/deactivate`,
         { method: "POST" },
     );
+}
+
+export function applyWeeklyScheduleBatch(operations: WeeklyScheduleSaveOperation[]) {
+    return requestJson<AdminWeeklyScheduleBatchResult>("/api/admin/schedule/weekly-batch", {
+        method: "POST",
+        body: JSON.stringify({ operations }),
+    });
 }
 
 export function createAdminShiftOverride(input: Record<string, unknown>) {

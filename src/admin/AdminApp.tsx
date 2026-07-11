@@ -2849,9 +2849,11 @@ function BookingDetailBody({
     const [showEdit, setShowEdit] = useState(false);
     const [showReschedule, setShowReschedule] = useState(false);
     const confirm = useConfirm();
+    // Captured once per drawer open — render must stay pure (react-hooks/purity).
+    const [openedAt] = useState(() => Date.now());
     const canMutate = booking.status === "confirmed";
-    const canNoShow = canMutate && new Date(booking.startTime).getTime() <= Date.now();
-    const canComplete = canMutate && new Date(booking.startTime).getTime() <= Date.now();
+    const canNoShow = canMutate && new Date(booking.startTime).getTime() <= openedAt;
+    const canComplete = canMutate && new Date(booking.startTime).getTime() <= openedAt;
     const bookingBarber = options?.barbers.find((barber) => barber.id === booking.barberId);
 
     async function refreshDetail() {

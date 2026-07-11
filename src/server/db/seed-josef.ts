@@ -165,7 +165,6 @@ async function seedJosef() {
                 ),
             );
 
-        // eslint-disable-next-line no-console
         console.log(
             `Josef launch seed complete: ${assignmentCount?.count ?? 0} Eglinton assignment, ${activeServices.length} services, ${keptShiftIds.length} active shifts.`,
         );
@@ -192,7 +191,6 @@ async function seedJosef() {
 
 if (process.argv[1]?.endsWith("seed-josef.ts")) {
     seedJosef().catch((error) => {
-        // eslint-disable-next-line no-console
         console.error(error);
         process.exit(1);
     });

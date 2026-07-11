@@ -251,14 +251,18 @@ function applyShiftOverrides(
     locationId: string,
     timeZone: string,
 ) {
+    // A "not working" override is absolute for the scope it gates. The call
+    // site has already filtered overrides to this barber/date and to rows
+    // whose locationId is null or matches the requested location, so any
+    // not_working override present here wipes the day: no add/remove row may
+    // reintroduce availability, regardless of database row order.
+    if (overrides.some((override) => override.overrideType === "not_working")) {
+        return [];
+    }
+
     let windows = initialWindows;
 
     for (const override of overrides) {
-        if (override.overrideType === "not_working") {
-            windows = [];
-            continue;
-        }
-
         if (!override.startTime || !override.endTime) {
             continue;
         }

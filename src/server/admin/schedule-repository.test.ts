@@ -1,9 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 import {
+    createDrizzleAdminScheduleRepository,
     formatScheduleRows,
     scheduleEffectiveRangesOverlap,
 } from "./schedule-repository.ts";
+import type { AdminScheduleRepository } from "./schedule-service.ts";
 
 const barberId = "11111111-1111-1111-1111-111111111111";
 const locationId = "22222222-2222-2222-2222-222222222222";
@@ -72,5 +74,56 @@ describe("Phase 7 admin schedule repository mapping", () => {
         expect(scheduleEffectiveRangesOverlap(null, null, "2026-05-01", "2026-05-31")).toBe(true);
         expect(scheduleEffectiveRangesOverlap("2026-05-01", "2026-05-31", "2026-06-01", "2026-06-30")).toBe(false);
         expect(scheduleEffectiveRangesOverlap("2026-05-01", "2026-05-31", "2026-05-31", "2026-06-30")).toBe(true);
+    });
+});
+
+describe("Admin schedule repository transactions", () => {
+    test("withTransaction wraps a transaction-scoped repository when the database supports transactions", async () => {
+        const transactionExecutors: unknown[] = [];
+        const database = {
+            transaction: async <T>(callback: (tx: Record<string, unknown>) => Promise<T>) => {
+                const executor = { transactional: true };
+                transactionExecutors.push(executor);
+                return callback(executor);
+            },
+        };
+        const repository = createDrizzleAdminScheduleRepository(database);
+        const seenRepositories: AdminScheduleRepository[] = [];
+
+        const result = await repository.withTransaction?.(async (transaction) => {
+            seenRepositories.push(transaction);
+            return "committed";
+        });
+
+        expect(result).toBe("committed");
+        expect(transactionExecutors).toHaveLength(1);
+        expect(seenRepositories[0]).not.toBe(repository);
+        expect(seenRepositories[0]?.withTransaction).toBeDefined();
+    });
+
+    test("withTransaction falls back to the same repository when the database has no transaction support", async () => {
+        const repository = createDrizzleAdminScheduleRepository({});
+        const seenRepositories: AdminScheduleRepository[] = [];
+
+        const result = await repository.withTransaction?.(async (transaction) => {
+            seenRepositories.push(transaction);
+            return 7;
+        });
+
+        expect(result).toBe(7);
+        expect(seenRepositories[0]).toBe(repository);
+    });
+
+    test("withTransaction rethrows callback failures so the transaction can roll back", async () => {
+        const database = {
+            transaction: async <T>(callback: (tx: Record<string, unknown>) => Promise<T>) => callback({}),
+        };
+        const repository = createDrizzleAdminScheduleRepository(database);
+
+        await expect(
+            repository.withTransaction?.(async () => {
+                throw new Error("Rollback me");
+            }),
+        ).rejects.toThrow("Rollback me");
     });
 });

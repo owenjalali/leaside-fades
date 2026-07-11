@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import type { SafeAdminUser } from "../auth/index.ts";
 import {
     AdminScheduleRequestError,
+    applyWeeklyScheduleBatch,
     createAdminBlockedTime,
     createAdminShift,
     createAdminShiftOverride,
@@ -14,6 +15,7 @@ import {
     updateAdminBlockedTime,
     updateAdminShift,
     updateAdminShiftOverride,
+    WEEKLY_SCHEDULE_BATCH_MAX_OPERATIONS,
     type AdminBlockedTimeRecord,
     type AdminScheduleRepository,
     type AdminShiftOverrideRecord,
@@ -196,6 +198,28 @@ class InMemoryScheduleRepository implements AdminScheduleRepository {
         const before = this.blockedTimes.length;
         this.blockedTimes = this.blockedTimes.filter((blockedTime) => blockedTime.id !== blockedTimeId);
         return this.blockedTimes.length < before;
+    }
+}
+
+class TransactionalInMemoryScheduleRepository extends InMemoryScheduleRepository {
+    transactionCount = 0;
+
+    async withTransaction<T>(callback: (transaction: AdminScheduleRepository) => Promise<T>): Promise<T> {
+        this.transactionCount += 1;
+        const snapshot = {
+            shifts: this.shifts.map((shift) => ({ ...shift })),
+            shiftOverrides: this.shiftOverrides.map((override) => ({ ...override })),
+            blockedTimes: this.blockedTimes.map((blockedTime) => ({ ...blockedTime })),
+        };
+
+        try {
+            return await callback(this);
+        } catch (error) {
+            this.shifts = snapshot.shifts;
+            this.shiftOverrides = snapshot.shiftOverrides;
+            this.blockedTimes = snapshot.blockedTimes;
+            throw error;
+        }
     }
 }
 
@@ -660,5 +684,231 @@ describe("Phase 7 admin schedule service", () => {
                 endTime: "19:00",
             }),
         ]);
+    });
+});
+
+describe("Admin weekly schedule batch service", () => {
+    test("owner applies creates, updates, and deactivates in a single transaction", async () => {
+        const repository = new TransactionalInMemoryScheduleRepository();
+        const monday = await createAdminShift(
+            owner,
+            { barberId: "barber-a", locationId: locationA, dayOfWeek: 1, startTime: "10:00", endTime: "18:00" },
+            repository,
+            { now },
+        );
+        const tuesday = await createAdminShift(
+            owner,
+            { barberId: "barber-a", locationId: locationA, dayOfWeek: 2, startTime: "10:00", endTime: "18:00" },
+            repository,
+            { now },
+        );
+
+        const result = await applyWeeklyScheduleBatch(
+            owner,
+            [
+                {
+                    type: "update",
+                    shiftId: monday.id,
+                    payload: { barberId: "barber-a", locationId: locationA, dayOfWeek: 1, startTime: "09:00", endTime: "17:00" },
+                },
+                { type: "deactivate", shiftId: tuesday.id },
+                {
+                    type: "create",
+                    payload: { barberId: "barber-a", locationId: locationB, dayOfWeek: 3, startTime: "11:00", endTime: "19:00" },
+                },
+            ],
+            repository,
+            { now },
+        );
+
+        expect(result.applied).toBe(3);
+        expect(result.shifts).toEqual([
+            expect.objectContaining({ id: monday.id, startTime: "09:00", endTime: "17:00", active: true }),
+            expect.objectContaining({ dayOfWeek: 3, locationId: locationB, active: true }),
+        ]);
+        expect(result.deactivatedShiftIds).toEqual([tuesday.id]);
+        expect(repository.transactionCount).toBe(1);
+        expect(repository.shifts).toHaveLength(3);
+        expect(repository.shifts.find((shift) => shift.id === tuesday.id)?.active).toBe(false);
+    });
+
+    test("a failing middle operation rolls back the whole batch with an indexed conflict error", async () => {
+        const repository = new TransactionalInMemoryScheduleRepository();
+        const existing = await createAdminShift(
+            owner,
+            { barberId: "barber-a", locationId: locationA, dayOfWeek: 1, startTime: "10:00", endTime: "18:00" },
+            repository,
+            { now },
+        );
+
+        await expect(
+            applyWeeklyScheduleBatch(
+                owner,
+                [
+                    {
+                        type: "create",
+                        payload: { barberId: "barber-a", locationId: locationA, dayOfWeek: 2, startTime: "10:00", endTime: "18:00" },
+                    },
+                    {
+                        type: "create",
+                        payload: { barberId: "barber-a", locationId: locationB, dayOfWeek: 1, startTime: "17:00", endTime: "19:00" },
+                    },
+                    { type: "deactivate", shiftId: existing.id },
+                ],
+                repository,
+                { now },
+            ),
+        ).rejects.toMatchObject({
+            name: "AdminScheduleRequestError",
+            status: 409,
+            message: "Operation 2 of 3: This barber already has an overlapping active shift.",
+        });
+
+        expect(repository.transactionCount).toBe(1);
+        expect(repository.shifts).toEqual([existing]);
+        expect(repository.shifts[0].active).toBe(true);
+    });
+
+    test("a missing shift row surfaces as 409, never 404 (protects the client endpoint-missing fallback)", async () => {
+        const repository = new TransactionalInMemoryScheduleRepository();
+
+        await expect(
+            applyWeeklyScheduleBatch(
+                owner,
+                [
+                    { type: "update", shiftId: "does-not-exist", payload: { barberId: "barber-a", locationId: locationA, dayOfWeek: 1, startTime: "10:00", endTime: "18:00" } },
+                ],
+                repository,
+                { now },
+            ),
+        ).rejects.toMatchObject({
+            name: "AdminScheduleRequestError",
+            status: 409,
+        });
+        expect(repository.transactionCount).toBe(1);
+    });
+
+    test("weekly batch saves stay owner/admin only", async () => {
+        const repository = new TransactionalInMemoryScheduleRepository();
+
+        await expect(
+            applyWeeklyScheduleBatch(
+                barberUser,
+                [
+                    {
+                        type: "create",
+                        payload: { barberId: "barber-a", locationId: locationA, dayOfWeek: 1, startTime: "10:00", endTime: "18:00" },
+                    },
+                ],
+                repository,
+                { now },
+            ),
+        ).rejects.toMatchObject({ status: 403, message: "Owner or admin access is required." });
+        expect(repository.shifts).toHaveLength(0);
+    });
+
+    test("empty, non-array, and oversized batches are rejected before any transaction", async () => {
+        const repository = new TransactionalInMemoryScheduleRepository();
+
+        await expect(applyWeeklyScheduleBatch(owner, [], repository, { now })).rejects.toMatchObject({
+            status: 400,
+            message: "At least one weekly schedule operation is required.",
+        });
+        await expect(applyWeeklyScheduleBatch(owner, undefined, repository, { now })).rejects.toMatchObject({
+            status: 400,
+        });
+        await expect(
+            applyWeeklyScheduleBatch(
+                owner,
+                Array.from({ length: WEEKLY_SCHEDULE_BATCH_MAX_OPERATIONS + 1 }, () => ({
+                    type: "deactivate",
+                    shiftId: "shift-1",
+                })),
+                repository,
+                { now },
+            ),
+        ).rejects.toMatchObject({
+            status: 400,
+            message: `Weekly schedule saves support at most ${WEEKLY_SCHEDULE_BATCH_MAX_OPERATIONS} operations.`,
+        });
+        expect(repository.transactionCount).toBe(0);
+    });
+
+    test("malformed operations are rejected with their index before any writes", async () => {
+        const repository = new TransactionalInMemoryScheduleRepository();
+
+        await expect(
+            applyWeeklyScheduleBatch(
+                owner,
+                [
+                    {
+                        type: "create",
+                        payload: { barberId: "barber-a", locationId: locationA, dayOfWeek: 1, startTime: "10:00", endTime: "18:00" },
+                    },
+                    { type: "update", payload: { barberId: "barber-a" } },
+                ],
+                repository,
+                { now },
+            ),
+        ).rejects.toMatchObject({ status: 400, message: "Operation 2 of 2: Shift is required." });
+
+        await expect(
+            applyWeeklyScheduleBatch(owner, [{ type: "replace" }], repository, { now }),
+        ).rejects.toMatchObject({ status: 400, message: "Operation 1 of 1: A valid weekly schedule operation type is required." });
+
+        expect(repository.transactionCount).toBe(0);
+        expect(repository.shifts).toHaveLength(0);
+    });
+
+    test("a mid-batch payload validation failure rolls back already-applied operations", async () => {
+        const repository = new TransactionalInMemoryScheduleRepository();
+
+        await expect(
+            applyWeeklyScheduleBatch(
+                owner,
+                [
+                    {
+                        type: "create",
+                        payload: { barberId: "barber-a", locationId: locationA, dayOfWeek: 1, startTime: "10:00", endTime: "18:00" },
+                    },
+                    {
+                        type: "create",
+                        payload: { barberId: "barber-a", locationId: locationA, dayOfWeek: 2, startTime: "18:00", endTime: "10:00" },
+                    },
+                ],
+                repository,
+                { now },
+            ),
+        ).rejects.toMatchObject({
+            status: 400,
+            message: "Operation 2 of 2: Shift start time must be before end time.",
+        });
+
+        expect(repository.transactionCount).toBe(1);
+        expect(repository.shifts).toHaveLength(0);
+    });
+
+    test("batches apply sequentially when the repository has no transaction support", async () => {
+        const repository = new InMemoryScheduleRepository();
+
+        const result = await applyWeeklyScheduleBatch(
+            owner,
+            [
+                {
+                    type: "create",
+                    payload: { barberId: "barber-a", locationId: locationA, dayOfWeek: 1, startTime: "10:00", endTime: "18:00" },
+                },
+                {
+                    type: "create",
+                    payload: { barberId: "barber-a", locationId: locationB, dayOfWeek: 2, startTime: "10:00", endTime: "18:00" },
+                },
+            ],
+            repository,
+            { now },
+        );
+
+        expect(result.applied).toBe(2);
+        expect(result.deactivatedShiftIds).toEqual([]);
+        expect(repository.shifts).toHaveLength(2);
     });
 });

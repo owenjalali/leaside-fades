@@ -86,7 +86,6 @@ export async function seedDevOwner(env: Record<string, string | undefined> = pro
                 },
             });
 
-        // eslint-disable-next-line no-console
         console.log(`Seeded local/dev-only owner login for ${owner.email}.`);
     } finally {
         await pool.end();
@@ -95,7 +94,6 @@ export async function seedDevOwner(env: Record<string, string | undefined> = pro
 
 if (process.argv[1]?.endsWith("seed-dev-owner.ts")) {
     seedDevOwner().catch((error) => {
-        // eslint-disable-next-line no-console
         console.error(error);
         process.exit(1);
     });

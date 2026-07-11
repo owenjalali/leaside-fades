@@ -31,6 +31,8 @@ import { Select } from "../components/ui/Select.tsx";
 import { TimeInput } from "../components/ui/TimeInput.tsx";
 import { useToast } from "../components/ui/toast.tsx";
 import {
+    AdminApiError,
+    applyWeeklyScheduleBatch,
     createAdminBlockedTime,
     createAdminShift,
     createAdminShiftOverride,
@@ -106,6 +108,17 @@ const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const weeklyDisplayOrder = [1, 2, 3, 4, 5, 6, 0];
 
 async function runScheduleOperations(operations: WeeklyScheduleSaveOperation[]) {
+    // Prefer the transactional batch endpoint so a mid-sequence failure can't
+    // strand a half-applied weekly schedule. Fall back to per-row ops only if
+    // the endpoint isn't available (older server / 404).
+    try {
+        await applyWeeklyScheduleBatch(operations);
+        return;
+    } catch (error) {
+        if (!isMissingEndpointError(error)) {
+            throw error;
+        }
+    }
     for (const operation of operations) {
         if (operation.type === "deactivate") {
             await deactivateAdminShift(operation.shiftId);
@@ -115,6 +128,10 @@ async function runScheduleOperations(operations: WeeklyScheduleSaveOperation[]) 
             await createAdminShift(operation.payload);
         }
     }
+}
+
+function isMissingEndpointError(error: unknown) {
+    return error instanceof AdminApiError && error.status === 404;
 }
 
 const accentButtonClass = "!bg-[#6950f3] !text-white hover:!bg-[#5840d8]";
@@ -1553,6 +1570,7 @@ function WeeklyScheduleBuilder({
             document.body.style.userSelect = "";
         };
 
+        // eslint-disable-next-line react-hooks/immutability -- pointer-drag ergonomics: suppress text selection for the duration of the resize; restored on pointerup below.
         document.body.style.userSelect = "none";
         window.addEventListener("pointermove", handlePointerMove);
         window.addEventListener("pointerup", handlePointerUp);

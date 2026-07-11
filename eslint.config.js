@@ -32,8 +32,10 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': 'warn',
       'react-hooks/set-state-in-effect': 'warn',
-      'react-hooks/purity': 'warn',
-      'react-hooks/immutability': 'warn',
+      // Restored to the preset "error" severity (Phase G): violations are fixed;
+      // the one justified DOM mutation carries a documented inline disable.
+      'react-hooks/purity': 'error',
+      'react-hooks/immutability': 'error',
     },
   },
 );

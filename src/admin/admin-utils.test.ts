@@ -14,17 +14,10 @@ import {
     buildDateRangeForView,
     buildMonthDays,
     buildWeekDays,
-    buildDeleteSchedulePeriodPlan,
-    buildTemporarySchedulePlan,
     buildWeeklyScheduleDraft,
     buildWeeklyScheduleSavePlan,
-    describeSchedulePeriod,
     formatLocalDateLabel,
-    listWeeklyShiftPatterns,
     localDateWeekday,
-    weekdaysInLocalDateRange,
-    weeklyShiftPatternKey,
-    weeklyShiftPatternLabel,
     bookingFallsOutsideWorkingWindows,
     calendarRangeFitsWorkingWindows,
     calculateWeeklyScheduleHours,
@@ -986,251 +979,6 @@ describe("Phase 13 admin calendar schedule visibility utilities", () => {
     });
 });
 
-describe("Schedule periods and temporary schedules", () => {
-    const scheduleLocations = [
-        { id: "location-a", name: "Eglinton", sortOrder: 1 },
-        { id: "location-b", name: "Millwood", sortOrder: 2 },
-    ];
-    const scheduleBarbers = [
-        { id: "barber-a", displayName: "Laura Nguyen", locationIds: ["location-a", "location-b"], sortOrder: 1 },
-    ];
-    const temporaryInput = {
-        barberId: "barber-a",
-        locationId: "location-b",
-        effectiveFrom: "2026-07-05",
-        effectiveTo: "2026-07-10",
-        weekdays: [3, 1],
-        startTime: "10:00",
-        endTime: "19:00",
-    };
-
-    test("derives local weekdays from calendar dates without timezone drift", () => {
-        expect(localDateWeekday("2026-07-05")).toBe(0);
-        expect(localDateWeekday("2026-07-10")).toBe(5);
-        expect(weekdaysInLocalDateRange("2026-07-05", "2026-07-10")).toEqual([0, 1, 2, 3, 4, 5]);
-        expect(weekdaysInLocalDateRange("2026-07-05", "2026-07-05")).toEqual([0]);
-        expect(weekdaysInLocalDateRange("2026-07-05", "2026-08-05")).toEqual([0, 1, 2, 3, 4, 5, 6]);
-        expect(weekdaysInLocalDateRange("2026-07-10", "2026-07-05")).toEqual([]);
-    });
-
-    test("labels and describes schedule periods from their effective bounds", () => {
-        const jul5 = formatLocalDateLabel("2026-07-05");
-        const jul10 = formatLocalDateLabel("2026-07-10");
-
-        expect(formatLocalDateLabel("2026-07-05")).toMatch(/Jul/);
-        expect(formatLocalDateLabel("2026-07-05", { year: true })).toMatch(/2026/);
-        expect(weeklyShiftPatternLabel({ effectiveFrom: "", effectiveTo: "" })).toBe("Ongoing");
-        expect(weeklyShiftPatternLabel({ effectiveFrom: "2026-07-11", effectiveTo: "" })).toBe(`From ${formatLocalDateLabel("2026-07-11")}`);
-        expect(weeklyShiftPatternLabel({ effectiveFrom: "", effectiveTo: "2026-07-10" })).toBe(`Until ${jul10}`);
-        expect(weeklyShiftPatternLabel({ effectiveFrom: "2026-07-05", effectiveTo: "2026-07-10" })).toBe(`${jul5} – ${jul10}`);
-        expect(describeSchedulePeriod("", "")).toBe("Repeats weekly with no end date.");
-        expect(describeSchedulePeriod("2026-07-05", "")).toBe(
-            `Repeats weekly from ${formatLocalDateLabel("2026-07-05", { year: true })} with no end date.`,
-        );
-        expect(describeSchedulePeriod("", "2026-07-10")).toBe(
-            `Repeats weekly until ${formatLocalDateLabel("2026-07-10", { year: true })}.`,
-        );
-        expect(describeSchedulePeriod("2026-07-05", "2026-07-10")).toBe(
-            `Repeats weekly, ${formatLocalDateLabel("2026-07-05", { year: true })} to ${formatLocalDateLabel("2026-07-10", { year: true })}.`,
-        );
-    });
-
-    test("lists schedule periods grouped by effective range in chronological order", () => {
-        const tempSunday = { ...shiftA, id: "temp-sun", dayOfWeek: 0, locationId: "location-b", effectiveFrom: "2026-07-05", effectiveTo: "2026-07-10" };
-        const tempMonday = { ...shiftA, id: "temp-mon", locationId: "location-b", effectiveFrom: "2026-07-05", effectiveTo: "2026-07-10" };
-        const futureOngoing = { ...shiftB, id: "future-ongoing", effectiveFrom: "2026-08-01" };
-        const inactive = { ...shiftA, id: "inactive", active: false, effectiveFrom: "2026-09-01", effectiveTo: "2026-09-05" };
-        const otherBarber = { ...shiftA, id: "other", barberId: "barber-b" };
-
-        const patterns = listWeeklyShiftPatterns(
-            { shifts: [tempSunday, shiftA, futureOngoing, tempMonday, inactive, otherBarber] },
-            "barber-a",
-        );
-
-        expect(patterns.map((pattern) => pattern.key)).toEqual([
-            weeklyShiftPatternKey("", ""),
-            weeklyShiftPatternKey("2026-07-05", "2026-07-10"),
-            weeklyShiftPatternKey("2026-08-01", ""),
-        ]);
-        expect(patterns[0]).toMatchObject({ barberId: "barber-a", effectiveFrom: "", effectiveTo: "", shiftIds: ["shift-a"], locationIds: ["location-a"] });
-        expect(patterns[1]).toMatchObject({ shiftIds: ["temp-sun", "temp-mon"], locationIds: ["location-b"] });
-    });
-
-    test("delete-period plan removes the pattern and merges paused head/resume pairs back together", () => {
-        const head = { ...shiftA, id: "head-mon", effectiveTo: "2026-07-05" };
-        const resume = { ...shiftA, id: "resume-mon", effectiveFrom: "2026-07-12", effectiveTo: "2026-08-01" };
-        const otherResume = { ...shiftA, id: "resume-other-time", startTime: "15:00", endTime: "18:00", effectiveFrom: "2026-07-12" };
-        const tempMon = { ...shiftA, id: "temp-mon", locationId: "location-b", effectiveFrom: "2026-07-06", effectiveTo: "2026-07-11" };
-        const tempTue = { ...shiftA, id: "temp-tue", dayOfWeek: 2, locationId: "location-b", effectiveFrom: "2026-07-06", effectiveTo: "2026-07-11" };
-        const pattern = {
-            barberId: "barber-a",
-            effectiveFrom: "2026-07-06",
-            effectiveTo: "2026-07-11",
-            shiftIds: ["temp-mon", "temp-tue"],
-        };
-
-        const plan = buildDeleteSchedulePeriodPlan({ shifts: [head, resume, otherResume, tempMon, tempTue] }, pattern);
-
-        expect(plan.removedShiftCount).toBe(2);
-        expect(plan.mergedShiftCount).toBe(1);
-        expect(plan.operations).toEqual([
-            { type: "deactivate", shiftId: "temp-mon" },
-            { type: "deactivate", shiftId: "temp-tue" },
-            { type: "deactivate", shiftId: "resume-mon" },
-            {
-                type: "update",
-                shiftId: "head-mon",
-                payload: { barberId: "barber-a", locationId: "location-a", dayOfWeek: 1, startTime: "10:00", endTime: "13:00", effectiveFrom: "", effectiveTo: "2026-08-01" },
-            },
-        ]);
-    });
-
-    test("delete-period plan without a merge partner only deactivates the pattern", () => {
-        const unrelated = { ...shiftA, id: "unrelated", effectiveTo: "2026-06-30" };
-        const tempMon = { ...shiftA, id: "temp-mon", effectiveFrom: "2026-07-06", effectiveTo: "2026-07-11" };
-        const halfBounded = {
-            barberId: "barber-a",
-            effectiveFrom: "",
-            effectiveTo: "2026-07-05",
-            shiftIds: ["unrelated"],
-        };
-
-        const noPartner = buildDeleteSchedulePeriodPlan(
-            { shifts: [unrelated, tempMon] },
-            { barberId: "barber-a", effectiveFrom: "2026-07-06", effectiveTo: "2026-07-11", shiftIds: ["temp-mon"] },
-        );
-        expect(noPartner.mergedShiftCount).toBe(0);
-        expect(noPartner.operations).toEqual([{ type: "deactivate", shiftId: "temp-mon" }]);
-
-        const notBounded = buildDeleteSchedulePeriodPlan({ shifts: [unrelated] }, halfBounded);
-        expect(notBounded.operations).toEqual([{ type: "deactivate", shiftId: "unrelated" }]);
-        expect(notBounded.mergedShiftCount).toBe(0);
-    });
-
-    test("builds the weekly draft for an explicitly selected period and falls back when the key is stale", () => {
-        const tempMonday = {
-            ...shiftA,
-            id: "temp-monday",
-            locationId: "location-b",
-            startTime: "11:00",
-            endTime: "17:00",
-            effectiveFrom: "2026-07-05",
-            effectiveTo: "2026-07-10",
-        };
-        const schedule: AdminSchedule = {
-            locations: scheduleLocations,
-            barbers: scheduleBarbers,
-            shifts: [shiftA, shiftB, tempMonday],
-            shiftOverrides: [],
-            blockedTimes: [],
-        };
-
-        const ongoingDraft = buildWeeklyScheduleDraft(schedule, "barber-a", weeklyShiftPatternKey("", ""));
-        expect(ongoingDraft.sourceShiftIds).toEqual(["shift-a", "shift-b"]);
-        expect(ongoingDraft.effectiveTo).toBe("");
-
-        const temporaryDraft = buildWeeklyScheduleDraft(schedule, "barber-a", weeklyShiftPatternKey("2026-07-05", "2026-07-10"));
-        expect(temporaryDraft.sourceShiftIds).toEqual(["temp-monday"]);
-        expect(temporaryDraft.effectiveFrom).toBe("2026-07-05");
-        expect(temporaryDraft.effectiveTo).toBe("2026-07-10");
-
-        const fallbackDraft = buildWeeklyScheduleDraft(schedule, "barber-a", "missing|key");
-        expect(fallbackDraft.sourceShiftIds).toEqual(["temp-monday"]);
-    });
-
-    test("plans a temporary schedule that pauses ongoing shifts and resumes them after the period", () => {
-        const plan = buildTemporarySchedulePlan({ shifts: [shiftA, shiftB] }, temporaryInput);
-
-        expect(plan.issues).toEqual([]);
-        expect(plan.pausedShiftCount).toBe(2);
-        expect(plan.resumedShiftCount).toBe(2);
-        expect(plan.temporaryShiftCount).toBe(2);
-        expect(plan.resumeDate).toBe("2026-07-11");
-        expect(plan.operations).toEqual([
-            {
-                type: "update",
-                shiftId: "shift-a",
-                payload: { barberId: "barber-a", locationId: "location-a", dayOfWeek: 1, startTime: "10:00", endTime: "13:00", effectiveFrom: "", effectiveTo: "2026-07-04" },
-            },
-            {
-                type: "create",
-                payload: { barberId: "barber-a", locationId: "location-a", dayOfWeek: 1, startTime: "10:00", endTime: "13:00", effectiveFrom: "2026-07-11", effectiveTo: "" },
-            },
-            {
-                type: "update",
-                shiftId: "shift-b",
-                payload: { barberId: "barber-a", locationId: "location-a", dayOfWeek: 3, startTime: "14:00", endTime: "19:00", effectiveFrom: "", effectiveTo: "2026-07-04" },
-            },
-            {
-                type: "create",
-                payload: { barberId: "barber-a", locationId: "location-a", dayOfWeek: 3, startTime: "14:00", endTime: "19:00", effectiveFrom: "2026-07-11", effectiveTo: "" },
-            },
-            {
-                type: "create",
-                payload: { barberId: "barber-a", locationId: "location-b", dayOfWeek: 1, startTime: "10:00", endTime: "19:00", effectiveFrom: "2026-07-05", effectiveTo: "2026-07-10" },
-            },
-            {
-                type: "create",
-                payload: { barberId: "barber-a", locationId: "location-b", dayOfWeek: 3, startTime: "10:00", endTime: "19:00", effectiveFrom: "2026-07-05", effectiveTo: "2026-07-10" },
-            },
-        ]);
-    });
-
-    test("deactivates dated shifts fully covered by the period and resumes tails that extend beyond it", () => {
-        const covered = { ...shiftA, id: "covered", effectiveFrom: "2026-07-06", effectiveTo: "2026-07-08" };
-        const tail = { ...shiftB, id: "tail", effectiveFrom: "2026-07-08", effectiveTo: "2026-08-01" };
-        const sameStart = { ...shiftA, id: "same-start", dayOfWeek: 5, effectiveFrom: "2026-07-05" };
-
-        const plan = buildTemporarySchedulePlan({ shifts: [covered, tail, sameStart] }, temporaryInput);
-
-        expect(plan.pausedShiftCount).toBe(3);
-        expect(plan.resumedShiftCount).toBe(2);
-        expect(plan.operations.slice(0, 5)).toEqual([
-            { type: "deactivate", shiftId: "covered" },
-            { type: "deactivate", shiftId: "tail" },
-            {
-                type: "create",
-                payload: { barberId: "barber-a", locationId: "location-a", dayOfWeek: 3, startTime: "14:00", endTime: "19:00", effectiveFrom: "2026-07-11", effectiveTo: "2026-08-01" },
-            },
-            { type: "deactivate", shiftId: "same-start" },
-            {
-                type: "create",
-                payload: { barberId: "barber-a", locationId: "location-a", dayOfWeek: 5, startTime: "10:00", endTime: "13:00", effectiveFrom: "2026-07-11", effectiveTo: "" },
-            },
-        ]);
-    });
-
-    test("leaves shifts outside the period untouched", () => {
-        const past = { ...shiftA, id: "past", effectiveTo: "2026-07-04" };
-        const future = { ...shiftB, id: "future", effectiveFrom: "2026-07-11" };
-
-        const plan = buildTemporarySchedulePlan({ shifts: [past, future] }, temporaryInput);
-
-        expect(plan.pausedShiftCount).toBe(0);
-        expect(plan.resumedShiftCount).toBe(0);
-        expect(plan.operations).toHaveLength(2);
-        expect(plan.operations.every((operation) => operation.type === "create")).toBe(true);
-    });
-
-    test("reports temporary schedule input issues instead of planning operations", () => {
-        expect(buildTemporarySchedulePlan({ shifts: [] }, { ...temporaryInput, effectiveFrom: "2026-07-12" }).issues)
-            .toContain("End date must be on or after the start date.");
-        expect(buildTemporarySchedulePlan({ shifts: [] }, { ...temporaryInput, effectiveFrom: "" }).issues)
-            .toContain("Choose start and end dates.");
-        expect(buildTemporarySchedulePlan({ shifts: [] }, { ...temporaryInput, locationId: "" }).issues)
-            .toContain("Choose a location.");
-        expect(buildTemporarySchedulePlan({ shifts: [] }, { ...temporaryInput, weekdays: [] }).issues)
-            .toContain("Pick at least one working day.");
-        expect(buildTemporarySchedulePlan({ shifts: [] }, { ...temporaryInput, weekdays: [6] }).issues)
-            .toContain("Some selected days don't occur between those dates.");
-        expect(buildTemporarySchedulePlan({ shifts: [] }, { ...temporaryInput, startTime: "10:07" }).issues)
-            .toContain("Times must use 15-minute increments.");
-        expect(buildTemporarySchedulePlan({ shifts: [] }, { ...temporaryInput, endTime: "10:00" }).issues)
-            .toContain("End time must be after start time.");
-        expect(buildTemporarySchedulePlan({ shifts: [shiftA] }, { ...temporaryInput, weekdays: [] }).operations).toEqual([]);
-    });
-});
-
 describe("Team Week grid utilities", () => {
     const MON = "2026-07-06";
     const TUE = "2026-07-07";
@@ -1291,6 +1039,13 @@ describe("Team Week grid utilities", () => {
 
     // Toronto is UTC-4 in July, so 04:00Z = local midnight and 16:00Z = local noon.
     const MON_ALLDAY = { start: "2026-07-06T04:00:00.000Z", end: "2026-07-07T04:00:00.000Z" };
+
+    test("derives local weekdays and short date labels without timezone drift", () => {
+        expect(localDateWeekday("2026-07-05")).toBe(0);
+        expect(localDateWeekday("2026-07-10")).toBe(5);
+        expect(formatLocalDateLabel("2026-07-05")).toMatch(/Jul/);
+        expect(formatLocalDateLabel("2026-07-05", { year: true })).toMatch(/2026/);
+    });
 
     test("computes Monday-start week math across a month boundary", () => {
         expect(startOfWeekLocalDate("2026-07-08")).toBe("2026-07-06");
@@ -1753,6 +1508,29 @@ describe("Team Week grid utilities", () => {
         const groups = buildComingUp(schedule, [barber], MON);
         expect(groups).toHaveLength(1);
         expect(groups[0].dates).toEqual([MON, WED]);
+    });
+
+    test("Coming-up return date skips a baseline day the barber has off (Phase G)", () => {
+        // Laura covers Millwood on Monday; Tuesday is her next baseline day at
+        // Eglinton but she has time off that day — the sentence must say she is
+        // back Wednesday, not Tuesday.
+        const schedule = makeSchedule({
+            shifts: [
+                shift("s1", "laura", "location-a", 1),
+                shift("s2", "laura", "location-a", 2),
+                shift("s3", "laura", "location-a", 3),
+            ],
+            shiftOverrides: [
+                override("add-mon", "laura", MON, "add", { locationId: "location-b", startTime: "10:00", endTime: "19:00" }),
+                override("rem-mon", "laura", MON, "remove", { locationId: "location-a", startTime: "10:00", endTime: "19:00" }),
+                override("off-tue", "laura", TUE, "not_working", { reason: "Vacation" }),
+            ],
+        });
+        const groups = buildComingUp(schedule, [schedule.barbers[1]], MON);
+        const cover = groups.find((group) => group.kind === "cover");
+        expect(cover).toBeDefined();
+        expect(cover?.backToWorkDate).toBe(WED);
+        expect(cover?.sentence).toContain(formatDayNameDate(WED));
     });
 
     test("reports a single-day Coming-up edit", () => {

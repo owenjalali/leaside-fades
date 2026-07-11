@@ -66,6 +66,16 @@ class DrizzleAdminScheduleRepository implements AdminScheduleRepository {
         this.database = database;
     }
 
+    async withTransaction<T>(callback: (transaction: AdminScheduleRepository) => Promise<T>): Promise<T> {
+        const db = this.database as { transaction?: (callback: (tx: DatabaseExecutor) => Promise<T>) => Promise<T> };
+
+        if (typeof db.transaction === "function") {
+            return db.transaction((tx) => callback(new DrizzleAdminScheduleRepository(tx)));
+        }
+
+        return callback(this);
+    }
+
     async listSchedule(scope: { barberId?: string; from?: string; to?: string }) {
         const db = this.database as ReturnType<typeof createDatabaseClient>["db"];
         const barberRows = await db

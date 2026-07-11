@@ -68,7 +68,6 @@ export async function checkApplicationHealth(
             },
         };
     } catch (error) {
-        // eslint-disable-next-line no-console
         console.error("[health] database check failed", error);
 
         return {
@@ -87,7 +86,6 @@ export async function checkApplicationHealth(
             try {
                 await pool.end();
             } catch (error) {
-                // eslint-disable-next-line no-console
                 console.error("[health] failed to close database pool", error);
             }
         }

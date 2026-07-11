@@ -475,4 +475,86 @@ describe("Phase 2 availability engine", () => {
 
         expect(slots).toHaveLength(0);
     });
+
+    test("not-working override wins over an add listed after it for the same date", () => {
+        const slots = barberSlots(
+            baseData({
+                shiftOverrides: [
+                    {
+                        barberId: barberAId,
+                        locationId,
+                        overrideDate: "2026-05-04",
+                        overrideType: "not_working",
+                    },
+                    {
+                        barberId: barberAId,
+                        locationId,
+                        overrideDate: "2026-05-04",
+                        overrideType: "add",
+                        startTime: "13:00",
+                        endTime: "15:00",
+                    },
+                ],
+            }),
+            { barberId: barberAId },
+        );
+
+        expect(slots).toHaveLength(0);
+    });
+
+    test("not-working override wins over an add listed before it for the same date", () => {
+        const slots = barberSlots(
+            baseData({
+                shiftOverrides: [
+                    {
+                        barberId: barberAId,
+                        locationId,
+                        overrideDate: "2026-05-04",
+                        overrideType: "add",
+                        startTime: "13:00",
+                        endTime: "15:00",
+                    },
+                    {
+                        barberId: barberAId,
+                        locationId,
+                        overrideDate: "2026-05-04",
+                        overrideType: "not_working",
+                    },
+                ],
+            }),
+            { barberId: barberAId },
+        );
+
+        expect(slots).toHaveLength(0);
+    });
+
+    test("location-scoped not-working keeps an add at the other location bookable", () => {
+        const data = baseData({
+            shiftOverrides: [
+                {
+                    barberId: barberAId,
+                    locationId,
+                    overrideDate: "2026-05-04",
+                    overrideType: "not_working",
+                },
+                {
+                    barberId: barberAId,
+                    locationId: millwoodLocationId,
+                    overrideDate: "2026-05-04",
+                    overrideType: "add",
+                    startTime: "10:00",
+                    endTime: "12:00",
+                },
+            ],
+        });
+
+        const eglintonSlots = barberSlots(data, { barberId: barberAId });
+        const millwoodSlots = barberSlots(data, {
+            barberId: barberAId,
+            locationId: millwoodLocationId,
+        });
+
+        expect(eglintonSlots).toHaveLength(0);
+        expect(starts(millwoodSlots)).toContain("2026-05-04T14:00:00.000Z");
+    });
 });
