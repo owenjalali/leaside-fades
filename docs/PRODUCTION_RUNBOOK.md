@@ -240,8 +240,8 @@ Remove-Item Env:PRODUCTION_REMINDER_HEARTBEAT_SINCE
 Enable scheduler only after booking and notification smoke tests pass.
 
 Recommended cadence:
-- Every 30 minutes on quota-limited/serverless database plans.
-- Every 5 minutes only after the production database plan has enough compute quota for continuous reminder wakeups.
+- Every 30 minutes within the America/Toronto active window (06:00-21:30). Reminder due-times only occur around shop hours; overnight runs only wake the Neon database and burn compute quota.
+- Never restore a 24/7 or five-minute schedule on quota-limited database plans — that cadence exhausted the Neon compute quota mid-month and took production down in the past.
 - Default lookback: 60 minutes.
 - Default lookahead: 15 minutes.
 - `REMINDER_HTTP_MIN_INTERVAL_MINUTES` defaults the secured HTTP endpoint to a 30-minute database cadence using the durable success heartbeat.
@@ -281,6 +281,8 @@ npm run qa:production-reminder-heartbeat
 
 3. Scan Vercel production logs for `[error]` entries. After the July 2026 sslmode normalization fix, the error stream should be quiet on healthy traffic, so anything appearing there deserves investigation.
 
+4. Glance at Neon compute/storage usage (Vercel dashboard -> Storage -> `leaside-fades-db`). On the Free plan, month-to-date compute hours should track well under the monthly allowance; a surge usually means a scheduler was misconfigured back to a 24/7 cadence.
+
 If the smoke fails, follow Health And Domain Checks. If the heartbeat is stale or failing, follow Reminder Runner. For error triage sources, see Logging And Error Visibility.
 
 ## Cutover
@@ -296,7 +298,7 @@ Only after owner signoff:
 If launch smoke tests fail or production behavior is unsafe:
 - Restore public website booking links to the previous Fresha booking URL.
 - Stop the production reminder scheduler.
-- If PostgreSQL reports compute quota exhaustion, upgrade/restore the database plan or quota before expecting booking/admin recovery; redeploying the app alone will not restore DB-backed routes.
+- If PostgreSQL reports compute quota exhaustion, upgrade the Neon plan (Vercel dashboard -> Storage -> `leaside-fades-db`, or the Neon console Billing page). The plan change is instant, needs no migration or data restore, and DB-backed routes recover as soon as compute resumes. Redeploying the app alone will not restore DB-backed routes. Afterwards, check which scheduler burned the quota (`npm run qa:cron-job-org-reminder` should report the business-hours schedule) before downgrading again.
 - Leave the production database intact unless a restore is explicitly required.
 - Preserve DB backup, host logs, and notification rows for debugging.
 - If a migration rollback is required, restore from the pre-cutover database checkpoint rather than hand-mutating schema.

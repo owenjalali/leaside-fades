@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
-    buildEveryNMinutesSchedule,
+    buildReminderSchedule,
     buildRepairPatch,
     evaluateJob,
     readConfig,
@@ -17,9 +17,15 @@ const baseConfig: CronJobOrgConfig = {
     jobId: 7551064,
     expectedUrl: "https://www.leasidefades.com/api/jobs/send-reminders",
     cadenceMinutes: 30,
+    activeStartHour: 6,
+    activeEndHour: 21,
     expectedSecret: "current-secret",
     apply: false,
 };
+
+function businessHoursSchedule() {
+    return buildReminderSchedule({ cadenceMinutes: 30, activeStartHour: 6, activeEndHour: 21 });
+}
 
 describe("cron-job.org reminder check", () => {
     test("reads default job configuration without printing or requiring secrets", () => {
@@ -38,9 +44,29 @@ describe("cron-job.org reminder check", () => {
             jobId: 7551064,
             expectedUrl: "https://www.leasidefades.com/api/jobs/send-reminders",
             cadenceMinutes: 30,
+            activeStartHour: 6,
+            activeEndHour: 21,
             expectedSecret: "current-secret",
             apply: true,
         });
+    });
+
+    test("supports overriding the active-hours window through the environment", () => {
+        const config = readConfig({
+            CRON_JOB_ORG_REMINDER_ACTIVE_START_HOUR: "5",
+            CRON_JOB_ORG_REMINDER_ACTIVE_END_HOUR: "22",
+        });
+
+        expect(config.activeStartHour).toBe(5);
+        expect(config.activeEndHour).toBe(22);
+
+        const invalid = readConfig({
+            CRON_JOB_ORG_REMINDER_ACTIVE_START_HOUR: "24",
+            CRON_JOB_ORG_REMINDER_ACTIVE_END_HOUR: "not-a-number",
+        });
+
+        expect(invalid.activeStartHour).toBe(6);
+        expect(invalid.activeEndHour).toBe(21);
     });
 
     test("normalizes quoted or empty pulled Vercel cron secrets", () => {
@@ -57,11 +83,11 @@ describe("cron-job.org reminder check", () => {
         ).toBeUndefined();
     });
 
-    test("builds the recommended every-30-minutes cron-job.org schedule", () => {
-        expect(buildEveryNMinutesSchedule(30)).toEqual({
+    test("builds the recommended business-hours cron-job.org schedule", () => {
+        expect(businessHoursSchedule()).toEqual({
             timezone: "America/Toronto",
             expiresAt: 0,
-            hours: [-1],
+            hours: [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
             mdays: [-1],
             minutes: [0, 30],
             months: [-1],
@@ -69,12 +95,44 @@ describe("cron-job.org reminder check", () => {
         });
     });
 
+    test("flags a round-the-clock schedule so repairs cannot regress the Neon quota fix", () => {
+        const job: CronJobOrgJob = {
+            enabled: true,
+            url: "https://www.leasidefades.com/api/jobs/send-reminders",
+            requestMethod: 0,
+            redirectSuccess: false,
+            schedule: {
+                timezone: "America/Toronto",
+                expiresAt: 0,
+                hours: [-1],
+                mdays: [-1],
+                minutes: [0, 30],
+                months: [-1],
+                wdays: [-1],
+            },
+            extendedData: {
+                headers: {
+                    authorization: "Bearer current-secret",
+                },
+            },
+        };
+
+        expect(evaluateJob(job, baseConfig)).toEqual([
+            {
+                level: "warning",
+                message:
+                    "Job schedule is not the expected every-30-minutes cadence " +
+                    "within America/Toronto hours 6:00-21:59.",
+            },
+        ]);
+    });
+
     test("flags disabled jobs and stale authorization headers as errors", () => {
         const job: CronJobOrgJob = {
             enabled: false,
             url: "https://www.leasidefades.com/api/jobs/send-reminders",
             requestMethod: 0,
-            schedule: buildEveryNMinutesSchedule(30),
+            schedule: businessHoursSchedule(),
             extendedData: {
                 headers: {
                     Authorization: "Bearer old-secret",
@@ -100,7 +158,7 @@ describe("cron-job.org reminder check", () => {
             url: "https://www.leasidefades.com/api/jobs/send-reminders",
             requestMethod: 0,
             redirectSuccess: false,
-            schedule: buildEveryNMinutesSchedule(30),
+            schedule: businessHoursSchedule(),
             extendedData: {
                 headers: {
                     authorization: "Bearer current-secret",
@@ -120,7 +178,7 @@ describe("cron-job.org reminder check", () => {
                 requestMethod: 0,
                 redirectSuccess: false,
                 requestTimeout: 30,
-                schedule: buildEveryNMinutesSchedule(30),
+                schedule: businessHoursSchedule(),
                 extendedData: {
                     headers: {
                         Authorization: "Bearer current-secret",

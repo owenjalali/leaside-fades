@@ -74,8 +74,9 @@ Required production notification variables:
 - `EMAIL_FROM`
 
 Recommended schedule:
-- Run every 30 minutes on quota-limited/serverless database plans.
-- Run every 5 minutes only after the database plan has enough compute quota for continuous production reminder wakeups.
+- Run every 30 minutes within the America/Toronto active window (06:00-21:30). Reminder due-times only occur around shop hours; overnight runs only wake the Neon database and burn compute quota.
+- Never restore a 24/7 or five-minute schedule on quota-limited database plans — that cadence exhausted the Neon Free compute quota mid-month and took the production booking system down in the past.
+- The active window is enforced by `npm run qa:cron-job-org-reminder` and `npm run ops:cron-job-org-reminder-repair` (defaults: Toronto hours 6-21). If shop hours ever change, override with `CRON_JOB_ORG_REMINDER_ACTIVE_START_HOUR` / `CRON_JOB_ORG_REMINDER_ACTIVE_END_HOUR` and update the cron-job.org job to match.
 - Keep the default 60-minute lookback and 15-minute lookahead so a short scheduler delay does not miss due reminders.
 - Capture stdout/stderr in host logs.
 - Do not run multiple authorized scheduler definitions for the same environment.
@@ -86,32 +87,32 @@ Vercel setup:
 - The endpoint returns `503` if `CRON_SECRET` is missing and `401` if the header does not match, so reminders cannot be triggered publicly.
 - To verify the production cron secret without sending reminders or opening a database reminder job, call `GET /api/jobs/send-reminders?dryRun=1` with the same `Authorization: Bearer <CRON_SECRET>` header. A healthy dry-run response returns `200`, `dryRun: true`, and the current cadence decision.
 - The endpoint checks `REMINDER_HTTP_MIN_INTERVAL_MINUTES` and the latest durable success heartbeat before running the live reminder job. The default is 30 minutes. Delayed authorized scheduler calls run when the last successful heartbeat is stale; duplicate calls skip with `reason: "recent_success"` when a recent success already satisfies the cadence.
-- Vercel Hobby projects are limited to daily cron jobs. The recommended five-minute schedule requires Vercel Pro or an external scheduler.
-- On a Vercel Pro project, add this to `vercel.json` before redeploying:
+- Vercel Hobby projects are limited to daily cron jobs. The recommended 30-minute business-hours schedule requires an external scheduler (cron-job.org is the production primary).
+- On a Vercel Pro project, an equivalent cron could be added to `vercel.json` — note Vercel cron expressions are UTC, so the hour range must be translated from America/Toronto and adjusted for DST:
 
 ```json
 {
   "crons": [
     {
       "path": "/api/jobs/send-reminders",
-      "schedule": "*/5 * * * *"
+      "schedule": "0,30 10-23 * * *"
     }
   ]
 }
 ```
 
 GitHub Actions setup:
-- `.github/workflows/send-reminders.yml` is available as a free backup/manual production scheduler path.
-- The workflow runs on the default branch at UTC minute `13` and `43` and can also be run manually through `workflow_dispatch`.
+- `.github/workflows/send-reminders.yml` is a once-daily canary and manual fallback, not a frequent scheduler.
+- The workflow runs on the default branch once daily at `15:13` UTC (about 10:13-11:13 America/Toronto depending on DST) and can also be run manually through `workflow_dispatch`.
 - It calls `https://www.leasidefades.com/api/jobs/send-reminders` with `Authorization: Bearer <LEASIDE_REMINDER_CRON_SECRET>`.
 - Store the same current production `CRON_SECRET` in the repository secret `LEASIDE_REMINDER_CRON_SECRET`. Do not commit the value.
-- The workflow fails if production returns a non-2xx response. A `recent_success` skip exits cleanly because it means another real run already satisfied the cadence.
-- cron-job.org is the primary scheduler. GitHub Actions may remain enabled as a backup because the production endpoint uses the durable heartbeat to avoid duplicate reminder sends.
+- The workflow fails loudly (red run + GitHub email) if production returns a non-2xx response, which makes it an independent daily alarm on the reminder endpoint. A `recent_success` skip exits cleanly because it means another real run already satisfied the cadence.
+- cron-job.org is the primary scheduler. Do not raise the GitHub Actions cadence back to twice-hourly — the endpoint's heartbeat guard would absorb the duplicates, but every call still wakes the Neon database and burns Free-plan compute quota.
 
 cron-job.org setup:
 - Production currently uses cron-job.org job `7551064`, titled `Leaside Fades reminders`.
 - The job is enabled and calls `https://www.leasidefades.com/api/jobs/send-reminders` to avoid the apex-domain redirect.
-- The previous launch schedule was every five minutes (`*/5 * * * *`) in `America/Toronto`. On the current quota-limited database plan, keep this at every 30 minutes or rely on the HTTP endpoint's 30-minute guard until the database plan is upgraded.
+- The production schedule is every 30 minutes within America/Toronto hours 6-21 (first run 06:00, last run 21:30). The original launch schedule was every five minutes 24/7 — that cadence exhausted the Neon Free compute quota mid-month and took the booking system down; never restore it.
 - The job sends a custom header named `Authorization` with value `Bearer <CRON_SECRET>`.
 - The job can be inspected with the cron-job.org API without storing secrets in git:
 
@@ -135,7 +136,7 @@ npm run ops:cron-job-org-reminder-repair
 $env:CRON_SECRET = (Select-String -Path .env.production.local -Pattern '^CRON_SECRET=' | Select-Object -First 1).Line -replace '^CRON_SECRET=', ''
 ```
 
-- The repair command first verifies the supplied secret against `https://www.leasidefades.com/api/jobs/send-reminders?dryRun=1`. If production rejects the secret, the command stops before patching cron-job.org. If the dry-run passes, it enables the job, sets the URL to `https://www.leasidefades.com/api/jobs/send-reminders`, sets GET, stores `Authorization: Bearer <CRON_SECRET>`, saves responses, and changes the schedule to every 30 minutes. The command does not print the secret.
+- The repair command first verifies the supplied secret against `https://www.leasidefades.com/api/jobs/send-reminders?dryRun=1`. If production rejects the secret, the command stops before patching cron-job.org. If the dry-run passes, it enables the job, sets the URL to `https://www.leasidefades.com/api/jobs/send-reminders`, sets GET, stores `Authorization: Bearer <CRON_SECRET>`, saves responses, and changes the schedule to every 30 minutes within America/Toronto hours 6-21. The command does not print the secret.
 - Vercel encrypted secret values may pull locally as an empty quoted value. Do not use a pulled empty `CRON_SECRET`; create or retrieve a real current production secret first, then verify it with the dry-run path.
 - The 10:20 PM America/Toronto run on May 1, 2026 succeeded with `200 OK` after switching from the apex domain to `www`. A prior 10:15 PM run failed with `307 Temporary Redirect` and can be ignored as setup history.
 - If `CRON_SECRET` is rotated in Vercel, update the cron-job.org header value at the same time and redeploy production so the serverless function receives the new value.
@@ -160,6 +161,7 @@ Trigger: Daily, repeat every 5 minutes indefinitely
 ```
 
 Operational notes:
+- Each reminder job run also prunes notification rows older than 180 days and scheduler heartbeat rows older than 30 days (always keeping the latest success row per job, which the HTTP cadence guard reads), so storage stays inside the Neon Free allowance. Pruning failures are logged and never block reminder delivery.
 - Provider failures are logged per notification row and do not fail the whole job.
 - Failed provider rows are retryable on later job runs.
 - Sent, skipped, and in-flight pending rows remain idempotent and do not resend.

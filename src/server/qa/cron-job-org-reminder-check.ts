@@ -2,6 +2,12 @@ const DEFAULT_API_BASE_URL = "https://api.cron-job.org";
 const DEFAULT_JOB_ID = 7_551_064;
 const DEFAULT_EXPECTED_URL = "https://www.leasidefades.com/api/jobs/send-reminders";
 const DEFAULT_CADENCE_MINUTES = 30;
+// Reminder due-times only occur while the shop takes appointments, so the
+// production schedule stays inside these America/Toronto hours. Overnight runs
+// would only wake the Neon database for nothing and burn the Free-plan
+// monthly compute quota — the failure that once took the booking system down.
+const DEFAULT_ACTIVE_START_HOUR = 6;
+const DEFAULT_ACTIVE_END_HOUR = 21;
 
 export interface CronJobOrgConfig {
     apiBaseUrl: string;
@@ -9,6 +15,8 @@ export interface CronJobOrgConfig {
     jobId: number;
     expectedUrl: string;
     cadenceMinutes: number;
+    activeStartHour: number;
+    activeEndHour: number;
     expectedSecret?: string;
     apply: boolean;
 }
@@ -93,6 +101,14 @@ export function readConfig(
         cadenceMinutes: parsePositiveInteger(
             env.CRON_JOB_ORG_REMINDER_CADENCE_MINUTES,
             DEFAULT_CADENCE_MINUTES,
+        ),
+        activeStartHour: parseHour(
+            env.CRON_JOB_ORG_REMINDER_ACTIVE_START_HOUR,
+            DEFAULT_ACTIVE_START_HOUR,
+        ),
+        activeEndHour: parseHour(
+            env.CRON_JOB_ORG_REMINDER_ACTIVE_END_HOUR,
+            DEFAULT_ACTIVE_END_HOUR,
         ),
         expectedSecret: normalizeSecret(
             env.CRON_JOB_ORG_REMINDER_SECRET || env.CRON_SECRET || env.PRODUCTION_SMOKE_CRON_SECRET,
@@ -190,10 +206,12 @@ export function evaluateJob(job: CronJobOrgJob, config: CronJobOrgConfig): CronJ
         });
     }
 
-    if (!scheduleMatchesCadence(job.schedule, config.cadenceMinutes)) {
+    if (!scheduleMatchesExpected(job.schedule, config)) {
         findings.push({
             level: "warning",
-            message: `Job schedule is not the expected every-${config.cadenceMinutes}-minutes cadence.`,
+            message:
+                `Job schedule is not the expected every-${config.cadenceMinutes}-minutes cadence ` +
+                `within America/Toronto hours ${config.activeStartHour}:00-${config.activeEndHour}:59.`,
         });
     }
 
@@ -220,7 +238,7 @@ export function buildRepairPatch(config: CronJobOrgConfig) {
             requestMethod: 0,
             redirectSuccess: false,
             requestTimeout: 30,
-            schedule: buildEveryNMinutesSchedule(config.cadenceMinutes),
+            schedule: buildReminderSchedule(config),
             extendedData: {
                 headers: {
                     Authorization: `Bearer ${config.expectedSecret}`,
@@ -266,17 +284,39 @@ export async function verifyProductionReminderSecret(config: CronJobOrgConfig, f
     }
 }
 
-export function buildEveryNMinutesSchedule(cadenceMinutes: number): CronJobOrgSchedule {
-    if (!Number.isInteger(cadenceMinutes) || cadenceMinutes < 1 || cadenceMinutes > 60 || 60 % cadenceMinutes !== 0) {
+export function buildReminderSchedule(input: {
+    cadenceMinutes: number;
+    activeStartHour: number;
+    activeEndHour: number;
+}): CronJobOrgSchedule {
+    if (
+        !Number.isInteger(input.cadenceMinutes) ||
+        input.cadenceMinutes < 1 ||
+        input.cadenceMinutes > 60 ||
+        60 % input.cadenceMinutes !== 0
+    ) {
         throw new Error("Cron cadence must be an integer divisor of 60 minutes.");
+    }
+
+    if (
+        !Number.isInteger(input.activeStartHour) ||
+        !Number.isInteger(input.activeEndHour) ||
+        input.activeStartHour < 0 ||
+        input.activeEndHour > 23 ||
+        input.activeStartHour > input.activeEndHour
+    ) {
+        throw new Error("Active hours must satisfy 0 <= start <= end <= 23.");
     }
 
     return {
         timezone: "America/Toronto",
         expiresAt: 0,
-        hours: [-1],
+        hours: Array.from(
+            { length: input.activeEndHour - input.activeStartHour + 1 },
+            (_, index) => input.activeStartHour + index,
+        ),
         mdays: [-1],
-        minutes: Array.from({ length: 60 / cadenceMinutes }, (_, index) => index * cadenceMinutes),
+        minutes: Array.from({ length: 60 / input.cadenceMinutes }, (_, index) => index * input.cadenceMinutes),
         months: [-1],
         wdays: [-1],
     };
@@ -372,12 +412,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function scheduleMatchesCadence(schedule: CronJobOrgSchedule | undefined, cadenceMinutes: number) {
+function scheduleMatchesExpected(schedule: CronJobOrgSchedule | undefined, config: CronJobOrgConfig) {
     if (!schedule) {
         return false;
     }
 
-    const expected = buildEveryNMinutesSchedule(cadenceMinutes);
+    const expected = buildReminderSchedule(config);
     return (
         arrayEquals(schedule.hours, expected.hours) &&
         arrayEquals(schedule.mdays, expected.mdays) &&
@@ -435,6 +475,11 @@ function formatUnixSeconds(value: number | null | undefined) {
 function parsePositiveInteger(value: string | undefined, fallback: number) {
     const parsed = Number(value);
     return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseHour(value: string | undefined, fallback: number) {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed >= 0 && parsed <= 23 ? parsed : fallback;
 }
 
 function normalizeUrl(value: string) {

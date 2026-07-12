@@ -2,7 +2,9 @@ name: Send production reminders
 
 on:
   schedule:
-    - cron: "13,43 * * * *"
+    # Daily canary only (~10-11 AM Toronto). cron-job.org is the primary scheduler;
+    # frequent 24/7 wakeups here would burn Neon Free's monthly compute quota.
+    - cron: "13 15 * * *"
   workflow_dispatch:
 
 permissions: {}

@@ -1,5 +1,9 @@
 import { createDatabaseClient } from "../db/client.ts";
 import {
+    createDrizzleSchedulerHistoryRetentionRepository,
+    pruneSchedulerHistorySafely,
+} from "../jobs/history-retention.ts";
+import {
     BOOKING_REMINDER_JOB_NAME,
     createDrizzleSchedulerJobRunRepository,
     runTrackedSchedulerJob,
@@ -34,12 +38,22 @@ export async function runConfiguredBookingReminderJob(
             trigger: options.trigger ?? "cli",
             repository: schedulerRepository,
             now: options.now,
-            run: () =>
-                runBookingReminderJob({
+            run: async () => {
+                const summary = await runBookingReminderJob({
                     repository: createDrizzleNotificationRepository(db),
                     providers: createNotificationProviders(),
                     ...reminderJobWindowFromEnv(env),
-                }),
+                });
+                // Retention pruning keeps the notifications outbox and heartbeat
+                // history inside Neon Free's storage allowance; failures must
+                // never block reminder delivery.
+                const retention = await pruneSchedulerHistorySafely({
+                    repository: createDrizzleSchedulerHistoryRetentionRepository(db),
+                    now: options.now?.(),
+                });
+
+                return retention ? { ...summary, retention } : summary;
+            },
         });
     } finally {
         await pool.end();
