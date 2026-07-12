@@ -41,7 +41,10 @@ export function buildBookingNotificationMessage(
 
     if (input.eventType === "cancellation_confirmation") {
         return {
-            subject: "Your Leaside Fades booking was cancelled",
+            subject:
+                input.recipientType === "customer"
+                    ? "Your Leaside Fades booking was cancelled"
+                    : "Leaside Fades booking cancelled",
             text: `${recipientPrefix(input.recipientType)}Cancelled: ${baseSummary}`,
         };
     }
@@ -51,7 +54,10 @@ export function buildBookingNotificationMessage(
     }
 
     return {
-        subject: "Your Leaside Fades booking was rescheduled",
+        subject:
+            input.recipientType === "customer"
+                ? "Your Leaside Fades booking was rescheduled"
+                : "Leaside Fades booking rescheduled",
         text: `${recipientPrefix(input.recipientType)}Rescheduled: ${baseSummary}`,
     };
 }

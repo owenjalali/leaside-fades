@@ -69,7 +69,7 @@ export async function dispatchBookingLifecycleNotification(
     const now = input.now ?? new Date();
     const results: BookingLifecycleDispatchResult[] = [];
 
-    for (const recipient of lifecycleRecipientPlans(input.eventType, context)) {
+    for (const recipient of lifecycleRecipientPlans(context)) {
         results.push(await dispatchRecipient({ ...input, context, recipient, now }));
     }
 
@@ -213,18 +213,11 @@ async function dispatchRecipient(input: {
     }
 }
 
-function lifecycleRecipientPlans(
-    eventType: NotificationEventType,
-    context: BookingNotificationContext,
-): RecipientPlan[] {
-    const recipients: RecipientPlan[] = [
-        {
-            recipientType: "customer",
-            channel: "sms",
-            recipientPhone: context.customerPhone,
-            recipientEmail: null,
-            contact: context.customerPhone,
-        },
+// Lifecycle events are email-only to keep Twilio spend on the reminders that
+// actually prevent no-shows; the barber copy covers cancellations and
+// reschedules too so staff never lose visibility after losing their SMS copy.
+function lifecycleRecipientPlans(context: BookingNotificationContext): RecipientPlan[] {
+    return [
         {
             recipientType: "customer",
             channel: "email",
@@ -234,26 +227,12 @@ function lifecycleRecipientPlans(
         },
         {
             recipientType: "barber",
-            channel: "sms",
-            recipientPhone: context.barberPhone,
-            recipientEmail: null,
-            contact: context.barberPhone,
+            channel: "email",
+            recipientPhone: null,
+            recipientEmail: context.barberEmail,
+            contact: context.barberEmail,
         },
     ];
-
-    if (eventType !== "booking_confirmation") {
-        return recipients;
-    }
-
-    recipients.push({
-        recipientType: "barber",
-        channel: "email",
-        recipientPhone: null,
-        recipientEmail: context.barberEmail,
-        contact: context.barberEmail,
-    });
-
-    return recipients;
 }
 
 function customerReminderRecipientPlans(context: BookingNotificationContext): RecipientPlan[] {

@@ -62,6 +62,30 @@ describe("Phase 9 notification templates", () => {
         expect(message.text).not.toContain("reschedule-token");
     });
 
+    test("barber cancellation email uses staff-facing subject", () => {
+        const message = buildBookingNotificationMessage({
+            eventType: "cancellation_confirmation",
+            channel: "email",
+            recipientType: "barber",
+            context,
+        });
+
+        expect(message.subject).toBe("Leaside Fades booking cancelled");
+        expect(message.text).toContain("Staff update - Cancelled");
+    });
+
+    test("barber reschedule email uses staff-facing subject", () => {
+        const message = buildBookingNotificationMessage({
+            eventType: "reschedule_confirmation",
+            channel: "email",
+            recipientType: "barber",
+            context,
+        });
+
+        expect(message.subject).toBe("Leaside Fades booking rescheduled");
+        expect(message.text).toContain("Staff update - Rescheduled");
+    });
+
     test("owner/admin booking confirmation uses staff-facing wording without management links", () => {
         const message = buildBookingNotificationMessage({
             eventType: "booking_confirmation",

@@ -164,22 +164,16 @@ describe("Phase 9 notification dispatcher", () => {
         expect(result.map((item) => item.status).sort()).toEqual([
             "sent",
             "sent",
-            "sent",
-            "sent",
         ]);
         expect(repository.attempts.map((attempt) => `${attempt.recipientType}:${attempt.channel}`).sort()).toEqual([
             "barber:email",
-            "barber:sms",
             "customer:email",
-            "customer:sms",
         ]);
         expect(providerSet.calls.map((call) => call.to).sort()).toEqual([
-            "+16475550199",
-            "+16475550200",
             "ada@example.com",
             "sam@leasidefades.com",
         ]);
-        expect(repository.attempts).toHaveLength(4);
+        expect(repository.attempts).toHaveLength(2);
         expect(JSON.stringify(repository.attempts)).not.toContain("cancel-token");
         expect(JSON.stringify(repository.attempts)).not.toContain("reschedule-token");
     });
@@ -201,8 +195,12 @@ describe("Phase 9 notification dispatcher", () => {
             providers: providerSet,
         });
 
-        expect(providerSet.calls).toHaveLength(3);
-        expect(second.map((item) => item.status).sort()).toEqual(["duplicate", "duplicate", "duplicate"]);
+        expect(providerSet.calls).toHaveLength(2);
+        expect(second.map((item) => item.status).sort()).toEqual(["duplicate", "duplicate"]);
+        expect(repository.attempts.map((attempt) => `${attempt.recipientType}:${attempt.channel}`).sort()).toEqual([
+            "barber:email",
+            "customer:email",
+        ]);
         expect(repository.attempts.every((attempt) => attempt.attemptCount === 2)).toBe(true);
     });
 
@@ -227,20 +225,14 @@ describe("Phase 9 notification dispatcher", () => {
         expect(result.map((item) => item.status).sort()).toEqual([
             "skipped",
             "skipped",
-            "skipped",
-            "skipped",
         ]);
         expect(repository.attempts.map((attempt) => attempt.status).sort()).toEqual([
-            "skipped",
-            "skipped",
             "skipped",
             "skipped",
         ]);
         expect(repository.attempts.map((attempt) => `${attempt.recipientType}:${attempt.channel}`).sort()).toEqual([
             "barber:email",
-            "barber:sms",
             "customer:email",
-            "customer:sms",
         ]);
     });
 
@@ -251,21 +243,19 @@ describe("Phase 9 notification dispatcher", () => {
             eventType: "booking_confirmation",
             bookingId: context.bookingId,
             repository,
-            providers: providers({ failChannel: "sms" }),
+            providers: providers({ failChannel: "email" }),
         });
 
         expect(result.map((item) => item.status).sort()).toEqual([
             "failed",
             "failed",
-            "sent",
-            "sent",
         ]);
         expect(repository.attempts.filter((attempt) => attempt.status === "failed")).toHaveLength(2);
     });
 
-    test("retries failed lifecycle notification attempts without resending successful channels", async () => {
+    test("retries failed lifecycle notification attempts on later dispatches", async () => {
         const repository = new InMemoryNotificationRepository();
-        const failedProviderSet = providers({ failChannel: "sms" }) as NotificationProviderSet & {
+        const failedProviderSet = providers({ failChannel: "email" }) as NotificationProviderSet & {
             calls: Array<{ channel: NotificationChannel }>;
         };
         const recoveredProviderSet = providers() as NotificationProviderSet & {
@@ -286,13 +276,11 @@ describe("Phase 9 notification dispatcher", () => {
         });
 
         expect(retry.map((item) => item.status).sort()).toEqual([
-            "duplicate",
-            "duplicate",
             "sent",
             "sent",
         ]);
-        expect(recoveredProviderSet.calls.map((call) => call.channel).sort()).toEqual(["sms", "sms"]);
-        expect(repository.attempts.filter((attempt) => attempt.channel === "sms").every((attempt) => attempt.status === "sent")).toBe(true);
+        expect(recoveredProviderSet.calls.map((call) => call.channel).sort()).toEqual(["email", "email"]);
+        expect(repository.attempts.every((attempt) => attempt.status === "sent")).toBe(true);
         expect(repository.attempts.every((attempt) => attempt.attemptCount === 2)).toBe(true);
     });
 
@@ -317,12 +305,10 @@ describe("Phase 9 notification dispatcher", () => {
             providers: providerSet,
         });
 
-        expect(walkInResult.map((item) => item.status).sort()).toEqual(["sent", "sent", "sent", "sent"]);
-        expect(providerSet.calls.map((call) => call.channel).sort()).toEqual(["email", "email", "sms", "sms"]);
+        expect(walkInResult.map((item) => item.status).sort()).toEqual(["sent", "sent"]);
+        expect(providerSet.calls.map((call) => call.channel).sort()).toEqual(["email", "email"]);
         expect(importedResult).toEqual([]);
         expect(repository.attempts.map((attempt) => attempt.bookingId)).toEqual([
-            "walk-in-booking",
-            "walk-in-booking",
             "walk-in-booking",
             "walk-in-booking",
         ]);
@@ -352,7 +338,7 @@ describe("Phase 9 notification dispatcher", () => {
         const rescheduleKeys = repository.attempts
             .filter((attempt) => attempt.eventType === ("reschedule_confirmation" satisfies NotificationEventType))
             .map((attempt) => attempt.idempotencyKey);
-        expect(new Set(rescheduleKeys).size).toBe(6);
+        expect(new Set(rescheduleKeys).size).toBe(4);
     });
 });
 
@@ -401,6 +387,38 @@ describe("Phase 10 reminder dispatcher", () => {
 
         expect(providerSet.calls).toHaveLength(2);
         expect(second.map((item) => item.status).sort()).toEqual(["duplicate", "duplicate"]);
+        expect(repository.attempts.every((attempt) => attempt.attemptCount === 2)).toBe(true);
+    });
+
+    test("retries failed reminder channels without resending successful ones", async () => {
+        const repository = new InMemoryNotificationRepository();
+        const failedProviderSet = providers({ failChannel: "sms" }) as NotificationProviderSet & {
+            calls: Array<{ channel: NotificationChannel }>;
+        };
+        const recoveredProviderSet = providers() as NotificationProviderSet & {
+            calls: Array<{ channel: NotificationChannel }>;
+        };
+
+        await dispatchBookingReminderNotification({
+            eventType: "reminder_24h",
+            bookingId: context.bookingId,
+            repository,
+            providers: failedProviderSet,
+            scheduledFor: new Date("2026-05-03T14:00:00.000Z"),
+            expectedStartTime: context.startTime,
+        });
+        const retry = await dispatchBookingReminderNotification({
+            eventType: "reminder_24h",
+            bookingId: context.bookingId,
+            repository,
+            providers: recoveredProviderSet,
+            scheduledFor: new Date("2026-05-03T14:00:00.000Z"),
+            expectedStartTime: context.startTime,
+        });
+
+        expect(retry.map((item) => item.status).sort()).toEqual(["duplicate", "sent"]);
+        expect(recoveredProviderSet.calls.map((call) => call.channel)).toEqual(["sms"]);
+        expect(repository.attempts.filter((attempt) => attempt.channel === "sms").every((attempt) => attempt.status === "sent")).toBe(true);
         expect(repository.attempts.every((attempt) => attempt.attemptCount === 2)).toBe(true);
     });
 

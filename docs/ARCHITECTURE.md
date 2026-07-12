@@ -540,14 +540,13 @@ Phase 10 implements reminder notifications for:
 - `reminder_2h` generated/sent reminders
 - `reminder_24h` historical notification-log compatibility only
 
-Channels:
-- customer SMS through Twilio-compatible SMS provider
+Channels (July 2026 notification cost hardening):
+- customer SMS through Twilio-compatible SMS provider for reminder events only
 - customer email through Resend-compatible email provider
-- barber/staff SMS through Twilio-compatible SMS provider
-- barber/staff email through Resend-compatible email provider for booking confirmations
+- barber/staff email through Resend-compatible email provider for booking confirmations, cancellations, and reschedules
 - owner/admin in-app visibility through `/admin/dashboard` Notification Center, not outbound email
 
-Reminder jobs send only customer SMS/email in Phase 10. Staff reminder SMS is deferred.
+Reminder jobs send only customer SMS/email. Staff reminder SMS is deferred. Lifecycle events are email-only so Twilio spend stays proportional to no-show prevention. Each reminder job run also prunes notification rows older than 180 days and scheduler heartbeat rows older than 30 days (always keeping the latest success per job) so storage stays inside the Neon Free allowance.
 
 Delivery modes:
 - `mock`: default local-safe mode, no live credentials required
@@ -559,8 +558,8 @@ Rules:
 - Twilio/Resend calls never run inside booking database transactions
 - notification failure logs a failed attempt and does not roll back the booking mutation
 - missing/invalid recipient contact logs a skipped attempt and does not throw
-- booking confirmations include customer SMS/email and assigned barber SMS/email when contact exists; owner/admin users see booking activity in the Dashboard Notification Center
-- cancellation and reschedule lifecycle notifications keep the existing customer SMS/email and staff SMS recipient plan
+- booking, cancellation, and reschedule confirmations include customer email and assigned barber email when contact exists; owner/admin users see booking activity in the Dashboard Notification Center
+- lifecycle events never send SMS; customer SMS is reserved for reminder events
 - staff-created walk-ins with customer contact create notification attempts through the shared lifecycle dispatcher; name-only walk-ins log skipped customer contact attempts without failing creation
 - no-shows, schedule changes, password resets, barber invites, and reminders are not Phase 9 lifecycle events
 - customer confirmation messages include management links only when raw URLs are already available from the public booking response

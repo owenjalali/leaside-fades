@@ -390,7 +390,7 @@ Notification events:
 - reschedule confirmation
 - 2-hour reminder
 
-Twilio is used for SMS.
+Twilio is used for SMS (customer reminders only).
 Resend is used for email.
 
 Notification dispatch rules:
@@ -398,8 +398,8 @@ Notification dispatch rules:
 - do not send provider messages inside booking database transactions
 - notification failures must be logged and must not fail booking mutations
 - missing or invalid customer phone/email logs a skipped customer attempt
-- booking confirmation sends/logs customer SMS/email and assigned barber SMS/email when contact exists
-- missing or invalid barber phone/email logs skipped staff attempts
+- booking, cancellation, and reschedule confirmations send/log customer email and assigned barber email when contact exists; lifecycle events do not send SMS (SMS is reserved for customer reminders)
+- missing or invalid barber email logs a skipped staff attempt
 - owner/admin users see booking and delivery activity through the in-app Dashboard Notification Center instead of outbound owner/admin email
 - staff-created walk-ins with customer contact create notification attempts through the shared booking dispatcher; name-only walk-ins log skipped missing-contact attempts without failing creation
 - no-shows, schedule changes, password resets, and barber invites remain out of notification scope
