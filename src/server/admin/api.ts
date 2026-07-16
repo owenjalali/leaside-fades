@@ -55,7 +55,10 @@ import {
     updateAdminShiftOverride,
     type AdminScheduleRepository,
 } from "./schedule-service.ts";
-import { resolveNotificationDeliveryMode } from "../notifications/index.ts";
+import {
+    resolveNotificationDeliveryMode,
+    resolveSmsDeliveryMode,
+} from "../notifications/index.ts";
 import { createTeamInviteDelivery } from "./team-invite-delivery.ts";
 import { createDrizzleTeamOnboardingRepository } from "./team-repository.ts";
 import {
@@ -86,6 +89,7 @@ interface AdminApiDependencies {
     scheduleRepository?: AdminScheduleRepository;
     appUrl?: string;
     now?: () => Date;
+    notificationEnv?: Partial<Record<string, string | undefined>>;
 }
 
 type ExpressLikeApp = {
@@ -545,12 +549,22 @@ export async function handleAdminDashboard(
     try {
         assertAdminMutationOrigin(request, dependencies);
         const session = await requireAdminSession(request, response, dependencies);
+        const notificationEnv = dependencies.notificationEnv ?? process.env;
         const dashboard = await getAdminDashboard(
             session.user,
             dependencies.bookingsRepository ?? createDrizzleAdminBookingsRepository(),
             {
                 now: dependencies.now?.() ?? new Date(),
-                notificationDeliveryMode: resolveNotificationDeliveryMode(process.env),
+                notificationDeliveryMode: resolveNotificationDeliveryMode(notificationEnv),
+                notificationProviders: {
+                    email: { provider: "brevo", state: "active" },
+                    sms: {
+                        provider: "twilio",
+                        state: resolveSmsDeliveryMode(notificationEnv) === "paused"
+                            ? "paused"
+                            : "active",
+                    },
+                },
                 dashboardPeriod: parseDashboardPeriod(request.query?.period),
                 dashboardAnchorDate: parseDashboardAnchorDate(request.query?.anchorDate),
             },

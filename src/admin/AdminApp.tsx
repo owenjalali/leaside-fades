@@ -89,6 +89,7 @@ import {
     notificationFilters,
     seriesHasDashboardData,
     summarizeNotificationHealth,
+    reminderSchedulerPresentation,
     todayLocalDate,
     navigateCalendarDate,
     navigateDashboardPeriod,
@@ -1979,6 +1980,7 @@ function NotificationHealthPanel({
     onOpenBooking: (bookingId: string) => void;
 }) {
     const summary = summarizeNotificationHealth(health);
+    const schedulerPresentation = reminderSchedulerPresentation(health.reminderScheduler.state);
     const activeFailures = getActiveNotificationFailures(activity);
     const activeFailureIds = new Set(activeFailures.map((item) => item.id));
     const recentRows = [
@@ -2020,11 +2022,19 @@ function NotificationHealthPanel({
                 <div className="rounded-md border border-[#e1e8e1] bg-[#fbfdfb] p-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <h3 className="text-base font-black text-forest">Reminder scheduler</h3>
-                        <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.1em] ${reminderSchedulerTone(health.reminderScheduler.state)}`}>
-                            {reminderSchedulerLabel(health.reminderScheduler.state)}
+                        <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.1em] ${schedulerPresentation.className}`}>
+                            {schedulerPresentation.label}
                         </span>
                     </div>
                     <p className="mt-2 text-sm font-bold text-charcoal/65">{health.reminderScheduler.message}</p>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs font-black text-charcoal/65">
+                        <span className="rounded-full bg-white px-3 py-1.5 ring-1 ring-[#d7e0d7]">
+                            Email - {providerDisplayName(health.providers.email.provider)} {health.providers.email.state}
+                        </span>
+                        <span className="rounded-full bg-white px-3 py-1.5 ring-1 ring-[#d7e0d7]">
+                            SMS - {providerDisplayName(health.providers.sms.provider)} {health.providers.sms.state}
+                        </span>
+                    </div>
                     <div className="mt-3 grid gap-2 text-xs font-bold text-charcoal/50 sm:grid-cols-2">
                         <span>Last success: {formatNullableDashboardDateTime(health.reminderScheduler.lastSuccessAt)}</span>
                         <span>Last run: {formatNullableDashboardDateTime(health.reminderScheduler.latestRunAt)}</span>
@@ -4697,18 +4707,10 @@ function deliveryModeLabel(mode: AdminDashboardSnapshot["notificationDeliveryMod
     return mode === "live" ? "Live" : "Test";
 }
 
-function reminderSchedulerTone(state: AdminDashboardSnapshot["notificationHealth"]["reminderScheduler"]["state"]) {
-    if (state === "healthy") return "bg-green/20 text-forest";
-    if (state === "failing") return "bg-red-100 text-red-800";
-    if (state === "stale") return "bg-amber-100 text-amber-800";
-    return "bg-[#eef5f1] text-charcoal/65";
-}
-
-function reminderSchedulerLabel(state: AdminDashboardSnapshot["notificationHealth"]["reminderScheduler"]["state"]) {
-    if (state === "healthy") return "Running";
-    if (state === "failing") return "Failed";
-    if (state === "stale") return "Stale";
-    return "Unknown";
+function providerDisplayName(provider: string) {
+    return provider.length > 0
+        ? `${provider.charAt(0).toUpperCase()}${provider.slice(1)}`
+        : "Unknown";
 }
 
 function formatNullableDashboardDateTime(value: string | null) {

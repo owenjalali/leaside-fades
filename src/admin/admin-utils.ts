@@ -230,6 +230,24 @@ export function summarizeNotificationHealth(health: AdminDashboardNotificationHe
     ];
 }
 
+export function reminderSchedulerPresentation(
+    state: AdminDashboardNotificationHealth["reminderScheduler"]["state"],
+) {
+    if (state === "healthy") {
+        return { label: "Running", className: "bg-green/20 text-forest" };
+    }
+    if (state === "failing") {
+        return { label: "Failed", className: "bg-red-100 text-red-800" };
+    }
+    if (state === "degraded") {
+        return { label: "Degraded", className: "bg-amber-100 text-amber-800" };
+    }
+    if (state === "stale") {
+        return { label: "Stale", className: "bg-amber-100 text-amber-800" };
+    }
+    return { label: "Unknown", className: "bg-[#eef5f1] text-charcoal/65" };
+}
+
 export function buildDashboardPeriodRange(period: AdminDashboardPeriod, anchorDate: string) {
     if (period === "all-time") {
         return {

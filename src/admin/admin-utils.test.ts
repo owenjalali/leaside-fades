@@ -48,6 +48,7 @@ import {
     seriesHasDashboardData,
     snapWeeklyScheduleClock,
     summarizeNotificationHealth,
+    reminderSchedulerPresentation,
     validateWeeklyScheduleDraft,
     startOfWeekLocalDate,
     weekDatesFromLocalDate,
@@ -277,6 +278,10 @@ describe("Phase 6 admin UI utilities", () => {
                 failedHistoricalCount: 4,
                 deliverySuccessRate: 90,
                 reminderQueueCount: 11,
+                providers: {
+                    email: { provider: "brevo", state: "active" },
+                    sms: { provider: "twilio", state: "paused" },
+                },
                 reminderScheduler: {
                     state: "healthy",
                     latestRunAt: "2026-05-20T16:30:00.000Z",
@@ -293,6 +298,13 @@ describe("Phase 6 admin UI utilities", () => {
                 },
             }),
         ).toEqual(["90% delivery success", "2 active issues", "11 reminders queued", "Scheduler healthy"]);
+    });
+
+    test("presents degraded scheduler delivery as an amber warning", () => {
+        expect(reminderSchedulerPresentation("degraded")).toEqual({
+            label: "Degraded",
+            className: "bg-amber-100 text-amber-800",
+        });
     });
 });
 

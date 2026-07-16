@@ -767,7 +767,10 @@ function dashboardActivityFixture(
     };
 }
 
-async function createTestApp(options: { now?: () => Date } = {}) {
+async function createTestApp(options: {
+    now?: () => Date;
+    notificationEnv?: Partial<Record<string, string | undefined>>;
+} = {}) {
     const authRepository = new InMemoryAuthRepository();
     const passwordResetDelivery = new InMemoryPasswordResetDelivery();
     const teamInviteDelivery = new InMemoryTeamInviteDelivery();
@@ -800,6 +803,7 @@ async function createTestApp(options: { now?: () => Date } = {}) {
         teamProfileImageStorage,
         appUrl: "http://localhost:3000",
         now: options.now ?? (() => now),
+        notificationEnv: options.notificationEnv,
     } as any);
 
     return { app, authRepository, passwordResetDelivery, teamInviteDelivery, teamProfileImageStorage, bookingsRepository };
@@ -1566,7 +1570,13 @@ describe("Phase 6 admin calendar and booking management API", () => {
     });
 
     test("owner dashboard returns appointments and safe notification-center activity", async () => {
-        const { app } = await createTestApp();
+        const { app } = await createTestApp({
+            notificationEnv: {
+                NODE_ENV: "production",
+                NOTIFICATION_DELIVERY_MODE: "live",
+                SMS_DELIVERY_MODE: "paused",
+            },
+        });
         const agent = request.agent(app);
 
         await agent
@@ -1588,6 +1598,10 @@ describe("Phase 6 admin calendar and booking management API", () => {
         expect(JSON.stringify(response.body.activity)).not.toContain("token");
         expect(JSON.stringify(response.body.activity)).not.toContain("cancelUrl");
         expect(JSON.stringify(response.body.activity)).not.toContain("rescheduleUrl");
+        expect(response.body.notificationHealth.providers).toEqual({
+            email: { provider: "brevo", state: "active" },
+            sms: { provider: "twilio", state: "paused" },
+        });
     });
 
     test("owner dashboard accepts completed-revenue period query filters", async () => {
@@ -1620,6 +1634,29 @@ describe("Phase 6 admin calendar and booking management API", () => {
             completedAppointmentCount: 1,
         });
         expect(response.body.revenue.series).toHaveLength(30);
+    });
+
+    test("owner dashboard reports Twilio active when SMS delivery is live", async () => {
+        const { app } = await createTestApp({
+            notificationEnv: {
+                NODE_ENV: "production",
+                NOTIFICATION_DELIVERY_MODE: "live",
+                SMS_DELIVERY_MODE: "live",
+            },
+        });
+        const agent = request.agent(app);
+
+        await agent
+            .post("/api/admin/auth/login")
+            .send({ email: "owner@example.com", password: "correct-password" })
+            .expect(200);
+
+        const response = await agent.get("/api/admin/dashboard").expect(200);
+
+        expect(response.body.notificationHealth.providers.sms).toEqual({
+            provider: "twilio",
+            state: "active",
+        });
     });
 
     test("owner dashboard accepts the all-time revenue period query filter", async () => {

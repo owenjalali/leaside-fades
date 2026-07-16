@@ -24,6 +24,7 @@ export {
     NotificationRuntimeConfigurationError,
     assertNotificationRuntimeConfig,
     resolveNotificationDeliveryMode,
+    resolveSmsDeliveryMode,
     validateNotificationRuntimeConfig,
 } from "./config.ts";
 export {

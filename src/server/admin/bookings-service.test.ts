@@ -1397,7 +1397,13 @@ describe("Phase 6 admin calendar and booking management service", () => {
             id: "scheduler-success",
             status: "success",
             finishedAt: new Date("2026-05-20T17:05:00.000Z"),
-            result: { scanned: 1, sent: 0, failed: 0 },
+            result: {
+                scanned: 1,
+                sent: 0,
+                failed: 0,
+                deferred: 0,
+                pausedByProvider: { twilio: 1 },
+            },
         });
         repository.schedulerJobRunSummary = {
             latest: successRun,
@@ -1415,7 +1421,56 @@ describe("Phase 6 admin calendar and booking management service", () => {
             state: "healthy",
             latestStatus: "success",
             minutesSinceLastSuccess: 25,
-            latestResult: { scanned: 1, sent: 0, failed: 0 },
+            latestResult: {
+                scanned: 1,
+                sent: 0,
+                failed: 0,
+                deferred: 0,
+                pausedByProvider: { twilio: 1 },
+            },
+        });
+
+        const degradedRun = schedulerJobRunFixture({
+            id: "scheduler-degraded",
+            status: "success",
+            finishedAt: new Date("2026-05-20T17:10:00.000Z"),
+            result: {
+                scanned: 1,
+                sent: 0,
+                failed: 1,
+                deferred: 0,
+                failedByProvider: { brevo: 1 },
+                pausedByProvider: { twilio: 1 },
+            },
+        });
+        repository.schedulerJobRunSummary = {
+            latest: degradedRun,
+            latestSuccess: degradedRun,
+            latestFailure: null,
+        };
+
+        const degradedDashboard = await getAdminDashboard(
+            { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+            repository,
+            {
+                now: currentTime,
+                reminderSchedulerStaleAfterMinutes: 90,
+                notificationProviders: {
+                    email: { provider: "brevo", state: "active" },
+                    sms: { provider: "twilio", state: "paused" },
+                },
+            },
+        );
+
+        expect(degradedDashboard.notificationHealth).toMatchObject({
+            providers: {
+                email: { provider: "brevo", state: "active" },
+                sms: { provider: "twilio", state: "paused" },
+            },
+            reminderScheduler: {
+                state: "degraded",
+                message: "Latest reminder run completed with 1 provider failure and 0 deferred deliveries.",
+            },
         });
 
         repository.schedulerJobRunSummary = {
@@ -1423,11 +1478,13 @@ describe("Phase 6 admin calendar and booking management service", () => {
                 id: "scheduler-stale",
                 status: "success",
                 finishedAt: new Date("2026-05-20T15:00:00.000Z"),
+                result: { failed: 1, deferred: 0, failedByProvider: { brevo: 1 } },
             }),
             latestSuccess: schedulerJobRunFixture({
                 id: "scheduler-stale",
                 status: "success",
                 finishedAt: new Date("2026-05-20T15:00:00.000Z"),
+                result: { failed: 1, deferred: 0, failedByProvider: { brevo: 1 } },
             }),
             latestFailure: null,
         };

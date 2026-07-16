@@ -352,10 +352,14 @@ export interface AdminDashboardNotificationHealth {
     failedHistoricalCount: number;
     deliverySuccessRate: number;
     reminderQueueCount: number;
+    providers: {
+        email: { provider: string; state: "active" | "paused" };
+        sms: { provider: string; state: "active" | "paused" };
+    };
     reminderScheduler: AdminReminderSchedulerStatus;
 }
 
-export type AdminReminderSchedulerState = "healthy" | "stale" | "failing" | "unknown";
+export type AdminReminderSchedulerState = "healthy" | "degraded" | "stale" | "failing" | "unknown";
 
 export interface AdminReminderSchedulerStatus {
     state: AdminReminderSchedulerState;

@@ -209,11 +209,17 @@ export interface AdminDashboardNotificationHealth {
     failedHistoricalCount: number;
     deliverySuccessRate: number;
     reminderQueueCount: number;
+    providers: AdminNotificationProviderHealth;
     reminderScheduler: AdminReminderSchedulerStatus;
 }
 
+export interface AdminNotificationProviderHealth {
+    email: { provider: string; state: "active" | "paused" };
+    sms: { provider: string; state: "active" | "paused" };
+}
+
 export type AdminSchedulerJobRunStatus = "success" | "failure";
-export type AdminReminderSchedulerState = "healthy" | "stale" | "failing" | "unknown";
+export type AdminReminderSchedulerState = "healthy" | "degraded" | "stale" | "failing" | "unknown";
 
 export interface AdminSchedulerJobRunRecord {
     id: string;
@@ -524,6 +530,7 @@ export async function getAdminDashboard(
         reminderSchedulerStaleAfterMinutes?: number;
         dashboardPeriod?: AdminDashboardPeriod;
         dashboardAnchorDate?: string;
+        notificationProviders?: AdminNotificationProviderHealth;
     } = {},
 ): Promise<AdminDashboardSnapshot> {
     const now = options.now ?? new Date();
@@ -618,7 +625,12 @@ export async function getAdminDashboard(
             upcomingStatusBookings,
             buildLocalDateSeries(today, 7),
         ),
-        notificationHealth: buildNotificationHealth(classifiedActivity, upcomingReminders, reminderScheduler),
+        notificationHealth: buildNotificationHealth(
+            classifiedActivity,
+            upcomingReminders,
+            reminderScheduler,
+            options.notificationProviders ?? defaultNotificationProviderHealth(),
+        ),
     };
 }
 
@@ -1489,6 +1501,7 @@ function buildNotificationHealth(
     activity: AdminDashboardActivityRecord[],
     upcomingReminders: AdminUpcomingReminderPreview[],
     reminderScheduler: AdminReminderSchedulerStatus,
+    providers: AdminNotificationProviderHealth,
 ): AdminDashboardNotificationHealth {
     const sentCount = activity.filter((item) => item.status === "sent").length;
     const scheduledCount = activity.filter((item) => item.status === "pending" || Boolean(item.scheduledFor)).length;
@@ -1505,6 +1518,7 @@ function buildNotificationHealth(
         failedHistoricalCount,
         deliverySuccessRate: deliveryDenominator > 0 ? Math.round((sentCount / deliveryDenominator) * 100) : 100,
         reminderQueueCount: upcomingReminders.length,
+        providers,
         reminderScheduler,
     };
 }
@@ -1577,6 +1591,26 @@ function buildReminderSchedulerStatus(
                 minutesSinceLastSuccess === null
                     ? "No successful reminder scheduler run has been recorded."
                     : `No successful reminder scheduler run in ${minutesSinceLastSuccess} minutes.`,
+        };
+    }
+
+    const providerFailureCount = resultCount(latest.result, "failed");
+    const deferredCount = resultCount(latest.result, "deferred");
+
+    if (providerFailureCount > 0 || deferredCount > 0) {
+        return {
+            state: "degraded",
+            latestRunAt,
+            latestStatus: latest.status,
+            lastSuccessAt,
+            lastFailureAt,
+            minutesSinceLastSuccess,
+            staleAfterMinutes: effectiveStaleAfterMinutes,
+            trigger: latest.trigger,
+            durationMs: latest.durationMs,
+            errorMessage: latest.errorMessage,
+            latestResult: latest.result,
+            message: `Latest reminder run completed with ${providerFailureCount} provider ${providerFailureCount === 1 ? "failure" : "failures"} and ${deferredCount} deferred ${deferredCount === 1 ? "delivery" : "deliveries"}.`,
         };
     }
 
@@ -1958,6 +1992,20 @@ function buildDashboardRevenuePeriod(
         periodStart,
         periodEnd: `${anchorDate.slice(0, 4)}-12-31`,
         bucketGranularity: "month",
+    };
+}
+
+function resultCount(result: Record<string, unknown> | null, key: string) {
+    const value = result?.[key];
+    return typeof value === "number" && Number.isFinite(value) && value > 0
+        ? Math.floor(value)
+        : 0;
+}
+
+function defaultNotificationProviderHealth(): AdminNotificationProviderHealth {
+    return {
+        email: { provider: "brevo", state: "active" },
+        sms: { provider: "twilio", state: "active" },
     };
 }
 
