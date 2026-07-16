@@ -10,6 +10,7 @@ export type NotificationEventType =
     | BookingReminderNotificationEventType;
 export type NotificationAttemptStatus = "pending" | "sent" | "failed" | "skipped";
 export type NotificationDeliveryMode = "mock" | "dev" | "live";
+export type NotificationProviderDeliveryState = "active" | "paused";
 export type BookingNotificationStatus = "confirmed" | "cancelled" | "completed" | "no_show";
 
 export interface BookingNotificationContext {
@@ -60,13 +61,17 @@ export interface NotificationSendResult {
     providerMessageId: string;
 }
 
-export interface SmsNotificationProvider {
+export interface NotificationProviderStatus {
     provider: string;
+    deliveryState: NotificationProviderDeliveryState;
+    pauseReason?: "provider_paused";
+}
+
+export interface SmsNotificationProvider extends NotificationProviderStatus {
     send(input: SmsSendInput): Promise<NotificationSendResult>;
 }
 
-export interface EmailNotificationProvider {
-    provider: string;
+export interface EmailNotificationProvider extends NotificationProviderStatus {
     send(input: EmailSendInput): Promise<NotificationSendResult>;
 }
 

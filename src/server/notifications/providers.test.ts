@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
     NotificationProviderConfigurationError,
@@ -43,7 +43,7 @@ describe("Phase 9 notification providers", () => {
                 TWILIO_ACCOUNT_SID: "",
                 TWILIO_AUTH_TOKEN: "",
                 TWILIO_FROM_NUMBER: "",
-                RESEND_API_KEY: "",
+                BREVO_API_KEY: "",
                 EMAIL_FROM: "",
             },
         });
@@ -55,5 +55,113 @@ describe("Phase 9 notification providers", () => {
                 body: "Hello",
             }),
         ).rejects.toBeInstanceOf(NotificationProviderConfigurationError);
+    });
+
+    test("live mode exposes intentionally paused Twilio without credentials", () => {
+        const providers = createNotificationProviders({
+            mode: "live",
+            env: {
+                SMS_DELIVERY_MODE: "paused",
+                BREVO_API_KEY: "brevo-test-key",
+                EMAIL_FROM: "Leaside Fades <bookings@leasidefades.com>",
+            },
+        });
+
+        expect(providers.sms).toMatchObject({
+            provider: "twilio",
+            deliveryState: "paused",
+            pauseReason: "provider_paused",
+        });
+    });
+
+    test("live Brevo sends a bounded transactional email", async () => {
+        const fetchImpl = vi.fn(async () => new Response(
+            JSON.stringify({ messageId: "brevo-message-id" }),
+            { status: 201, headers: { "content-type": "application/json" } },
+        ));
+        const providers = createNotificationProviders({
+            mode: "live",
+            env: {
+                SMS_DELIVERY_MODE: "paused",
+                BREVO_API_KEY: "brevo-test-key",
+                EMAIL_FROM: "Leaside Fades <bookings@leasidefades.com>",
+                EMAIL_REPLY_TO: "owner@leasidefades.com",
+                NOTIFICATION_PROVIDER_TIMEOUT_MS: "5000",
+            },
+            fetch: fetchImpl,
+        });
+
+        await expect(providers.email.send({
+            idempotencyKey: "booking-1:email",
+            to: "customer@example.com",
+            subject: "Booking confirmed",
+            text: "Confirmed",
+            html: "<p>Confirmed</p>",
+        })).resolves.toEqual({
+            provider: "brevo",
+            providerMessageId: "brevo-message-id",
+        });
+
+        expect(fetchImpl).toHaveBeenCalledTimes(1);
+        const [url, init] = fetchImpl.mock.calls[0];
+        expect(url).toBe("https://api.brevo.com/v3/smtp/email");
+        expect(init).toMatchObject({
+            method: "POST",
+            signal: expect.any(AbortSignal),
+            headers: {
+                accept: "application/json",
+                "api-key": "brevo-test-key",
+                "content-type": "application/json",
+            },
+        });
+        expect(JSON.parse(String(init?.body))).toEqual({
+            sender: { name: "Leaside Fades", email: "bookings@leasidefades.com" },
+            to: [{ email: "customer@example.com" }],
+            subject: "Booking confirmed",
+            textContent: "Confirmed",
+            htmlContent: "<p>Confirmed</p>",
+            replyTo: { email: "owner@leasidefades.com" },
+        });
+    });
+
+    test("Brevo failures expose only the HTTP status", async () => {
+        const providers = createNotificationProviders({
+            mode: "live",
+            env: {
+                SMS_DELIVERY_MODE: "paused",
+                BREVO_API_KEY: "brevo-test-key",
+                EMAIL_FROM: "bookings@leasidefades.com",
+            },
+            fetch: vi.fn(async () => new Response(
+                JSON.stringify({ message: "sensitive provider response" }),
+                { status: 401 },
+            )),
+        });
+
+        await expect(providers.email.send({
+            idempotencyKey: "booking-1:email",
+            to: "customer@example.com",
+            subject: "Booking confirmed",
+            text: "Confirmed",
+        })).rejects.toThrow("Brevo email delivery failed (HTTP 401).");
+    });
+
+    test("rejects malformed Brevo sender configuration", async () => {
+        const providers = createNotificationProviders({
+            mode: "live",
+            env: {
+                SMS_DELIVERY_MODE: "paused",
+                BREVO_API_KEY: "brevo-test-key",
+                EMAIL_FROM: "Leaside Fades bookings-at-leasidefades.com",
+            },
+            fetch: vi.fn(),
+        });
+
+        await expect(providers.email.send({
+            idempotencyKey: "booking-1:email",
+            to: "customer@example.com",
+            subject: "Booking confirmed",
+            text: "Confirmed",
+        })).rejects.toBeInstanceOf(NotificationProviderConfigurationError);
     });
 });

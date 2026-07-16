@@ -1,6 +1,3 @@
-import twilio from "twilio";
-import { Resend } from "resend";
-
 import type {
     EmailNotificationProvider,
     EmailSendInput,
@@ -11,7 +8,7 @@ import type {
     SmsNotificationProvider,
     SmsSendInput,
 } from "./types.ts";
-import { resolveNotificationDeliveryMode } from "./config.ts";
+import { resolveNotificationDeliveryMode, resolveSmsDeliveryMode } from "./config.ts";
 
 type NotificationProviderEnv = Partial<Record<string, string | undefined>>;
 
@@ -26,6 +23,7 @@ export interface CreateNotificationProviderOptions {
     mode?: NotificationDeliveryMode;
     env?: NotificationProviderEnv;
     failChannels?: Set<NotificationChannel>;
+    fetch?: typeof fetch;
 }
 
 export function createNotificationProviders(
@@ -36,8 +34,10 @@ export function createNotificationProviders(
     if (mode === "live") {
         return {
             mode,
-            sms: new TwilioSmsProvider(options.env ?? process.env),
-            email: new ResendEmailProvider(options.env ?? process.env),
+            sms: resolveSmsDeliveryMode(options.env ?? process.env) === "paused"
+                ? new PausedTwilioSmsProvider()
+                : new TwilioSmsProvider(options.env ?? process.env),
+            email: new BrevoEmailProvider(options.env ?? process.env, options.fetch),
         };
     }
 
@@ -58,6 +58,7 @@ export function createNotificationProviders(
 
 class MockSmsProvider implements SmsNotificationProvider {
     readonly provider = "mock";
+    readonly deliveryState = "active" as const;
     private readonly failChannels?: Set<NotificationChannel>;
 
     constructor(failChannels?: Set<NotificationChannel>) {
@@ -78,6 +79,7 @@ class MockSmsProvider implements SmsNotificationProvider {
 
 class MockEmailProvider implements EmailNotificationProvider {
     readonly provider = "mock";
+    readonly deliveryState = "active" as const;
     private readonly failChannels?: Set<NotificationChannel>;
 
     constructor(failChannels?: Set<NotificationChannel>) {
@@ -98,6 +100,7 @@ class MockEmailProvider implements EmailNotificationProvider {
 
 class DevSmsProvider implements SmsNotificationProvider {
     readonly provider = "dev";
+    readonly deliveryState = "active" as const;
     private readonly failChannels?: Set<NotificationChannel>;
 
     constructor(failChannels?: Set<NotificationChannel>) {
@@ -119,6 +122,7 @@ class DevSmsProvider implements SmsNotificationProvider {
 
 class DevEmailProvider implements EmailNotificationProvider {
     readonly provider = "dev";
+    readonly deliveryState = "active" as const;
     private readonly failChannels?: Set<NotificationChannel>;
 
     constructor(failChannels?: Set<NotificationChannel>) {
@@ -140,6 +144,7 @@ class DevEmailProvider implements EmailNotificationProvider {
 
 class TwilioSmsProvider implements SmsNotificationProvider {
     readonly provider = "twilio";
+    readonly deliveryState = "active" as const;
     private readonly env: NotificationProviderEnv;
 
     constructor(env: NotificationProviderEnv) {
@@ -150,7 +155,8 @@ class TwilioSmsProvider implements SmsNotificationProvider {
         const accountSid = requiredEnv(this.env, "TWILIO_ACCOUNT_SID");
         const authToken = requiredEnv(this.env, "TWILIO_AUTH_TOKEN");
         const from = requiredEnv(this.env, "TWILIO_FROM_NUMBER");
-        const client = twilio(accountSid, authToken);
+        const { default: createTwilioClient } = await import("twilio");
+        const client = createTwilioClient(accountSid, authToken);
         const message = await client.messages.create({
             from,
             to: input.to,
@@ -164,34 +170,104 @@ class TwilioSmsProvider implements SmsNotificationProvider {
     }
 }
 
-class ResendEmailProvider implements EmailNotificationProvider {
-    readonly provider = "resend";
-    private readonly env: NotificationProviderEnv;
+class PausedTwilioSmsProvider implements SmsNotificationProvider {
+    readonly provider = "twilio";
+    readonly deliveryState = "paused" as const;
+    readonly pauseReason = "provider_paused" as const;
 
-    constructor(env: NotificationProviderEnv) {
+    async send(): Promise<NotificationSendResult> {
+        throw new Error("Paused Twilio provider must not be invoked.");
+    }
+}
+
+class BrevoEmailProvider implements EmailNotificationProvider {
+    readonly provider = "brevo";
+    readonly deliveryState = "active" as const;
+    private readonly env: NotificationProviderEnv;
+    private readonly fetchImpl: typeof fetch;
+
+    constructor(env: NotificationProviderEnv, fetchImpl: typeof fetch = fetch) {
         this.env = env;
+        this.fetchImpl = fetchImpl;
     }
 
     async send(input: EmailSendInput): Promise<NotificationSendResult> {
-        const apiKey = requiredEnv(this.env, "RESEND_API_KEY");
-        const from = requiredEnv(this.env, "EMAIL_FROM");
-        const resend = new Resend(apiKey);
-        const response = await resend.emails.send({
-            from,
-            to: input.to,
+        const apiKey = requiredEnv(this.env, "BREVO_API_KEY");
+        const sender = parseEmailFrom(requiredEnv(this.env, "EMAIL_FROM"));
+        const replyTo = optionalEmail(this.env.EMAIL_REPLY_TO, "EMAIL_REPLY_TO");
+        const response = await this.fetchImpl("https://api.brevo.com/v3/smtp/email", {
+            method: "POST",
+            headers: {
+                accept: "application/json",
+                "api-key": apiKey,
+                "content-type": "application/json",
+            },
+            redirect: "error",
+            signal: AbortSignal.timeout(providerTimeoutMsFromEnv(this.env)),
+            body: JSON.stringify({
+            sender,
+            to: [{ email: input.to }],
             subject: input.subject,
-            text: input.text,
-            html: input.html,
+            textContent: input.text,
+            ...(input.html ? { htmlContent: input.html } : {}),
+            ...(replyTo ? { replyTo: { email: replyTo } } : {}),
+            }),
         });
 
-        if (response.error) {
-            throw new Error(response.error.message);
+        if (!response.ok) {
+            throw new Error(`Brevo email delivery failed (HTTP ${response.status}).`);
         }
 
+        const body = await parseBrevoResponse(response);
         return {
             provider: this.provider,
-            providerMessageId: response.data?.id ?? `resend-${safeProviderId(input.idempotencyKey)}`,
+            providerMessageId: body.messageId ?? `brevo-${safeProviderId(input.idempotencyKey)}`,
         };
+    }
+}
+
+const SIMPLE_EMAIL_PATTERN = /^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/;
+
+function parseEmailFrom(value: string) {
+    const namedMatch = value.match(/^\s*([^<>]+?)\s*<([^<>]+)>\s*$/);
+
+    if (namedMatch) {
+        const name = namedMatch[1].trim();
+        const email = namedMatch[2].trim();
+        if (name && SIMPLE_EMAIL_PATTERN.test(email)) {
+            return { name, email };
+        }
+    }
+
+    if (SIMPLE_EMAIL_PATTERN.test(value)) {
+        return { email: value };
+    }
+
+    throw new NotificationProviderConfigurationError(
+        "EMAIL_FROM must be a valid email address or Name <email@example.com> value.",
+    );
+}
+
+function optionalEmail(value: string | undefined, key: string) {
+    const normalized = value?.trim();
+    if (!normalized) return undefined;
+    if (!SIMPLE_EMAIL_PATTERN.test(normalized)) {
+        throw new NotificationProviderConfigurationError(`${key} must be a valid email address.`);
+    }
+    return normalized;
+}
+
+function providerTimeoutMsFromEnv(env: NotificationProviderEnv) {
+    const parsed = Number.parseInt(env.NOTIFICATION_PROVIDER_TIMEOUT_MS ?? "", 10);
+    return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1_000), 10_000) : 5_000;
+}
+
+async function parseBrevoResponse(response: Response): Promise<{ messageId?: string }> {
+    try {
+        const body = await response.json() as { messageId?: unknown };
+        return typeof body.messageId === "string" ? { messageId: body.messageId } : {};
+    } catch {
+        return {};
     }
 }
 

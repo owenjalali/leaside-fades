@@ -18,12 +18,11 @@ export interface ValidateNotificationRuntimeConfigOptions {
 }
 
 const COMMON_REMINDER_JOB_ENV_KEYS = ["DATABASE_URL", "APP_URL"];
-const LIVE_NOTIFICATION_ENV_KEYS = [
+const LIVE_EMAIL_ENV_KEYS = ["BREVO_API_KEY", "EMAIL_FROM"];
+const LIVE_SMS_ENV_KEYS = [
     "TWILIO_ACCOUNT_SID",
     "TWILIO_AUTH_TOKEN",
     "TWILIO_FROM_NUMBER",
-    "RESEND_API_KEY",
-    "EMAIL_FROM",
 ];
 
 export class NotificationRuntimeConfigurationError extends Error {
@@ -76,12 +75,23 @@ export function validateNotificationRuntimeConfig(
     }
 
     if (mode === "live" || options.requireLiveDelivery) {
-        for (const key of LIVE_NOTIFICATION_ENV_KEYS) {
+        for (const key of LIVE_EMAIL_ENV_KEYS) {
             if (!hasEnvValue(env, key)) {
                 issues.push({
                     key,
-                    message: `${key} is required for live Twilio/Resend notification delivery.`,
+                    message: `${key} is required for live Brevo email delivery.`,
                 });
+            }
+        }
+
+        if (resolveSmsDeliveryMode(env) === "live") {
+            for (const key of LIVE_SMS_ENV_KEYS) {
+                if (!hasEnvValue(env, key)) {
+                    issues.push({
+                        key,
+                        message: `${key} is required when live Twilio SMS delivery is enabled.`,
+                    });
+                }
             }
         }
     }
@@ -91,6 +101,12 @@ export function validateNotificationRuntimeConfig(
         mode,
         issues,
     };
+}
+
+export function resolveSmsDeliveryMode(
+    env: NotificationRuntimeEnv = process.env,
+): "live" | "paused" {
+    return env.SMS_DELIVERY_MODE?.trim().toLowerCase() === "paused" ? "paused" : "live";
 }
 
 export function assertNotificationRuntimeConfig(
