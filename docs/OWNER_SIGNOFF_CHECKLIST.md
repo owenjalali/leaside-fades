@@ -32,7 +32,7 @@ Machine-checked against the repo and live production (`https://leasidefades.com`
 - Business hours (both locations): Sun 10:00–17:00, Mon–Sat 10:00–19:00.
 - Roster (5): Sam To (Eglinton), Yogesh Kumar (Millwood-only ✓), Laura Nguyen (Eglinton + Millwood), Josef (Eglinton), Shayan Hussain (Millwood-only ✓).
 - Categories (3): Men / Women / Boys (9 & under). Featured services: none currently flagged (all `isFeatured = false`).
-- Notification senders are env-driven — `SMS_DELIVERY_MODE`, `TWILIO_FROM_NUMBER`, `EMAIL_FROM` (`Leaside Fades <bookings@leasidefades.com>`), and `BREVO_API_KEY`; values live in prod env, not git. Confirm the email sender/domain in Brevo. Twilio is paused until balance and a fresh smoke test are approved.
+- Notification senders are env-driven — `SMS_DELIVERY_MODE`, `TWILIO_FROM_NUMBER`, `EMAIL_FROM` (`Leaside Fades <bookings@mail.leasidefades.com>`), and `BREVO_API_KEY`; values live in prod env, not git. Confirm the dedicated `mail.leasidefades.com` sender/domain in Brevo. Twilio is paused until balance and a fresh smoke test are approved.
 
 Remaining unticked boxes are intentional: they are business-data accuracy and launch-approval attestations that need the owner's confirmation.
 

@@ -280,7 +280,7 @@ Twilio pause/recovery:
 - To recover, top up the balance, confirm the sender/credentials, run one controlled SMS smoke, set `SMS_DELIVERY_MODE=live`, and redeploy.
 
 Brevo recovery:
-- Confirm `leasidefades.com` remains authenticated in Brevo and `EMAIL_FROM` uses its verified sender.
+- Confirm the dedicated sending subdomain `mail.leasidefades.com` remains authenticated and branded in Brevo and `EMAIL_FROM` uses `Leaside Fades <bookings@mail.leasidefades.com>`.
 - Rotate `BREVO_API_KEY` in Brevo and Vercel together if compromised; never place it in logs, git, screenshots, or support messages.
 - Run a controlled owner-approved email smoke, then verify password-reset and invite delivery before staff onboarding.
 

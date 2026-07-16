@@ -388,7 +388,7 @@
 - [ ] Google Maps, Instagram, and Facebook links verified in production
 - [x] Historical Resend live email smoke verified with an approved test contact before provider retirement
 - [x] Historical Twilio production number verified SMS-capable through controlled live smoke
-- [ ] Brevo sender/domain and controlled live email smoke verified after migration
+- [x] Brevo `mail.leasidefades.com` sender/domain and controlled live email smoke verified after migration
 - [x] Production Twilio delivery is intentionally paused until balance and owner approval are restored
 - [x] Database migration applied
 - [x] Seed data verified
@@ -398,7 +398,7 @@
 - [ ] Customer/staff booking confirmation delivery and owner/admin dashboard visibility tested in production/staging logs
 - [x] Controlled live SMS smoke test sent only to owner/test phone
 - [x] Controlled live email smoke test sent only to approved test email
-- [ ] Reminder job manually tested against a safe controlled fixture or staging database
+- [x] Production reminder job manually executed after hardening; completed in 462 ms with no failures/deferred work and Twilio recorded as intentionally paused
 - [x] Production reminder scheduler enabled through cron-job.org and first successful `200 OK` run observed
 - [x] Production database plan/quota restored to Neon Launch after compute quota exhaustion incident
 - [x] Current incident production smoke passes after Neon quota/plan restoration
@@ -428,7 +428,7 @@
 - [x] Temporary production owner/admin login generated and verified; owner handoff/password rotation pending
 - [ ] Staff notification contact info confirmed or owner accepts missing-contact launch risk
 - [ ] Password reset/invite delivery behavior confirmed
-- [ ] Production host logging/error visibility confirmed
+- [x] Production host logging/error visibility confirmed for the hardened deployment; Vercel `200` logs and a fresh durable healthy heartbeat were observed
 - [ ] Owner signs off
 
 ## Phase 13 - Optional Migration/Import Tooling

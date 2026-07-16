@@ -132,11 +132,12 @@ class DrizzleSchedulerJobRunRepository implements SchedulerJobRunRepository {
     }
 
     async getJobRunSummary(input: { jobName: string }) {
-        const [latest, latestSuccess, latestFailure] = await Promise.all([
-            this.getLatestJobRun(input.jobName),
-            this.getLatestJobRun(input.jobName, "success"),
-            this.getLatestJobRun(input.jobName, "failure"),
-        ]);
+        // The reminder HTTP path deliberately reuses one leased PostgreSQL
+        // client. Keep these reads serialized so pg never receives overlapping
+        // queries on that client (concurrent client.query calls are deprecated).
+        const latest = await this.getLatestJobRun(input.jobName);
+        const latestSuccess = await this.getLatestJobRun(input.jobName, "success");
+        const latestFailure = await this.getLatestJobRun(input.jobName, "failure");
 
         return {
             latest,

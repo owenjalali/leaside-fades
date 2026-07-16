@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
+    createDrizzleSchedulerJobRunRepository,
     runTrackedSchedulerJob,
     type SchedulerJobRunRepository,
     type SchedulerJobRunSummary,
@@ -28,6 +29,38 @@ afterEach(() => {
 });
 
 describe("scheduler job run tracking", () => {
+    test("reads scheduler summary sequentially on a single database executor", async () => {
+        let activeQueries = 0;
+        let maximumActiveQueries = 0;
+        const database = {
+            select: vi.fn(() => ({
+                from: () => ({
+                    where: () => ({
+                        orderBy: () => ({
+                            limit: async () => {
+                                activeQueries += 1;
+                                maximumActiveQueries = Math.max(maximumActiveQueries, activeQueries);
+                                await Promise.resolve();
+                                activeQueries -= 1;
+                                return [];
+                            },
+                        }),
+                    }),
+                }),
+            })),
+        };
+        const repository = createDrizzleSchedulerJobRunRepository(database);
+
+        await expect(repository.getJobRunSummary({ jobName: "booking_reminders" })).resolves.toEqual({
+            latest: null,
+            latestSuccess: null,
+            latestFailure: null,
+        });
+
+        expect(database.select).toHaveBeenCalledTimes(3);
+        expect(maximumActiveQueries).toBe(1);
+    });
+
     test("records successful scheduler jobs without changing the job result", async () => {
         const repository = new InMemorySchedulerJobRunRepository();
         const clock = fixedClock([
