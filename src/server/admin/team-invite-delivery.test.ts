@@ -1,35 +1,22 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const resendMocks = vi.hoisted(() => ({
-    send: vi.fn(),
-    Resend: vi.fn(function Resend() {
-        return {
-            emails: {
-                send: resendMocks.send,
-            },
-        };
-    }),
-}));
-
-vi.mock("resend", () => ({
-    Resend: resendMocks.Resend,
-}));
-
 import { createTeamInviteDelivery } from "./team-invite-delivery.ts";
 
 describe("team invite delivery", () => {
+    const send = vi.fn();
+
     beforeEach(() => {
-        resendMocks.send.mockReset();
-        resendMocks.Resend.mockClear();
+        send.mockReset();
     });
 
-    test("production delivery sends barber invite email through Resend", async () => {
-        resendMocks.send.mockResolvedValue({ data: { id: "resend-invite-1" }, error: null });
+    test("production delivery sends barber invite email through the configured provider", async () => {
+        send.mockResolvedValue({ provider: "brevo", providerMessageId: "brevo-invite-1" });
         const delivery = createTeamInviteDelivery({
-            env: {
-                NODE_ENV: "production",
-                RESEND_API_KEY: "re_test",
-                EMAIL_FROM: "Leaside Fades <bookings@example.com>",
+            env: { NODE_ENV: "production" },
+            emailProvider: {
+                provider: "brevo",
+                deliveryState: "active",
+                send,
             },
         });
 
@@ -39,10 +26,8 @@ describe("team invite delivery", () => {
             expiresAt: new Date("2026-05-18T15:00:00.000Z"),
         });
 
-        expect(resendMocks.Resend).toHaveBeenCalledWith("re_test");
-        expect(resendMocks.send).toHaveBeenCalledWith(
+        expect(send).toHaveBeenCalledWith(
             expect.objectContaining({
-                from: "Leaside Fades <bookings@example.com>",
                 to: "barber@example.com",
                 subject: "Set up your Leaside Fades barber account",
                 text: expect.stringContaining("https://leasidefades.com/admin/accept-invite?token=invite-token"),

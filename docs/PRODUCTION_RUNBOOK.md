@@ -17,8 +17,9 @@ Current production target:
 - Confirm `.env.production.example` has been copied into the host environment with real values.
 - Confirm `APP_URL=https://leasidefades.com`.
 - Confirm `SITE_BOOKING_URL=https://leasidefades.com/book`.
-- Confirm `NOTIFICATION_DELIVERY_MODE=live` only after Twilio and Resend are verified.
-- Confirm password reset and barber invite emails are allowed from the configured Resend sender/domain.
+- Confirm `NOTIFICATION_DELIVERY_MODE=live` only after Brevo is verified.
+- Confirm `SMS_DELIVERY_MODE=paused` while Twilio funding is unavailable. This application pause prevents sends; it does not stop Twilio phone-number or account recurring charges.
+- Confirm password reset and barber invite emails are allowed from the configured Brevo sender/domain.
 - Confirm no `DEV_OWNER_*` values are configured on production.
 - Audit untracked artifacts, Fresha scratch files, cookies, screenshots, exports, and private customer data before the launch commit.
 
@@ -29,15 +30,22 @@ Current production target:
 - `APP_URL`
 - `DATABASE_URL`
 - `NOTIFICATION_DELIVERY_MODE`
+- `SMS_DELIVERY_MODE`
+- `NOTIFICATION_PROVIDER_TIMEOUT_MS`
 - `REMINDER_JOB_LOOKBACK_MINUTES`
 - `REMINDER_JOB_LOOKAHEAD_MINUTES`
 - `REMINDER_HTTP_MIN_INTERVAL_MINUTES`
 - `REMINDER_HTTP_BOUNDARY_GRACE_MINUTES`
+- `REMINDER_DB_CONNECT_TIMEOUT_MS`
+- `REMINDER_DB_QUERY_TIMEOUT_MS`
+- `REMINDER_HTTP_DEADLINE_MS`
+- `CRON_SECRET`
 - `TWILIO_ACCOUNT_SID`
 - `TWILIO_AUTH_TOKEN`
 - `TWILIO_FROM_NUMBER`
-- `RESEND_API_KEY`
+- `BREVO_API_KEY`
 - `EMAIL_FROM`
+- `EMAIL_REPLY_TO` (optional)
 - `GOOGLE_PLACES_API_KEY`
 - `GOOGLE_PLACE_ID`
 - `SITE_BUSINESS_NAME`
@@ -127,8 +135,8 @@ Before exposing `/book` publicly:
 - Confirm business hours and location details.
 - Enter approved closures or blocked time.
 - Confirm owner/admin login account/email and login path.
-- Confirm owner/admin password reset email delivery through Resend.
-- Confirm barber invite email delivery through Resend before onboarding staff.
+- Confirm owner/admin password reset email delivery through Brevo.
+- Confirm barber invite email delivery through Brevo before onboarding staff.
 - Enter staff phone/email contacts only from owner-approved data.
 
 Do not seed local/dev sample shifts in production.
@@ -148,7 +156,8 @@ Rules:
 
 Smoke steps:
 - If a temporary production smoke endpoint is used because Vercel secrets are write-only locally, protect it with a one-use secret, call it only with approved internal contacts, remove it immediately afterward, remove the temporary env var, and redeploy clean production.
-- Record provider-level smoke results before booking-flow smoke. Controlled live Twilio SMS and Resend email smoke has passed with approved internal test contacts; raw test contact details are intentionally not stored in git.
+- Record provider-level smoke results before booking-flow smoke. Historical Twilio/Resend smoke passed before the July 2026 cost change; Brevo must receive a fresh controlled email smoke. Raw test contact details are intentionally not stored in git.
+- While `SMS_DELIVERY_MODE=paused`, verify SMS rows are `skipped` with `provider_paused` and no Twilio request is made. Do not re-enable SMS until balance, credentials, and an owner-approved smoke test are ready.
 - Create a public test booking.
 - Verify customer SMS/email attempts are sent or logged.
 - Verify assigned staff SMS/email attempts are sent or logged when contact info exists.
@@ -188,10 +197,10 @@ npm run qa:production-reminder-scheduler
 
 This checks Vercel production logs for at least one `200` response from `/api/jobs/send-reminders`. Set `PRODUCTION_REMINDER_LOG_SINCE=<ISO timestamp>` when validating a specific scheduler restart window.
 
-After migration `0006_phase_12_scheduler_job_runs` is applied, real reminder job runs also write heartbeat rows. Check `/admin/dashboard` Notification health after a successful scheduler restart; the reminder scheduler should move from unknown/stale/failing to running after the next real authorized run.
+After migration `0006_phase_12_scheduler_job_runs` is applied, real reminder job runs also write heartbeat rows. Check `/admin/dashboard` Notification health after a successful scheduler restart; the reminder scheduler should move from unknown/stale/failing to healthy or degraded after the next real authorized run. Degraded means the scheduler and database completed but a provider failed or work was deferred by the deadline.
 
 GitHub Actions scheduler:
-- `.github/workflows/send-reminders.yml` runs on `master` at UTC minute `13` and `43`.
+- `.github/workflows/send-reminders.yml` is a once-daily canary/manual fallback and runs on `master` at `15:13 UTC`.
 - Store the current production `CRON_SECRET` as repository secret `LEASIDE_REMINDER_CRON_SECRET`.
 - The workflow can be manually dispatched with `gh workflow run send-reminders.yml --ref master`.
 - The workflow fails if the endpoint returns non-2xx. A `recent_success` skip is clean because the durable heartbeat already satisfies the cadence.
@@ -245,6 +254,8 @@ Recommended cadence:
 - Default lookback: 60 minutes.
 - Default lookahead: 15 minutes.
 - `REMINDER_HTTP_MIN_INTERVAL_MINUTES` defaults the secured HTTP endpoint to a 30-minute database cadence using the durable success heartbeat.
+- The route authenticates before importing job/database modules, leases one pool connection (`max=1`), sets bounded connect/query timeouts, and holds a PostgreSQL advisory lock while it runs.
+- Keep `REMINDER_HTTP_DEADLINE_MS=24000`, `REMINDER_DB_CONNECT_TIMEOUT_MS=4000`, `REMINDER_DB_QUERY_TIMEOUT_MS=5000`, and `NOTIFICATION_PROVIDER_TIMEOUT_MS=5000` unless a measured production change justifies different values. The overall deadline is intentionally below Vercel's 30-second limit.
 - A delayed authorized scheduler run executes when the last successful heartbeat is stale; a duplicate authorized scheduler run skips with `recent_success`.
 - Capture stdout/stderr in host logs.
 - Do not configure multiple authorized production reminder schedulers for the same database.
@@ -256,12 +267,22 @@ Before cutover, confirm where these are visible:
 - migration output
 - reminder job stdout/stderr
 - Twilio delivery errors
-- Resend delivery errors
+- Brevo delivery errors
 - database connection errors
 - database quota/compute exhaustion errors
 - uncaught Express errors
 
-Notification provider failures should be visible in the `notifications` table and host logs.
+Notification provider failures should be visible in the `notifications` table, host logs, and `/admin/dashboard` as degraded scheduler health. They return HTTP 200 so external schedulers do not misreport a database/route outage; database connection, initialization, deadline, and job-infrastructure failures remain non-2xx.
+
+Twilio pause/recovery:
+- Keep the existing encrypted Twilio credentials in Vercel while `SMS_DELIVERY_MODE=paused`; the app will not initialize Twilio or send SMS.
+- Pausing in this app does not suspend the Twilio account, release a phone number, or stop recurring Twilio charges. Review those separately in Twilio before the next billing date.
+- To recover, top up the balance, confirm the sender/credentials, run one controlled SMS smoke, set `SMS_DELIVERY_MODE=live`, and redeploy.
+
+Brevo recovery:
+- Confirm `leasidefades.com` remains authenticated in Brevo and `EMAIL_FROM` uses its verified sender.
+- Rotate `BREVO_API_KEY` in Brevo and Vercel together if compromised; never place it in logs, git, screenshots, or support messages.
+- Run a controlled owner-approved email smoke, then verify password-reset and invite delivery before staff onboarding.
 
 ## Weekly Health Check
 

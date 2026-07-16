@@ -205,12 +205,12 @@ class BrevoEmailProvider implements EmailNotificationProvider {
             redirect: "error",
             signal: AbortSignal.timeout(providerTimeoutMsFromEnv(this.env)),
             body: JSON.stringify({
-            sender,
-            to: [{ email: input.to }],
-            subject: input.subject,
-            textContent: input.text,
-            ...(input.html ? { htmlContent: input.html } : {}),
-            ...(replyTo ? { replyTo: { email: replyTo } } : {}),
+                sender,
+                to: [{ email: input.to }],
+                subject: input.subject,
+                textContent: input.text,
+                ...(input.html ? { htmlContent: input.html } : {}),
+                ...(replyTo ? { replyTo: { email: replyTo } } : {}),
             }),
         });
 

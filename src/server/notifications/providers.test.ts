@@ -75,7 +75,7 @@ describe("Phase 9 notification providers", () => {
     });
 
     test("live Brevo sends a bounded transactional email", async () => {
-        const fetchImpl = vi.fn<typeof fetch>(async (_input, _init) => new Response(
+        const fetchImpl = vi.fn<typeof fetch>(async () => new Response(
             JSON.stringify({ messageId: "brevo-message-id" }),
             { status: 201, headers: { "content-type": "application/json" } },
         ));

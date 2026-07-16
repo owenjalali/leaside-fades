@@ -4,6 +4,8 @@
 
 Phase 12 production launch readiness plus Phase 13 guarded Fresha import/cutover tooling are in progress. Phase 11 Fresha read-only public/admin inspection is complete.
 
+July 16, 2026 notification-cost and scheduler hardening is implemented on `codex/brevo-cron-hardening` pending production rollout. Resend has been removed from the Leaside Fades runtime in favor of Brevo transactional email (Free plan target: 300 emails/day), while the shared Resend account and its other client domains remain untouched. Twilio has an independent `SMS_DELIVERY_MODE=paused` state: SMS attempts become idempotent `provider_paused` skips without loading the Twilio SDK, while email and booking mutations continue. The reminder HTTP endpoint now authenticates before initialization, uses one bounded PostgreSQL connection plus an advisory lock, enforces connection/query/provider/overall deadlines below the 30-second host budget, and exposes provider failures/deferred work as degraded scheduler health. Database/initialization/job infrastructure failures remain non-2xx. Production Brevo domain/key setup, Vercel variables, deployment, and controlled smoke verification are the remaining actions for this change.
+
 A separate July 2026 full UI/UX upgrade track has started (owner-approved phased plan: ops hygiene, design system, shifts rework, all-staff week grid, blocked time rework, calendar polish, backend hardening, app-wide sweep). Upgrade Phase 0 (ops hygiene) is deployed to production and verified; the owner confirmed the repository's public visibility is intentional. Upgrade Phase A (design system foundation) is implemented, verified, and committed locally. The July 5 schedule-period UI addendum was reviewed by the owner and REJECTED as confusing; after a mockup-first redesign cycle (3-agent design debate, Fresha/competitor research, three published clickable mockups), the owner approved the "Team Week" direction — a Fresha-style team-week grid (barbers × real dated days) riding the existing per-date shift-override APIs — which replaces the schedule-period UI and pulls the shifts-rework + all-staff-week-grid phases forward. Team Week is implemented, adversarially reviewed (booking-safety fix C1 verified against public availability), QA'd 30/30 headed, and ships to production together with Phase A in the July 10 push (owner-directed).
 
 The remaining upgrade phases (E blocked-time rework, F calendar polish, G backend hardening, H testing expansion, I final app-wide sweep) were executed in a single owner-directed July 10-11 session and are PUSHED AND LIVE — deployed to production on master (aliased to leasidefades.com / www.leasidefades.com) after the owner's explicit go, and verified against the live environment: read-only production smoke (18 availability-consistency probes + owner schedule-vs-availability cross-check) and a 300-request / concurrency-15 read stress run both passed with 0 failures, and Vercel reported zero runtime errors for the deployment. Each phase ran the full protocol: implement, adversarial multi-agent review, fix, gates (typecheck / 589 tests / lint 0 errors / build), and headed localhost QA.
@@ -101,7 +103,7 @@ Phase 12 launch-prep status:
 - Backend admin/session and public booking tests now freeze their fixture dates so session cookies do not expire against the real system date and May 2026 booking fixtures do not become "past dates" as the wall clock advances.
 - A secured `GET /api/jobs/send-reminders` endpoint exists for reminder schedulers and requires `CRON_SECRET` before it will run. Vercel Hobby blocked the desired five-minute Vercel Cron registration, so production reminders use an external scheduler. The current quota-safe target cadence is every 30 minutes.
 - cron-job.org job `7551064` is repaired and enabled as the primary external scheduler at a quota-safe 30-minute cadence. `.github/workflows/send-reminders.yml` remains as a free backup/manual scheduler path using repository secret `LEASIDE_REMINDER_CRON_SECRET`; the secured reminder endpoint's heartbeat cadence guard prevents duplicate reminder sends.
-- Vercel production contains encrypted Twilio/Resend notification environment variables. A temporary secret-gated production smoke endpoint verified the live notification runtime, then was removed and production was redeployed cleanly. Controlled live SMS and email smoke tests have passed with approved test contacts; the raw test contact details are intentionally not stored in git.
+- Vercel production historically contained encrypted Twilio/Resend notification variables and passed controlled smoke tests. The July 16 rollout replaces the Leaside Fades Resend variable with Brevo, explicitly pauses Twilio at the application layer, and requires a fresh controlled Brevo smoke; raw test contact details are intentionally not stored in git.
 - Phase 13 import tooling now provides guarded dry-run/apply commands for the May 1-June 30, 2026 Fresha import window. Apply mode requires a reviewed report confirmation, and imported bookings use `source = "imported"` without lifecycle notifications or reminder jobs.
 - Read-only Fresha calendar extraction for May 1-June 30, 2026 completed through Playwright MCP for both locations and all visible service providers. It found 55 Fresha booking blocks, transformed them into 53 appointment candidates after grouping stacked services, and generated `output/fresha-import/fresha-import-review-2026-05-01-to-2026-06-30.md`.
 - Two owner-approved test bookings that blocked import were marked `cancelled` in production: Owen/Yogesh/Millwood and Ethan/Laura/Eglinton on May 1.
@@ -138,16 +140,16 @@ Do not seed local/dev sample shifts in production. Production currently uses the
 - Customers can cancel and reschedule anytime through secure links.
 - All services are available at both locations for MVP.
 - Every barber can perform every service for MVP.
-- SMS provider: Twilio.
-- Email provider: Resend.
+- SMS provider: Twilio, independently pausable with `SMS_DELIVERY_MODE=paused`.
+- Email provider: Brevo transactional email.
 - Soft migration from Fresha is preferred for launch.
 - Phase 1 intentionally does not seed real recurring barber shifts because real schedules are unknown.
 - Phase 5A chose custom session auth. Existing `users` rows without `password_hash` cannot log in until bootstrapped, reset, or invited.
 - Admin sessions use a 30-day sliding inactivity window and HTTP-only `SameSite=Lax` cookies with `Secure` enabled in production.
 - Phase 5B password reset links expire after 45 minutes, use opaque random tokens, and persist only SHA-256 token hashes.
-- Password reset delivery uses Resend in production and dev-mode logging outside production.
+- Password reset delivery uses Brevo in production and dev-mode logging outside production.
 - Phase 5C barber invites expire after seven days, use opaque random tokens, and persist only SHA-256 token hashes.
-- Barber invite delivery uses Resend in production and dev-mode logging outside production.
+- Barber invite delivery uses Brevo in production and dev-mode logging outside production.
 - Phase 12 expands Phase 5C into an owner/admin-only `/admin/team` UI. Barber users cannot see the Team rail item and backend team routes remain owner/admin-only.
 - Production barber profile uploads require a configured Vercel Blob store and `BLOB_READ_WRITE_TOKEN`. Local QA can set `TEAM_PROFILE_IMAGE_UPLOAD_MODE=mock`.
 - `npm run qa:phase5-auth` is local/dev-only, refuses non-local database URLs, and captures reset/invite links only from dev delivery logs during QA.
@@ -183,7 +185,7 @@ Do not seed local/dev sample shifts in production. Production currently uses the
 - Phase 9 sends/logs `booking_confirmation`, `cancellation_confirmation`, and `reschedule_confirmation` only. Reminder jobs remain Phase 10.
 - Staff-created walk-ins with customer contact now create booking confirmation attempts through the same dispatcher as manual bookings. Name-only walk-ins log skipped missing-contact attempts instead of failing creation. Imported bookings remain excluded.
 - Customer confirmation messages include cancellation/reschedule URLs only when raw URLs are available from the booking response; raw management tokens are never reconstructed from hashes and are not persisted in notification metadata.
-- `NOTIFICATION_DELIVERY_MODE=mock` is the local/default-safe mode; `dev` logs to the server console; `live` uses Twilio and Resend credentials.
+- `NOTIFICATION_DELIVERY_MODE=mock` is the local/default-safe mode; `dev` logs to the server console; `live` uses Brevo email and the independently configured Twilio SMS state.
 - `npm run qa:phase9-notifications` is local/dev-only, refuses non-local database URLs, forces mock delivery, uses local-only contact fixtures, verifies create/cancel/reschedule logs, verifies idempotency/skipped-contact behavior, verifies contacted walk-in confirmation attempts, verifies no raw token persistence, and cleans up QA rows.
 - Phase 10 reminders are invoked through `npm run notifications:send-reminders`; Phase 13 adds a secured `GET /api/jobs/send-reminders` wrapper for production scheduler invocation.
 - Phase 10 reminders are customer-only SMS/email attempts for confirmed `source = "public"`, `source = "manual"`, and `source = "walk_in"` bookings when customer contact exists.
@@ -192,8 +194,8 @@ Do not seed local/dev sample shifts in production. Production currently uses the
 - Reminder jobs re-check current booking status, source, and appointment start time before sending so rescheduled bookings receive reminders for the new appointment time only.
 - Reminder messages do not include customer management links because raw cancellation/reschedule tokens cannot be reconstructed from hashes.
 - Sent, skipped, and pending reminder notification rows remain idempotent on duplicate job runs; failed provider rows are retryable with the same idempotency key.
-- `npm run notifications:check-live-config` verifies production reminder job database/live Twilio/Resend configuration before scheduler enablement.
-- Production reminder scheduler guidance lives in `docs/PRODUCTION_REMINDER_JOBS.md`; the recommended cadence is every five minutes with the default 60-minute lookback and 15-minute lookahead.
+- `npm run notifications:check-live-config` verifies production database/Brevo configuration and requires Twilio credentials only when SMS is live.
+- Production reminder scheduler guidance lives in `docs/PRODUCTION_REMINDER_JOBS.md`; the recommended cadence is every 30 minutes during the Toronto business-hours window with the default 60-minute lookback and 15-minute lookahead.
 - `npm run qa:phase10-reminders` is local/dev-only, refuses non-local database URLs, forces mock delivery, creates real public booking fixtures through Express routes, verifies 2-hour reminders, no generated 24-hour reminder rows, duplicate prevention, cancelled/rescheduled booking behavior, failed SMS retry, and cleans up QA rows.
 - Phase 12 launch correction: Yogesh Kumar is strictly Millwood-only for launch. He must not be bookable at Eglinton, even if older Fresha notes or repo docs imply otherwise.
 - Phase 11 public/admin Fresha inspection found Millwood staff listed as Laura, Yogesh, and Shayan, matching current docs/seed data at first-name level.
@@ -465,7 +467,7 @@ Phase 9 notification infrastructure tests:
 - customer booking confirmations include management links only when raw URLs are provided
 - notification metadata stores flags and appointment summaries without raw management URLs or tokens
 - mock and dev providers return deterministic provider message IDs without live credentials
-- live provider wrappers fail clearly when required Twilio/Resend environment variables are missing
+- live provider wrappers fail clearly when required Brevo or live-Twilio environment variables are missing; paused Twilio requires no live credential validation
 - dispatcher logs sent, failed, skipped, and duplicate/idempotent outcomes
 - skipped customer/staff contact rows do not call providers and do not fail booking flows
 - idempotency keys prevent duplicate notification rows and increment attempt counts on duplicate attempts
@@ -488,7 +490,7 @@ Phase 10 reminder job tests:
 - stale reminder candidates are skipped when the booking has been rescheduled since the scan
 - cancelled, completed, no-show, and imported bookings do not create reminder attempts; confirmed walk-ins are reminder-eligible when customer contact exists
 - due-window scanning generates only 2-hour reminders
-- live reminder configuration preflight reports missing production Twilio/Resend variables before scheduler enablement
+- live reminder configuration preflight reports missing Brevo variables and, only when SMS is live, missing Twilio variables before scheduler enablement
 - local Phase 10 QA verifies real public booking/cancel/reschedule routes, duplicate reminder prevention, failed SMS retry, and cleanup
 
 Phase 4 manual DB-backed QA:

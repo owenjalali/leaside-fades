@@ -5,7 +5,7 @@ Use this checklist before replacing public Fresha booking links with `/book`.
 Current launch-prep note:
 - `leasidefades.com`, `/book`, and the production database are live.
 - The initial production schedule has been entered from the Phase 11 observed Fresha roster and still needs owner verification below.
-- Controlled Twilio SMS and Resend email smoke have passed with approved test contacts. Raw test contact details are intentionally not stored in git.
+- Historical Twilio SMS and Resend email smoke passed with approved test contacts. Twilio is now intentionally paused and Brevo requires a fresh controlled email smoke. Raw test contact details are intentionally not stored in git.
 - Fresha future-booking import remains pending until the extraction report is reviewed and explicitly approved.
 
 ## Automated Technical Verification — 2026-07-11
@@ -32,7 +32,7 @@ Machine-checked against the repo and live production (`https://leasidefades.com`
 - Business hours (both locations): Sun 10:00–17:00, Mon–Sat 10:00–19:00.
 - Roster (5): Sam To (Eglinton), Yogesh Kumar (Millwood-only ✓), Laura Nguyen (Eglinton + Millwood), Josef (Eglinton), Shayan Hussain (Millwood-only ✓).
 - Categories (3): Men / Women / Boys (9 & under). Featured services: none currently flagged (all `isFeatured = false`).
-- Notification senders are env-driven — `TWILIO_FROM_NUMBER`, `EMAIL_FROM` (`Leaside Fades <bookings@leasidefades.com>`), `RESEND_API_KEY`; values live in prod env, not git. Confirm the actual sending number/domain in the Twilio and Resend dashboards.
+- Notification senders are env-driven — `SMS_DELIVERY_MODE`, `TWILIO_FROM_NUMBER`, `EMAIL_FROM` (`Leaside Fades <bookings@leasidefades.com>`), and `BREVO_API_KEY`; values live in prod env, not git. Confirm the email sender/domain in Brevo. Twilio is paused until balance and a fresh smoke test are approved.
 
 Remaining unticked boxes are intentional: they are business-data accuracy and launch-approval attestations that need the owner's confirmation.
 
@@ -77,9 +77,9 @@ Remaining unticked boxes are intentional: they are business-data accuracy and la
 
 - [ ] Production owner/admin login account/email is confirmed.
 - [ ] Temporary `owner@leasidefades.com` password is handed off and rotated.
-- [ ] Password reset email arrives through Resend and opens `/admin/reset-password`.
+- [ ] Password reset email arrives through Brevo and opens `/admin/reset-password`.
 - [ ] Staff invite/onboarding plan is confirmed.
-- [ ] Barber invite email arrives through Resend and opens `/admin/accept-invite`.
+- [ ] Barber invite email arrives through Brevo and opens `/admin/accept-invite`.
 - [x] Reset and invite links use the production `https://leasidefades.com` origin.  `✓ verified` (APP_URL origin, asserted by delivery tests)
 - [ ] Barber login behavior is approved.
 - [ ] Staff who need appointment notifications have approved phone/email contacts entered.
@@ -93,8 +93,9 @@ Remaining unticked boxes are intentional: they are business-data accuracy and la
 - [ ] Customer cancel/reschedule notification wording is approved.
 - [ ] Reminder wording is approved.
 - [ ] Reminder timing is approved.
-- [ ] Twilio sending number is approved.
-- [ ] Resend sender/domain is approved.
+- [x] Twilio application delivery is paused while funding is unavailable.
+- [ ] Twilio sending number and balance are approved before SMS is reactivated.
+- [ ] Brevo sender/domain is approved.
 - [ ] Controlled live notification smoke test contacts are approved.
 
 ## Launch And Cutover

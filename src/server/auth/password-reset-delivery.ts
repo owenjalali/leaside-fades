@@ -15,7 +15,7 @@ export function createPasswordResetDelivery(
     const env = options.env ?? process.env;
 
     if (env.NODE_ENV === "production") {
-        return new ResendPasswordResetDelivery(
+        return new ProductionPasswordResetDelivery(
             options.emailProvider ?? createNotificationProviders({ mode: "live", env }).email,
         );
     }
@@ -35,7 +35,7 @@ class DevModePasswordResetDelivery implements PasswordResetDelivery {
     }
 }
 
-class ResendPasswordResetDelivery implements PasswordResetDelivery {
+class ProductionPasswordResetDelivery implements PasswordResetDelivery {
     private readonly emailProvider: EmailNotificationProvider;
 
     constructor(emailProvider: EmailNotificationProvider) {

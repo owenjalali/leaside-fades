@@ -12,7 +12,7 @@ Before enabling a production scheduler, configure live delivery secrets in the p
 npm run notifications:check-live-config
 ```
 
-The preflight exits nonzero if `DATABASE_URL`, `APP_URL`, `NOTIFICATION_DELIVERY_MODE=live`, or any Twilio/Resend live-delivery variable is missing.
+The preflight exits nonzero if `DATABASE_URL`, `APP_URL`, `NOTIFICATION_DELIVERY_MODE=live`, or required live-delivery configuration is missing. Brevo email is required. Twilio credentials are required only when `SMS_DELIVERY_MODE=live`; paused SMS is a valid production state.
 
 ## Phase Timing
 
@@ -24,9 +24,9 @@ Phase 12 launch prep owns production readiness testing:
 - production environment variables on the actual host
 - `https://leasidefades.com` and `https://leasidefades.com/book`
 - Google Places, Google Maps, Instagram, and Facebook configuration
-- Resend domain/sender verification
-- Twilio SMS-capable sender verification
-- controlled live SMS/email smoke tests to owner-approved test contacts only
+- Brevo domain/sender verification
+- Twilio SMS-capable sender verification only before SMS is reactivated
+- controlled live email smoke and, when reactivating SMS, a controlled SMS smoke to owner-approved test contacts only
 - manual reminder job smoke test against a safe fixture or staging database
 - production scheduler enablement after smoke tests pass
 - A secured `GET /api/jobs/send-reminders` endpoint exists for a production scheduler.
@@ -62,16 +62,20 @@ Required production notification variables:
 - `DATABASE_URL`
 - `APP_URL`
 - `NOTIFICATION_DELIVERY_MODE=live`
+- `SMS_DELIVERY_MODE=paused` until Twilio is funded and explicitly reactivated
+- `NOTIFICATION_PROVIDER_TIMEOUT_MS=5000`
 - `REMINDER_JOB_LOOKBACK_MINUTES=60`
 - `REMINDER_JOB_LOOKAHEAD_MINUTES=15`
 - `REMINDER_HTTP_MIN_INTERVAL_MINUTES=30` on quota-limited database plans
 - `REMINDER_HTTP_BOUNDARY_GRACE_MINUTES=2` for authenticated dry-run boundary reporting
+- `REMINDER_DB_CONNECT_TIMEOUT_MS=4000`
+- `REMINDER_DB_QUERY_TIMEOUT_MS=5000`
+- `REMINDER_HTTP_DEADLINE_MS=24000`
 - `CRON_SECRET`
-- `TWILIO_ACCOUNT_SID`
-- `TWILIO_AUTH_TOKEN`
-- `TWILIO_FROM_NUMBER`
-- `RESEND_API_KEY`
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_NUMBER` only when `SMS_DELIVERY_MODE=live`
+- `BREVO_API_KEY`
 - `EMAIL_FROM`
+- `EMAIL_REPLY_TO` (optional)
 
 Recommended schedule:
 - Run every 30 minutes within the America/Toronto active window (06:00-21:30). Reminder due-times only occur around shop hours; overnight runs only wake the Neon database and burn compute quota.
@@ -85,8 +89,12 @@ Vercel setup:
 - The secured endpoint is `GET /api/jobs/send-reminders`.
 - Set `CRON_SECRET` in Vercel production. Vercel sends it as `Authorization: Bearer <CRON_SECRET>` when invoking cron.
 - The endpoint returns `503` if `CRON_SECRET` is missing and `401` if the header does not match, so reminders cannot be triggered publicly.
+- Authentication happens before importing or initializing the reminder/database modules. Secret comparison uses fixed-length SHA-256 digests and timing-safe comparison.
 - To verify the production cron secret without sending reminders or opening a database reminder job, call `GET /api/jobs/send-reminders?dryRun=1` with the same `Authorization: Bearer <CRON_SECRET>` header. A healthy dry-run response returns `200`, `dryRun: true`, and the current cadence decision.
 - The endpoint checks `REMINDER_HTTP_MIN_INTERVAL_MINUTES` and the latest durable success heartbeat before running the live reminder job. The default is 30 minutes. Delayed authorized scheduler calls run when the last successful heartbeat is stale; duplicate calls skip with `reason: "recent_success"` when a recent success already satisfies the cadence.
+- A live run leases one PostgreSQL connection from a `max=1` pool and reuses it for cadence, reminder queries, heartbeat writes, and retention. Connection/query/initialization budgets are bounded and a PostgreSQL advisory lock prevents concurrent runners.
+- The default overall HTTP deadline is 24 seconds, below Vercel's 30-second limit. Provider calls are admitted only when enough budget remains; otherwise the work is counted as deferred without creating a false failed-delivery row.
+- Provider failures or deferred work return HTTP 200 with `health: "degraded"` and provider counts, because the scheduler/database path ran. Database connection, initialization, overall deadline, and job-infrastructure failures return non-2xx with generic public errors and record a failed heartbeat when possible.
 - Vercel Hobby projects are limited to daily cron jobs. The recommended 30-minute business-hours schedule requires an external scheduler (cron-job.org is the production primary).
 - On a Vercel Pro project, an equivalent cron could be added to `vercel.json` — note Vercel cron expressions are UTC, so the hour range must be translated from America/Toronto and adjusted for DST:
 
@@ -145,10 +153,10 @@ $env:CRON_SECRET = (Select-String -Path .env.production.local -Pattern '^CRON_SE
 - If the production deploy was created from the Vercel CLI and project-level logs omit the latest request, set `PRODUCTION_REMINDER_LOG_TARGET=<deployment-domain>` to read logs from the concrete deployment URL.
 - You can also run `npm run qa:production-reminder-heartbeat` directly with `PRODUCTION_REMINDER_HEARTBEAT_SINCE=<restart ISO timestamp>` to inspect the heartbeat alone. Dry-runs, unauthorized `401`s, and off-cadence HTTP skips do not write this heartbeat.
 
-Linux cron example:
+Linux cron example for a host that can express the Toronto active window separately:
 
 ```cron
-*/5 * * * * cd /var/www/leaside-fades && npm run notifications:send-reminders >> /var/log/leaside-fades-reminders.log 2>&1
+0,30 6-21 * * * cd /var/www/leaside-fades && npm run notifications:send-reminders >> /var/log/leaside-fades-reminders.log 2>&1
 ```
 
 Windows Task Scheduler action example:
@@ -157,12 +165,14 @@ Windows Task Scheduler action example:
 Program/script: npm
 Arguments: run notifications:send-reminders
 Start in: C:\path\to\Leaside Fades
-Trigger: Daily, repeat every 5 minutes indefinitely
+Trigger: Daily, repeat every 30 minutes from 06:00 through 21:30 America/Toronto
 ```
 
 Operational notes:
 - Each reminder job run also prunes notification rows older than 180 days and scheduler heartbeat rows older than 30 days (always keeping the latest success row per job, which the HTTP cadence guard reads), so storage stays inside the Neon Free allowance. Pruning failures are logged and never block reminder delivery.
-- Provider failures are logged per notification row and do not fail the whole job.
+- Provider failures are logged per notification row and mark scheduler health degraded without failing the HTTP scheduler transport.
+- `SMS_DELIVERY_MODE=paused` logs SMS work as skipped with `provider_paused`, does not load the Twilio SDK, and does not prevent Brevo email delivery.
+- Pausing Twilio in the application does not stop Twilio account or phone-number recurring charges; manage billing separately in Twilio.
 - Failed provider rows are retryable on later job runs.
 - Sent, skipped, and in-flight pending rows remain idempotent and do not resend.
 - Cancelled, completed, no-show, walk-in, imported, and stale-rescheduled bookings are re-checked and skipped before delivery.

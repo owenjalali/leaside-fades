@@ -15,7 +15,7 @@ export function createTeamInviteDelivery(
     const env = options.env ?? process.env;
 
     if (env.NODE_ENV === "production") {
-        return new ResendTeamInviteDelivery(
+        return new ProductionTeamInviteDelivery(
             options.emailProvider ?? createNotificationProviders({ mode: "live", env }).email,
         );
     }
@@ -35,7 +35,7 @@ class DevModeTeamInviteDelivery implements TeamInviteDelivery {
     }
 }
 
-class ResendTeamInviteDelivery implements TeamInviteDelivery {
+class ProductionTeamInviteDelivery implements TeamInviteDelivery {
     private readonly emailProvider: EmailNotificationProvider;
 
     constructor(emailProvider: EmailNotificationProvider) {

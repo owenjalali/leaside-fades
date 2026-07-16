@@ -746,3 +746,21 @@ Normalize the database connection string at client-creation time. `normalizeData
 
 Reason:
 node-postgres emits a deprecation warning for `sslmode=require` on every serverless cold start, which marked healthy requests as `[error]` in Vercel logs and produced hundreds of noise entries that buried real failures. Neon TLS certificates chain to a public CA, so full certificate verification is both safe and strictly stronger than `require`.
+
+### 2026-07-16 - Move Leaside Fades Transactional Email From Resend To Brevo
+
+Decision:
+Use Brevo's transactional email API for Leaside Fades booking lifecycle email, reminders, password resets, and barber invites. The runtime uses a fixed Brevo HTTPS endpoint, API-key authentication, a parsed `EMAIL_FROM`, optional `EMAIL_REPLY_TO`, a bounded request timeout, and status-only provider errors. Remove the Resend SDK and `RESEND_API_KEY` from this project's current configuration. Do not alter the shared Resend account or domains used by other clients.
+
+Reason:
+The owner cannot justify Resend's paid plan for this business and the shared account must remain isolated for other clients. Brevo's Free plan target of 300 transactional emails per day is sufficient for the current Leaside Fades volume. A fixed endpoint and bounded native HTTP client keep the integration small, prevent arbitrary outbound targets, avoid logging provider response bodies or credentials, and make a later provider swap remain behind the existing email interface. This supersedes the May 11 Resend provider choice for current production delivery; the older decision remains as migration history.
+
+### 2026-07-16 - Pause Twilio Independently And Bound Reminder Cron End To End
+
+Decision:
+Add `SMS_DELIVERY_MODE=paused|live`, with production paused until the owner restores Twilio funding and approves a fresh SMS smoke. Paused SMS records an idempotent skipped attempt with `provider_paused`, converts a retryable prior failure for the same occurrence to skipped, and never imports or initializes Twilio. Keep encrypted Twilio credentials available for later recovery. This application pause does not cancel Twilio service or recurring number/account charges.
+
+The authenticated reminder HTTP route now checks `CRON_SECRET` before job/database imports, leases one connection from a `max=1` PostgreSQL pool, reuses that connection for cadence, job, heartbeat, and retention work, holds a PostgreSQL advisory lock, and enforces bounded connection, query, initialization, provider, and overall HTTP deadlines. Provider failures and deadline-deferred work return HTTP 200 with degraded result counts and a successful scheduler heartbeat; database connection, initialization, overall deadline, and job-infrastructure failures return non-2xx and record failure when possible. `/admin/dashboard` exposes healthy/degraded/stale/failing/unknown scheduler state and Brevo/Twilio delivery state without secrets.
+
+Reason:
+Low Twilio balance should not cause repeated failed attempts, customer booking failures, or scheduler alarm noise while email remains affordable. The July cron-job.org failures took roughly 31-34 seconds because initialization and multiple database pools could consume the full 30-second Vercel budget before provider work completed. One connection, explicit budgets, early authentication, and concurrency locking make the endpoint predictable. Separating provider degradation from infrastructure failure keeps scheduler alerts meaningful while the in-app health surface still exposes partial delivery problems.

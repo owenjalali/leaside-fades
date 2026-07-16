@@ -17,7 +17,7 @@ The platform is live in production at `https://leasidefades.com`.
 - **Backend**: Express 5 in `server.js`, deployed as a single Vercel serverless function through `api/[...route].js`
 - **Database**: Neon Postgres via Drizzle ORM and node-postgres (`pg`); migrations managed by drizzle-kit
 - **Auth**: custom session auth with Argon2 password hashing (owner/admin/barber roles)
-- **Notifications**: Twilio SMS and Resend email through an idempotent notifications outbox (the `notifications` table), with `mock` / `dev` / `live` delivery modes
+- **Notifications**: Brevo email and independently pausable Twilio SMS through an idempotent notifications outbox (the `notifications` table), with `mock` / `dev` / `live` delivery modes
 - **Reminders**: appointment reminders run through `GET /api/jobs/send-reminders`, guarded by `CRON_SECRET` and triggered by cron-job.org (primary) and a GitHub Actions workflow (`.github/workflows/send-reminders.yml`, backup)
 - **Tests**: Vitest
 
@@ -80,8 +80,9 @@ npm run dev
 
 - `DATABASE_URL` — Postgres connection string (Neon in production)
 - `NOTIFICATION_DELIVERY_MODE` — `mock` (default), `dev`, or `live`
-- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` — SMS delivery (live mode only)
-- `RESEND_API_KEY` — email delivery (live mode only)
+- `SMS_DELIVERY_MODE` — `paused` or `live`; paused avoids loading or calling Twilio
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` — required only when SMS delivery is live
+- `BREVO_API_KEY`, `EMAIL_FROM` — Brevo email delivery in live mode
 - `CRON_SECRET` — bearer token guarding `GET /api/jobs/send-reminders`
 - `BLOB_READ_WRITE_TOKEN` — Vercel Blob for barber profile photo uploads
 - `SITE_*` — public site configuration (business name, phone, booking URL, social links)

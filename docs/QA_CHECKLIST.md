@@ -234,7 +234,8 @@
 ## Phase 9 - Notifications
 
 - [x] Twilio abstraction works behind provider interface
-- [x] Resend abstraction works behind provider interface
+- [x] Brevo abstraction works behind provider interface (Resend retired from this project)
+- [x] Twilio can be paused independently without initializing its SDK or creating repeated failed reminder attempts
 - [x] Mock/dev modes work without live credentials
 - [x] Live mode fails clearly when required credentials are missing
 - [x] Booking confirmation logged
@@ -385,8 +386,10 @@
 - [x] Admin API/session and public booking fixture tests freeze their date clocks so session cookies and May 2026 availability fixtures remain deterministic as real time advances
 - [ ] Google Places API key and Place ID verified in production
 - [ ] Google Maps, Instagram, and Facebook links verified in production
-- [x] Resend live email smoke verified with an approved test contact
-- [x] Twilio production number verified SMS-capable through controlled live smoke
+- [x] Historical Resend live email smoke verified with an approved test contact before provider retirement
+- [x] Historical Twilio production number verified SMS-capable through controlled live smoke
+- [ ] Brevo sender/domain and controlled live email smoke verified after migration
+- [x] Production Twilio delivery is intentionally paused until balance and owner approval are restored
 - [x] Database migration applied
 - [x] Seed data verified
 - [ ] Booking flow tested end-to-end
@@ -408,7 +411,9 @@
 - [x] Repeatable cron-job.org configuration check/repair runner exists as `npm run qa:cron-job-org-reminder` and `npm run ops:cron-job-org-reminder-repair`
 - [x] cron-job.org repair runner verifies the supplied `CRON_SECRET` against production dry-run before patching the external scheduler
 - [x] Reminder job runs record durable success/failure heartbeat rows for dashboard monitoring
-- [x] `/admin/dashboard` Notification health surfaces reminder scheduler healthy/stale/failing/unknown state
+- [x] `/admin/dashboard` Notification health surfaces reminder scheduler healthy/degraded/stale/failing/unknown state and Brevo/Twilio delivery state
+- [x] Reminder HTTP cron authenticates before initialization, uses one bounded database connection, and prevents concurrent runners with an advisory lock
+- [x] Provider failures/deferred work return scheduler health as degraded while initialization/database/job infrastructure failures remain non-2xx
 - [x] Production migration `0006_phase_12_scheduler_job_runs` applied before relying on dashboard heartbeat history
 - [x] GitHub Actions production reminder scheduler workflow exists for the free 30-minute scheduler path
 - [x] GitHub Actions repository secret `LEASIDE_REMINDER_CRON_SECRET` configured with the current production `CRON_SECRET`

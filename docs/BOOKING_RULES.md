@@ -390,8 +390,8 @@ Notification events:
 - reschedule confirmation
 - 2-hour reminder
 
-Twilio is used for SMS (customer reminders only).
-Resend is used for email.
+Twilio is used for SMS customer reminders only and can be paused independently with `SMS_DELIVERY_MODE=paused`.
+Brevo is used for transactional email.
 
 Notification dispatch rules:
 - dispatch only after successful booking create/cancel/reschedule mutations
@@ -411,6 +411,8 @@ Notification dispatch rules:
 - cancelled, completed, no-show, and imported bookings do not receive reminders
 - reminder jobs re-check current booking status, source, and start time immediately before sending
 - reminder messages do not include cancel/reschedule links because raw management tokens are not stored
+- when SMS delivery is paused, Twilio attempts are logged as skipped with `provider_paused`; pausing SMS does not block Brevo email or the booking mutation
+- reminder provider work must respect the bounded HTTP deadline; work that cannot safely start within the remaining budget is deferred without creating a misleading failed notification row
 
 Each notification attempt must be logged with event type, channel, provider, recipient, status, idempotency key, booking reference, payload/error metadata, and timestamps where practical.
 
