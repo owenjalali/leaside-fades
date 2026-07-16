@@ -56,6 +56,23 @@ describe("secured reminder HTTP route", () => {
         });
         expect(response.body.schedule).toHaveProperty("shouldRun");
     });
+
+    test("maps bounded database initialization failures to a generic 503", async () => {
+        process.env.CRON_SECRET = "cron-secret-for-test";
+        delete process.env.DATABASE_URL;
+        const app = await loadApp();
+
+        const response = await request(app)
+            .get("/api/jobs/send-reminders")
+            .set("Authorization", "Bearer cron-secret-for-test")
+            .expect(503);
+
+        expect(response.body).toEqual({
+            ok: false,
+            error: "Reminder service initialization timed out.",
+        });
+        expect(response.text).not.toContain("DATABASE_URL");
+    });
 });
 
 function restoreEnv(name: string, value: string | undefined) {

@@ -17,9 +17,9 @@ const app = express();
 const port = Number(process.env.PORT || 3000);
 let publicBookingApiPromise;
 let adminApiPromise;
-let reminderJobPromise;
 let applicationHealthPromise;
 let reminderHttpSchedulerPromise;
+let reminderHttpExecutionPromise;
 
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const API_TIMEOUT_MS = 5000;
@@ -69,11 +69,6 @@ function loadAdminApi() {
   return adminApiPromise;
 }
 
-function loadReminderJob() {
-  reminderJobPromise ??= import("./src/server/notifications/reminder-job-runner.ts");
-  return reminderJobPromise;
-}
-
 function loadApplicationHealth() {
   applicationHealthPromise ??= import("./src/server/health.ts");
   return applicationHealthPromise;
@@ -82,6 +77,11 @@ function loadApplicationHealth() {
 function loadReminderHttpScheduler() {
   reminderHttpSchedulerPromise ??= import("./src/server/notifications/reminder-http-scheduler.ts");
   return reminderHttpSchedulerPromise;
+}
+
+function loadReminderHttpExecution() {
+  reminderHttpExecutionPromise ??= import("./src/server/notifications/reminder-http-execution.ts");
+  return reminderHttpExecutionPromise;
 }
 
 function asyncRoute(handler) {
@@ -383,6 +383,7 @@ app.get(
       return res.status(401).json({ error: "Unauthorized" });
     }
 
+    const startedAtMs = Date.now();
     const scheduler = await loadReminderHttpScheduler();
     const intervalMinutes = scheduler.reminderHttpIntervalFromEnv(process.env);
     const boundaryGraceMinutes = scheduler.reminderHttpBoundaryGraceMinutesFromEnv(process.env, intervalMinutes);
@@ -406,33 +407,38 @@ app.get(
       });
     }
 
-    const reminderJob = await loadReminderJob();
-    const schedulerSummary = await reminderJob.getConfiguredBookingReminderJobSummary(process.env);
-    const liveScheduleDecision = scheduler.getReminderHttpScheduleDecision({
-      intervalMinutes,
-      boundaryGraceMinutes,
-      lastSuccessAt: schedulerSummary?.latestSuccess?.finishedAt ?? null,
-      runWhenNoSuccess: true,
-    });
+    const execution = await loadReminderHttpExecution();
+    let outcome;
 
-    if (!liveScheduleDecision.shouldRun) {
+    try {
+      outcome = await execution.executeReminderHttpRequest(process.env, { startedAtMs });
+    } catch (error) {
+      if (
+        error instanceof execution.ReminderHttpInitializationError ||
+        error instanceof execution.ReminderHttpDeadlineError
+      ) {
+        res.set("Cache-Control", "no-store");
+        return res.status(error.statusCode).json({
+          ok: false,
+          error: "Reminder service initialization timed out.",
+        });
+      }
+
+      throw error;
+    }
+
+    if (outcome.kind === "skipped") {
       res.set("Cache-Control", "no-store");
       return res.json({
         ok: true,
         skipped: true,
-        reason: liveScheduleDecision.reason,
-        schedule: {
-          intervalMinutes: liveScheduleDecision.intervalMinutes,
-          boundaryGraceMinutes: liveScheduleDecision.boundaryGraceMinutes,
-          nextRunAt: liveScheduleDecision.nextRunAt,
-          lastSuccessAt: liveScheduleDecision.lastSuccessAt,
-          minutesSinceLastSuccess: liveScheduleDecision.minutesSinceLastSuccess,
-        },
+        reason: outcome.reason,
+        ...(outcome.schedule ? { schedule: outcome.schedule } : {}),
       });
     }
 
-    const result = await reminderJob.runConfiguredBookingReminderJob(process.env, { trigger: "http" });
-    return res.json({ ok: true, result });
+    res.set("Cache-Control", "no-store");
+    return res.json({ ok: true, degraded: outcome.degraded, result: outcome.result });
   }),
 );
 

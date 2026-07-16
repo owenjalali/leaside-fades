@@ -1,4 +1,4 @@
-import { createDatabaseClient } from "../db/client.ts";
+import { createDatabaseClient, type DatabaseExecutor } from "../db/client.ts";
 import {
     createDrizzleSchedulerHistoryRetentionRepository,
     pruneSchedulerHistorySafely,
@@ -26,11 +26,13 @@ export async function runConfiguredBookingReminderJob(
         now?: () => Date;
         deadlineAtMs?: number;
         providerTimeoutMs?: number;
+        database?: DatabaseExecutor;
     } = {},
 ) {
     assertNotificationRuntimeConfig(env);
 
-    const { db, pool } = createDatabaseClient(env.DATABASE_URL);
+    const ownedDatabaseClient = options.database ? null : createDatabaseClient(env.DATABASE_URL);
+    const db = options.database ?? ownedDatabaseClient!.db;
     const schedulerRepository =
         options.schedulerRepository ?? createDrizzleSchedulerJobRunRepository(db);
 
@@ -60,7 +62,7 @@ export async function runConfiguredBookingReminderJob(
             },
         });
     } finally {
-        await pool.end();
+        await ownedDatabaseClient?.pool.end();
     }
 }
 
@@ -71,14 +73,16 @@ function providerTimeoutMsFromEnv(env: NodeJS.ProcessEnv) {
 
 export async function getConfiguredBookingReminderJobSummary(
     env: NodeJS.ProcessEnv = process.env,
+    options: { database?: DatabaseExecutor } = {},
 ): Promise<SchedulerJobRunSummary | null> {
-    const { db, pool } = createDatabaseClient(env.DATABASE_URL);
+    const ownedDatabaseClient = options.database ? null : createDatabaseClient(env.DATABASE_URL);
+    const db = options.database ?? ownedDatabaseClient!.db;
 
     try {
         return await createDrizzleSchedulerJobRunRepository(db).getJobRunSummary({
             jobName: BOOKING_REMINDER_JOB_NAME,
         });
     } finally {
-        await pool.end();
+        await ownedDatabaseClient?.pool.end();
     }
 }

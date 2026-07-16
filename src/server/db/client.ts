@@ -1,5 +1,5 @@
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { Pool, type PoolClient, type PoolConfig } from "pg";
 
 import * as schema from "./schema.ts";
 
@@ -55,13 +55,23 @@ export function normalizeDatabaseUrl(
 export function createDatabaseClient(
     connectionString = process.env.DATABASE_URL,
     env: Record<string, string | undefined> = process.env,
+    poolOptions: Omit<PoolConfig, "connectionString"> = {},
 ) {
     if (!connectionString) {
         throw new Error("DATABASE_URL is required to connect to PostgreSQL.");
     }
 
-    const pool = new Pool({ connectionString: normalizeDatabaseUrl(connectionString, env) });
-    const db = drizzle(pool, { schema });
+    const pool = new Pool({
+        ...poolOptions,
+        connectionString: normalizeDatabaseUrl(connectionString, env),
+    });
+    const db = createDatabaseExecutor(pool);
 
     return { db, pool };
+}
+
+export type DatabaseExecutor = NodePgDatabase<typeof schema>;
+
+export function createDatabaseExecutor(client: Pool | PoolClient): DatabaseExecutor {
+    return drizzle(client, { schema });
 }

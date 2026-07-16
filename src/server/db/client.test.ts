@@ -134,4 +134,33 @@ describe("createDatabaseClient", () => {
             await pool.end();
         }
     });
+
+    test("accepts bounded pool options for serverless reminder execution", async () => {
+        const { pool } = createDatabaseClient(
+            "postgres://user:pass@host:5432/db?sslmode=require",
+            {},
+            {
+                max: 1,
+                connectionTimeoutMillis: 4_000,
+                query_timeout: 5_000,
+            },
+        );
+        const options = (pool as unknown as {
+            options: {
+                max?: number;
+                connectionTimeoutMillis?: number;
+                query_timeout?: number;
+            };
+        }).options;
+
+        try {
+            expect(options).toMatchObject({
+                max: 1,
+                connectionTimeoutMillis: 4_000,
+                query_timeout: 5_000,
+            });
+        } finally {
+            await pool.end();
+        }
+    });
 });
