@@ -40,17 +40,35 @@ describe("scheduler job run tracking", () => {
             trigger: "http",
             repository,
             now: clock,
-            run: async () => ({ scanned: 2, sent: 1, failed: 0 }),
+            run: async () => ({
+                scanned: 2,
+                sent: 1,
+                failed: 1,
+                deferred: 1,
+                failedByProvider: { brevo: 1 },
+            }),
         });
 
-        expect(result).toEqual({ scanned: 2, sent: 1, failed: 0 });
+        expect(result).toEqual({
+            scanned: 2,
+            sent: 1,
+            failed: 1,
+            deferred: 1,
+            failedByProvider: { brevo: 1 },
+        });
         expect(repository.records).toEqual([
             expect.objectContaining({
                 jobName: "booking_reminders",
                 trigger: "http",
                 status: "success",
                 durationMs: 250,
-                result: { scanned: 2, sent: 1, failed: 0 },
+                result: {
+                    scanned: 2,
+                    sent: 1,
+                    failed: 1,
+                    deferred: 1,
+                    failedByProvider: { brevo: 1 },
+                },
                 errorMessage: null,
             }),
         ]);

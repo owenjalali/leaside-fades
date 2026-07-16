@@ -41,6 +41,10 @@ export interface RunBookingReminderJobInput {
     now?: Date;
     lookBackMinutes?: number;
     lookAheadMinutes?: number;
+    deadlineAtMs?: number;
+    providerTimeoutMs?: number;
+    nowMs?: () => number;
+    canStartProviderCall?: () => boolean;
 }
 
 export interface BookingReminderJobResult {
@@ -50,6 +54,9 @@ export interface BookingReminderJobResult {
     failed: number;
     skipped: number;
     duplicate: number;
+    deferred: number;
+    failedByProvider: Record<string, number>;
+    pausedByProvider: Record<string, number>;
 }
 
 export async function runBookingReminderJob(
@@ -60,6 +67,13 @@ export async function runBookingReminderJob(
     const lookAheadMinutes = input.lookAheadMinutes ?? DEFAULT_LOOKAHEAD_MINUTES;
     const dueFrom = addMinutes(now, -lookBackMinutes);
     const dueTo = addMinutes(now, lookAheadMinutes);
+    const providerTimeoutMs = boundedProviderTimeoutMs(input.providerTimeoutMs);
+    const nowMs = input.nowMs ?? Date.now;
+    const canStartProviderCall = input.canStartProviderCall ?? (
+        input.deadlineAtMs === undefined
+            ? undefined
+            : () => nowMs() + providerTimeoutMs + 1_000 <= input.deadlineAtMs!
+    );
     const result: BookingReminderJobResult = {
         scanned: 0,
         totalAttempts: 0,
@@ -67,6 +81,9 @@ export async function runBookingReminderJob(
         failed: 0,
         skipped: 0,
         duplicate: 0,
+        deferred: 0,
+        failedByProvider: {},
+        pausedByProvider: {},
     };
 
     for (const reminder of REMINDER_DEFINITIONS) {
@@ -88,6 +105,7 @@ export async function runBookingReminderJob(
                 scheduledFor: addMinutes(candidate.startTime, -reminder.offsetMinutes),
                 expectedStartTime: candidate.startTime,
                 now,
+                canStartProviderCall,
             });
 
             tallyAttempts(result, attempts);
@@ -120,10 +138,27 @@ function tallyAttempts(result: BookingReminderJobResult, attempts: BookingLifecy
             result.sent += 1;
         } else if (attempt.status === "failed") {
             result.failed += 1;
+            incrementProviderCount(result.failedByProvider, attempt.provider);
         } else if (attempt.status === "skipped") {
             result.skipped += 1;
+            if (attempt.skipReason === "provider_paused") {
+                incrementProviderCount(result.pausedByProvider, attempt.provider);
+            }
+        } else if (attempt.status === "deferred") {
+            result.deferred += 1;
         }
     }
+}
+
+function incrementProviderCount(counts: Record<string, number>, provider: string | undefined) {
+    if (provider) {
+        counts[provider] = (counts[provider] ?? 0) + 1;
+    }
+}
+
+function boundedProviderTimeoutMs(value: number | undefined) {
+    if (!Number.isFinite(value)) return 5_000;
+    return Math.min(Math.max(Math.trunc(value!), 1_000), 10_000);
 }
 
 function addMinutes(value: Date, minutes: number) {

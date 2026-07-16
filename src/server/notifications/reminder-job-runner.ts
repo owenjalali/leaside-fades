@@ -24,6 +24,8 @@ export async function runConfiguredBookingReminderJob(
         trigger?: "http" | "cli" | string;
         schedulerRepository?: SchedulerJobRunRepository;
         now?: () => Date;
+        deadlineAtMs?: number;
+        providerTimeoutMs?: number;
     } = {},
 ) {
     assertNotificationRuntimeConfig(env);
@@ -41,7 +43,9 @@ export async function runConfiguredBookingReminderJob(
             run: async () => {
                 const summary = await runBookingReminderJob({
                     repository: createDrizzleNotificationRepository(db),
-                    providers: createNotificationProviders(),
+                    providers: createNotificationProviders({ env }),
+                    deadlineAtMs: options.deadlineAtMs,
+                    providerTimeoutMs: options.providerTimeoutMs ?? providerTimeoutMsFromEnv(env),
                     ...reminderJobWindowFromEnv(env),
                 });
                 // Retention pruning keeps the notifications outbox and heartbeat
@@ -58,6 +62,11 @@ export async function runConfiguredBookingReminderJob(
     } finally {
         await pool.end();
     }
+}
+
+function providerTimeoutMsFromEnv(env: NodeJS.ProcessEnv) {
+    const parsed = Number.parseInt(env.NOTIFICATION_PROVIDER_TIMEOUT_MS ?? "", 10);
+    return Number.isFinite(parsed) ? parsed : 5_000;
 }
 
 export async function getConfiguredBookingReminderJobSummary(

@@ -121,7 +121,7 @@ export interface BookingLifecycleDispatchResult {
     idempotencyKey: string;
     channel: NotificationChannel;
     recipientType: NotificationRecipientType;
-    status: NotificationAttemptStatus | "duplicate";
+    status: NotificationAttemptStatus | "duplicate" | "deferred";
     notificationId?: string;
     provider?: string;
     skipReason?: string;

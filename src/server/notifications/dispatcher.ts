@@ -47,6 +47,7 @@ export interface DispatchBookingReminderNotificationInput
     repository: BookingLifecycleNotificationRepository;
     providers: NotificationProviderSet;
     now?: Date;
+    canStartProviderCall?: () => boolean;
 }
 
 interface RecipientPlan {
@@ -114,6 +115,7 @@ async function dispatchRecipient(input: {
     context: BookingNotificationContext;
     recipient: RecipientPlan;
     now: Date;
+    canStartProviderCall?: () => boolean;
 }): Promise<BookingLifecycleDispatchResult> {
     const idempotencyKey = buildIdempotencyKey({
         bookingId: input.bookingId,
@@ -182,6 +184,16 @@ async function dispatchRecipient(input: {
         };
     }
 
+    if (input.canStartProviderCall && !input.canStartProviderCall()) {
+        return {
+            idempotencyKey,
+            channel: input.recipient.channel,
+            recipientType: input.recipient.recipientType,
+            provider: provider.provider,
+            status: "deferred",
+        };
+    }
+
     const { action, attempt } = await input.repository.createPendingAttempt(baseAttempt);
 
     if (action === "duplicate") {
@@ -217,7 +229,10 @@ async function dispatchRecipient(input: {
             providerMessageId: sendResult.providerMessageId,
             sentAt: input.now,
         });
-        return resultForAttempt({ ...attempt, status: "sent" }, "sent");
+        return {
+            ...resultForAttempt({ ...attempt, status: "sent" }, "sent"),
+            provider: sendResult.provider,
+        };
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Notification delivery failed.";
         await input.repository.markAttemptFailed(attempt.id, {
@@ -226,6 +241,7 @@ async function dispatchRecipient(input: {
         });
         return {
             ...resultForAttempt({ ...attempt, status: "failed" }, "failed"),
+            provider: provider.provider,
             errorMessage,
         };
     }

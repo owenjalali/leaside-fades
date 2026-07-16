@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
     runBookingReminderJob,
@@ -148,6 +148,9 @@ function providers(options: { failChannel?: NotificationChannel } = {}): Notific
             provider: "mock",
             async send(input) {
                 calls.push({ channel: "email", to: input.to, body: input.text });
+                if (options.failChannel === "email") {
+                    throw new Error("Email failed");
+                }
                 return { provider: "mock", providerMessageId: `email-${input.idempotencyKey}` };
             },
         },
@@ -207,6 +210,9 @@ describe("Phase 10 reminder job", () => {
             failed: 0,
             skipped: 0,
             duplicate: 0,
+            deferred: 0,
+            failedByProvider: {},
+            pausedByProvider: {},
         });
         expect(repository.attempts.map((attempt) => attempt.eventType)).toEqual([
             "reminder_2h",
@@ -234,6 +240,9 @@ describe("Phase 10 reminder job", () => {
             failed: 0,
             skipped: 0,
             duplicate: 0,
+            deferred: 0,
+            failedByProvider: {},
+            pausedByProvider: {},
         });
         expect(providerSet.calls.map((call) => call.channel).sort()).toEqual([
             "email",
@@ -316,5 +325,90 @@ describe("Phase 10 reminder job", () => {
         expect(recoveredProviderSet.calls.map((call) => call.channel)).toEqual(["sms"]);
         expect(repository.attempts.filter((attempt) => attempt.channel === "sms").every((attempt) => attempt.status === "sent")).toBe(true);
         expect(repository.attempts.every((attempt) => attempt.attemptCount === 2)).toBe(true);
+    });
+
+    test("defers provider work that cannot fit while exposing provider failures", async () => {
+        const repository = setupRepository();
+        const providerSet = providers({ failChannel: "email" });
+        providerSet.sms.provider = "twilio";
+        providerSet.email.provider = "brevo";
+        const canStartProviderCall = vi.fn()
+            .mockReturnValueOnce(false)
+            .mockReturnValueOnce(true);
+
+        const result = await runBookingReminderJob({
+            repository,
+            providers: providerSet,
+            now: new Date("2026-05-03T14:00:00.000Z"),
+            canStartProviderCall,
+        });
+
+        expect(result).toEqual({
+            scanned: 1,
+            totalAttempts: 2,
+            sent: 0,
+            failed: 1,
+            skipped: 0,
+            duplicate: 0,
+            deferred: 1,
+            failedByProvider: { brevo: 1 },
+            pausedByProvider: {},
+        });
+        expect(repository.attempts).toHaveLength(1);
+        expect(repository.attempts[0]).toMatchObject({ channel: "email", status: "failed" });
+    });
+
+    test("counts intentionally paused Twilio separately from failures", async () => {
+        const repository = setupRepository();
+        const providerSet = providers();
+        const pausedSend = vi.fn(async () => {
+            throw new Error("Paused Twilio must not be called");
+        });
+        providerSet.sms = {
+            provider: "twilio",
+            deliveryState: "paused",
+            pauseReason: "provider_paused",
+            send: pausedSend,
+        };
+        providerSet.email.provider = "brevo";
+
+        const result = await runBookingReminderJob({
+            repository,
+            providers: providerSet,
+            now: new Date("2026-05-03T14:00:00.000Z"),
+        });
+
+        expect(result).toEqual({
+            scanned: 1,
+            totalAttempts: 2,
+            sent: 1,
+            failed: 0,
+            skipped: 1,
+            duplicate: 0,
+            deferred: 0,
+            failedByProvider: {},
+            pausedByProvider: { twilio: 1 },
+        });
+        expect(pausedSend).not.toHaveBeenCalled();
+    });
+
+    test("reserves one second for database bookkeeping before the HTTP deadline", async () => {
+        const repository = setupRepository();
+
+        const result = await runBookingReminderJob({
+            repository,
+            providers: providers(),
+            now: new Date("2026-05-03T14:00:00.000Z"),
+            deadlineAtMs: 10_000,
+            providerTimeoutMs: 5_000,
+            nowMs: () => 4_001,
+        });
+
+        expect(result).toMatchObject({
+            totalAttempts: 2,
+            sent: 0,
+            deferred: 2,
+        });
+        expect(repository.attempts).toEqual([]);
     });
 });
