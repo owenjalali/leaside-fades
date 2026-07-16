@@ -1,0 +1,229 @@
+# Brevo Migration, Twilio Pause, and Reminder Cron Hardening
+
+Date: 2026-07-16
+
+Status: Approved direction; implementation pending spec review
+
+Current project phase: Phase 12 launch readiness / Phase 13 cutover hardening
+
+## Context
+
+The production reminder endpoint has generated repeated cron-job.org timeout alerts. The tracked reminder work itself normally completes in under three seconds, but the HTTP path currently spends the same 30-second budget on dynamic module initialization, one database pool for the cadence summary, a second database pool for the actual job, and provider SDK initialization.
+
+The current shared Resend team remains on Transactional Pro until July 24, 2026 and already contains three other-client domains. `leasidefades.com` is not present. Leaside Fades email attempts are failing because the domain is not verified, and keeping Leaside Fades in that shared provider account would preserve unnecessary cross-client coupling.
+
+Twilio reminder sends are also failing because the account needs funds. The owner wants to pause SMS until finances improve without deleting the Twilio number or credentials.
+
+## Goals
+
+1. Move every Leaside Fades transactional email path from Resend to a dedicated Brevo account on the free tier.
+2. Authenticate the Leaside Fades sender domain using the exact DNS records Brevo provides.
+3. Pause all application-originated Twilio SMS without representing intentional pauses as failures.
+4. Make unauthenticated reminder requests cheap and unable to initialize providers or PostgreSQL.
+5. Reuse one bounded PostgreSQL connection for cadence, locking, reminder work, heartbeat recording, and retention.
+6. Prevent concurrent authorized invocations from running the same reminder workload.
+7. Leave enough time to return a controlled response before Vercel's 30-second function limit.
+8. Show provider failures, deferred work, and intentional provider pauses in scheduler health.
+
+## Non-goals
+
+- Do not top up, cancel, rotate, or delete the Twilio account, credentials, or phone number.
+- Do not send marketing email or import contacts into Brevo.
+- Do not delete or modify other clients' Resend domains, API keys, or messages.
+- Do not change booking, availability, cancellation, rescheduling, or no-double-booking rules.
+- Do not make provider delivery part of booking database transactions.
+- Do not promise that a third-party free tier will remain unchanged forever.
+
+## Selected Email Architecture
+
+Brevo is the selected email provider. Its current free tier provides 300 transactional emails per day, which is comfortably above the observed Leaside Fades volume.
+
+The existing `EmailNotificationProvider` boundary remains the application interface. The live email implementation changes from `ResendEmailProvider` to `BrevoEmailProvider` and sends through Brevo's transactional email API.
+
+Configuration:
+
+- `BREVO_API_KEY`: required in live mode.
+- `EMAIL_FROM`: retained as the canonical display-name/address setting, for example `Leaside Fades <bookings@leasidefades.com>`.
+- `EMAIL_REPLY_TO`: optional; used only when the owner provides an inbox that should receive replies.
+- `NOTIFICATION_PROVIDER_TIMEOUT_MS`: optional bounded provider timeout, default 5,000 ms.
+- `SMS_DELIVERY_MODE`: `paused` during this rollout; `live` re-enables Twilio later.
+- `REMINDER_DB_CONNECTION_TIMEOUT_MS`: optional connection-acquisition bound, default 4,000 ms.
+- `REMINDER_DB_QUERY_TIMEOUT_MS`: optional per-query bound for the reminder connection, default 5,000 ms.
+- `REMINDER_HTTP_DEADLINE_MS`: optional overall reminder work deadline, default 24,000 ms and always clamped below Vercel's function duration.
+- `RESEND_API_KEY`: removed from the application configuration and Vercel production environment after the Brevo deployment verifies successfully.
+
+The provider will use a bounded HTTP request and no automatic in-request retry. The existing notification idempotency/outbox behavior remains responsible for retrying a failed attempt on a later dispatch. This avoids ambiguous automatic retries that could duplicate email after a timeout.
+
+All production email entry points use the same provider:
+
+- booking confirmation
+- cancellation confirmation
+- reschedule confirmation
+- two-hour reminder email
+- admin password reset
+- barber invitation/setup
+
+The Resend SDK dependency is removed after the Brevo provider replaces it. Twilio is dynamically imported only when an active SMS delivery is actually attempted, so an empty reminder scan or paused SMS path does not pay the Twilio SDK cold-start cost.
+
+## Brevo and DNS Setup
+
+The headed Playwright session will be used for the visible provider setup. Authentication, MFA, CAPTCHA, and any human-verification challenges remain owner actions.
+
+The sender domain will be `leasidefades.com` unless Brevo requires a dedicated subdomain during setup. Vercel currently hosts authoritative DNS for the domain. Only the exact DNS records generated by Brevo will be entered. DKIM and DMARC are expected; an SPF record will be added only if Brevo explicitly supplies one. Existing SPF records must never be duplicated or overwritten blindly.
+
+The setup sequence is:
+
+1. Inspect the Brevo free-plan/account state.
+2. Add and authenticate the sending domain.
+3. Add the sender identity.
+4. Create a narrowly named Leaside Fades transactional API key.
+5. Transfer the key directly into Vercel production configuration without printing it in logs, source files, documentation, or the final report.
+6. Send one owner-approved controlled email and inspect Brevo delivery status.
+
+## Twilio Pause
+
+Add `SMS_DELIVERY_MODE=paused|live`, defaulting to `live` when absent for backward compatibility. Production will be set to `paused` during this rollout.
+
+When paused:
+
+- reminder SMS is not sent and Twilio is not initialized;
+- the notification attempt is logged as `skipped`, not `failed` or `sent`;
+- metadata records `skipReason = provider_paused` and provider `twilio`;
+- a previously failed SMS attempt revisited while still due may be reconciled to skipped rather than retried;
+- intentional pause counts do not degrade scheduler health;
+- the dashboard explicitly says SMS is paused by the owner while email remains active.
+
+Re-enabling SMS later requires only funding Twilio, setting `SMS_DELIVERY_MODE=live`, redeploying, and running a controlled test. Previously skipped occurrences are not backfilled after their appointment window; future reminders resume normally.
+
+This application pause prevents new Leaside Fades SMS charges. It does not cancel Twilio recurring account/number charges and does not protect a phone number from Twilio account-balance policies.
+
+## Secured Cron Request Flow
+
+The reminder route will follow this order:
+
+1. Read `CRON_SECRET`.
+2. Parse the bearer token and compare SHA-256 digests using `timingSafeEqual`.
+3. Reject missing/invalid authorization before dynamic imports, provider construction, or database access.
+4. Serve authenticated dry-run schedule checks without opening PostgreSQL.
+5. Start the bounded reminder execution deadline.
+6. Open a PostgreSQL pool configured for one connection, a 4,000 ms connection timeout, and a 5,000 ms per-query timeout.
+7. Acquire one client and a fixed PostgreSQL session advisory lock for `booking_reminders`.
+8. If another invocation holds the lock, return `200` with `skipped: true` and `reason: concurrent_run`.
+9. Use Drizzle on that one client for the heartbeat summary, cadence decision, notification work, scheduler heartbeat, and retention.
+10. Release the advisory lock and close the connection in `finally`.
+
+No in-memory-only lock will be treated as sufficient because Vercel can run multiple instances.
+
+## Time Budget
+
+Defaults:
+
+- Vercel maximum duration: 30,000 ms (unchanged).
+- PostgreSQL connection acquisition: 4,000 ms maximum.
+- Individual PostgreSQL query: 5,000 ms maximum on the reminder connection.
+- Individual provider call: 5,000 ms maximum.
+- Reminder HTTP work deadline: 24,000 ms from authenticated live execution start.
+- Response reserve: approximately 6,000 ms for cleanup, heartbeat/error handling, serialization, and platform overhead.
+
+The reminder loop checks the deadline before beginning another candidate or recipient. When the budget is too low, remaining work is deferred instead of starting a provider call that cannot finish safely. Deferred candidates remain eligible during the existing lookback window and are reported in the job result.
+
+Database initialization failure returns a fast non-2xx response because no reminder scan occurred. Provider failures after a successful scan return HTTP 200 with `degraded: true`; this prevents cron-job.org from sending repeated timeout/failure email while preserving truthful in-app health.
+
+## Scheduler Results and Health
+
+Scheduler persistence continues to distinguish infrastructure execution success from thrown job failure. A completed scan with provider failures is a successful scheduler invocation with a degraded result, not an infrastructure failure.
+
+The reminder result adds:
+
+- `failedByProvider`, including `brevo` and `twilio` counts;
+- `deferred` count;
+- `pausedByProvider` count;
+- the existing scanned/sent/failed/skipped/duplicate totals.
+
+Dashboard scheduler-state precedence:
+
+1. `failing`: latest invocation threw or could not complete its tracked work.
+2. `stale`: no recent successful invocation within the existing stale threshold.
+3. `degraded`: recent invocation completed but has provider failures or deferred work.
+4. `healthy`: recent invocation completed with no provider failures or deferrals.
+5. `unknown`: no heartbeat exists.
+
+An intentional Twilio pause is displayed separately and does not produce `degraded` by itself. Notification Center rows retain sanitized provider error details so owners can distinguish authentication, domain verification, quota/balance, rate-limit, and temporary provider failures.
+
+## Error Handling and Security
+
+- Cron secrets, provider keys, DNS values, and customer contact details are never logged.
+- Bearer comparison does not short-circuit on secret characters or throw on unequal lengths.
+- Brevo errors are sanitized before persistence; response bodies are not stored wholesale.
+- Provider timeouts become ordinary failed notification attempts and remain retryable.
+- Advisory locks are always released in `finally`; abrupt connection termination also releases session locks in PostgreSQL.
+- Database connection/query timeouts are bounded, but booking transaction behavior outside the reminder route is unchanged.
+- Existing notification idempotency keys continue to prevent duplicate successful sends.
+
+## Test-First Implementation
+
+Production code is written only after focused tests fail for the new behavior.
+
+Required tests:
+
+- unauthorized cron requests do not load scheduler/job modules or create a database client;
+- bearer comparison handles wrong length and wrong value safely;
+- dry-run remains database-free;
+- database initialization times out within the configured bound;
+- summary and job execution share one database client;
+- a held advisory lock produces a clean `concurrent_run` skip;
+- cleanup releases the lock/client after success and failure;
+- deadline exhaustion defers remaining candidates without starting another provider call;
+- Brevo payload mapping, response message ID, timeout, and sanitized errors;
+- production configuration requires `BREVO_API_KEY` and no longer requires `RESEND_API_KEY`;
+- paused SMS never calls Twilio and logs `provider_paused` as skipped;
+- provider failure counts create `degraded` scheduler health;
+- intentional Twilio pause alone does not create degraded health;
+- existing healthy/stale/failing/unknown health behavior remains intact.
+
+Verification after focused tests:
+
+- full Vitest suite;
+- TypeScript typecheck;
+- ESLint with zero new errors;
+- production build;
+- relevant notification/reminder QA scripts;
+- non-mutating production smoke;
+- authenticated reminder dry-run;
+- controlled live Brevo email;
+- controlled live reminder execution with SMS paused;
+- headed dashboard verification showing Brevo active and Twilio paused.
+
+## Rollout and Rollback
+
+Rollout:
+
+1. Complete Brevo domain/sender verification and create the API key.
+2. Implement and verify the code locally.
+3. Add Brevo and SMS-pause variables to Vercel production.
+4. Deploy the hardened code.
+5. Run a controlled Brevo email smoke and authenticated reminder run.
+6. Verify scheduler heartbeat, degraded/paused UI, cron-job.org response duration, and GitHub backup behavior.
+7. Remove `RESEND_API_KEY` from Vercel and deploy once more so Leaside deployments no longer carry a shared cross-client key.
+8. Leave other-client Resend domains and billing cancellation untouched.
+
+Rollback:
+
+- Roll back application code only if Brevo setup is still intact and the previous deployment does not send unintended messages.
+- If the new deployment is unhealthy, set notification delivery to a non-sending mode before rollback rather than restoring the broken Leaside Resend path.
+- Keep Twilio paused throughout rollback unless the owner explicitly authorizes re-enablement.
+
+## Documentation Updates
+
+Implementation updates:
+
+- `PROJECT_STATUS.md`
+- `docs/ARCHITECTURE.md`
+- `docs/BOOKING_RULES.md`
+- `docs/DECISIONS.md`
+- `docs/QA_CHECKLIST.md`
+- `docs/PRODUCTION_REMINDER_JOBS.md`
+- `docs/PRODUCTION_RUNBOOK.md`
+- `.env.example`
+
+The final handoff must list code/configuration changes, provider/DNS actions, tests, production verification, remaining risks, and the exact step to re-enable Twilio later.
