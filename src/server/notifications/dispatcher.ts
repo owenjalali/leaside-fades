@@ -160,6 +160,28 @@ async function dispatchRecipient(input: {
         return resultForAttempt(attempt, duplicate ? "duplicate" : "skipped");
     }
 
+    const provider =
+        input.recipient.channel === "sms" ? input.providers.sms : input.providers.email;
+
+    if (provider.deliveryState === "paused") {
+        const providerSkipReason = provider.pauseReason ?? "provider_paused";
+        const { duplicate, attempt } = await input.repository.createSkippedAttempt({
+            ...baseAttempt,
+            status: "skipped",
+            provider: provider.provider,
+            metadata: {
+                ...baseAttempt.metadata,
+                skipReason: providerSkipReason,
+            },
+        });
+
+        return {
+            ...resultForAttempt(attempt, duplicate ? "duplicate" : "skipped"),
+            provider: provider.provider,
+            skipReason: providerSkipReason,
+        };
+    }
+
     const { action, attempt } = await input.repository.createPendingAttempt(baseAttempt);
 
     if (action === "duplicate") {
@@ -175,8 +197,6 @@ async function dispatchRecipient(input: {
     });
 
     try {
-        const provider =
-            input.recipient.channel === "sms" ? input.providers.sms : input.providers.email;
         const sendResult =
             input.recipient.channel === "sms"
                 ? await input.providers.sms.send({
@@ -199,11 +219,9 @@ async function dispatchRecipient(input: {
         });
         return resultForAttempt({ ...attempt, status: "sent" }, "sent");
     } catch (error) {
-        const provider =
-            input.recipient.channel === "sms" ? input.providers.sms.provider : input.providers.email.provider;
         const errorMessage = error instanceof Error ? error.message : "Notification delivery failed.";
         await input.repository.markAttemptFailed(attempt.id, {
-            provider,
+            provider: provider.provider,
             errorMessage,
         });
         return {

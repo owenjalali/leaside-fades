@@ -75,7 +75,7 @@ describe("Phase 9 notification providers", () => {
     });
 
     test("live Brevo sends a bounded transactional email", async () => {
-        const fetchImpl = vi.fn(async () => new Response(
+        const fetchImpl = vi.fn<typeof fetch>(async (_input, _init) => new Response(
             JSON.stringify({ messageId: "brevo-message-id" }),
             { status: 201, headers: { "content-type": "application/json" } },
         ));
@@ -103,7 +103,7 @@ describe("Phase 9 notification providers", () => {
         });
 
         expect(fetchImpl).toHaveBeenCalledTimes(1);
-        const [url, init] = fetchImpl.mock.calls[0];
+        const [url, init] = fetchImpl.mock.calls[0]!;
         expect(url).toBe("https://api.brevo.com/v3/smtp/email");
         expect(init).toMatchObject({
             method: "POST",

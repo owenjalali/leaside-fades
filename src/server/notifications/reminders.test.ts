@@ -84,6 +84,13 @@ class InMemoryReminderRepository implements BookingReminderNotificationRepositor
 
         if (existing) {
             existing.attemptCount += 1;
+            if (existing.status === "failed" && input.status === "skipped") {
+                Object.assign(existing, input, {
+                    providerMessageId: null,
+                    errorMessage: null,
+                });
+                return { duplicate: false as const, attempt: existing };
+            }
             return { duplicate: true as const, attempt: existing };
         }
 

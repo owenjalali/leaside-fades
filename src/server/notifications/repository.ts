@@ -268,6 +268,32 @@ class DrizzleNotificationRepository
             return { duplicate: false, attempt: mapNotificationAttempt(created) };
         }
 
+        const [reconciled] = input.status === "skipped"
+            ? await db
+                  .update(notifications)
+                  .set({
+                      status: "skipped",
+                      provider: input.provider,
+                      providerMessageId: null,
+                      errorMessage: null,
+                      metadata: input.metadata,
+                      attemptCount: sql`${notifications.attemptCount} + 1`,
+                      lastAttemptAt: input.lastAttemptAt,
+                      updatedAt: input.updatedAt,
+                  })
+                  .where(
+                      and(
+                          eq(notifications.idempotencyKey, input.idempotencyKey),
+                          eq(notifications.status, "failed"),
+                      ),
+                  )
+                  .returning(notificationReturningFields)
+            : [];
+
+        if (reconciled) {
+            return { duplicate: false, attempt: mapNotificationAttempt(reconciled) };
+        }
+
         const [duplicate] = await db
             .update(notifications)
             .set({

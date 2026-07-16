@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
     dispatchBookingLifecycleNotification,
@@ -76,6 +76,13 @@ class InMemoryNotificationRepository implements BookingLifecycleNotificationRepo
 
         if (existing) {
             existing.attemptCount += 1;
+            if (existing.status === "failed" && input.status === "skipped") {
+                Object.assign(existing, input, {
+                    providerMessageId: null,
+                    errorMessage: null,
+                });
+                return { duplicate: false as const, attempt: existing };
+            }
             return { duplicate: true as const, attempt: existing };
         }
 
@@ -362,6 +369,95 @@ describe("Phase 10 reminder dispatcher", () => {
         expect(repository.attempts).toHaveLength(2);
         expect(repository.attempts.every((attempt) => attempt.recipientType === "customer")).toBe(true);
         expect(repository.attempts.every((attempt) => attempt.scheduledFor?.toISOString() === "2026-05-03T14:00:00.000Z")).toBe(true);
+    });
+
+    test("records intentionally paused Twilio as skipped without calling it", async () => {
+        const repository = new InMemoryNotificationRepository();
+        const providerSet = providers() as NotificationProviderSet & {
+            calls: Array<{ channel: NotificationChannel }>;
+        };
+        const pausedSend = vi.fn(async () => {
+            throw new Error("Paused Twilio must not be called");
+        });
+        providerSet.sms = {
+            provider: "twilio",
+            deliveryState: "paused",
+            pauseReason: "provider_paused",
+            send: pausedSend,
+        };
+
+        const result = await dispatchBookingReminderNotification({
+            eventType: "reminder_24h",
+            bookingId: context.bookingId,
+            repository,
+            providers: providerSet,
+            scheduledFor: new Date("2026-05-03T14:00:00.000Z"),
+            expectedStartTime: context.startTime,
+        });
+
+        expect(result).toContainEqual(expect.objectContaining({
+            channel: "sms",
+            status: "skipped",
+            provider: "twilio",
+            skipReason: "provider_paused",
+        }));
+        expect(result).toContainEqual(expect.objectContaining({ channel: "email", status: "sent" }));
+        expect(pausedSend).not.toHaveBeenCalled();
+        expect(repository.attempts.find((attempt) => attempt.channel === "sms")).toMatchObject({
+            status: "skipped",
+            provider: "twilio",
+            errorMessage: null,
+            metadata: expect.objectContaining({ skipReason: "provider_paused" }),
+        });
+    });
+
+    test("reconciles a prior failed Twilio row when SMS is paused", async () => {
+        const repository = new InMemoryNotificationRepository();
+        const failedProviderSet = providers({ failChannel: "sms" });
+
+        await dispatchBookingReminderNotification({
+            eventType: "reminder_24h",
+            bookingId: context.bookingId,
+            repository,
+            providers: failedProviderSet,
+            scheduledFor: new Date("2026-05-03T14:00:00.000Z"),
+            expectedStartTime: context.startTime,
+        });
+
+        const pausedProviderSet = providers();
+        const pausedSend = vi.fn(async () => {
+            throw new Error("Paused Twilio must not be called");
+        });
+        pausedProviderSet.sms = {
+            provider: "twilio",
+            deliveryState: "paused",
+            pauseReason: "provider_paused",
+            send: pausedSend,
+        };
+        const result = await dispatchBookingReminderNotification({
+            eventType: "reminder_24h",
+            bookingId: context.bookingId,
+            repository,
+            providers: pausedProviderSet,
+            scheduledFor: new Date("2026-05-03T14:00:00.000Z"),
+            expectedStartTime: context.startTime,
+        });
+
+        expect(result).toContainEqual(expect.objectContaining({
+            channel: "sms",
+            status: "skipped",
+            provider: "twilio",
+            skipReason: "provider_paused",
+        }));
+        expect(pausedSend).not.toHaveBeenCalled();
+        expect(repository.attempts.find((attempt) => attempt.channel === "sms")).toMatchObject({
+            status: "skipped",
+            provider: "twilio",
+            providerMessageId: null,
+            errorMessage: null,
+            attemptCount: 2,
+            metadata: expect.objectContaining({ skipReason: "provider_paused" }),
+        });
     });
 
     test("prevents duplicate reminder sends for the same booking occurrence", async () => {

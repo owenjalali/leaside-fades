@@ -123,6 +123,8 @@ export interface BookingLifecycleDispatchResult {
     recipientType: NotificationRecipientType;
     status: NotificationAttemptStatus | "duplicate";
     notificationId?: string;
+    provider?: string;
+    skipReason?: string;
     errorMessage?: string;
 }
 
