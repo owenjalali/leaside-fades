@@ -112,7 +112,7 @@ async function main() {
         const cancellationToken = tokenFromActionUrl(confirmationBooking.body.cancelUrl, "cancel");
         const rescheduleToken = tokenFromActionUrl(confirmationBooking.body.rescheduleUrl, "reschedule");
         await assertLifecycleRows(db, confirmationBooking.body.id, "booking_confirmation", {
-            sent: 4,
+            sent: 2,
             skipped: 0,
             attemptCount: 1,
         });
@@ -124,13 +124,13 @@ async function main() {
 
         await request(app).post(`/api/booking/manage/${cancellationToken}/cancel`).expect(200);
         await assertLifecycleRows(db, confirmationBooking.body.id, "cancellation_confirmation", {
-            sent: 3,
+            sent: 2,
             skipped: 0,
             attemptCount: 1,
         });
         await request(app).post(`/api/booking/manage/${cancellationToken}/cancel`).expect(200);
         await assertLifecycleRows(db, confirmationBooking.body.id, "cancellation_confirmation", {
-            sent: 3,
+            sent: 2,
             skipped: 0,
             attemptCount: 2,
         });
@@ -158,7 +158,7 @@ async function main() {
             })
             .expect(200);
         await assertLifecycleRows(db, rescheduleBooking.body.id, "reschedule_confirmation", {
-            sent: 3,
+            sent: 2,
             skipped: 0,
             attemptCount: 1,
         });
@@ -174,12 +174,12 @@ async function main() {
         });
         usedStarts.add(skippedSlot.startTime);
         await assertLifecycleRows(db, skippedBooking.body.id, "booking_confirmation", {
-            sent: 2,
-            skipped: 2,
+            sent: 1,
+            skipped: 1,
             attemptCount: 1,
         });
         await assertSkippedStaffContacts(db, skippedBooking.body.id);
-        logStep("Missing staff phone/email safely logged skipped staff attempts while customer notices sent.");
+        logStep("Missing staff email safely logged a skipped staff attempt while the customer email sent.");
 
         await setBarberContact(db, seedRows.barberId, {
             phoneE164: "+16475550200",
@@ -204,7 +204,7 @@ async function main() {
             .expect(201);
         assert.equal(walkInResponse.body.booking.source, "walk_in");
         await assertLifecycleRows(db, walkInResponse.body.booking.id, "booking_confirmation", {
-            sent: 4,
+            sent: 2,
             skipped: 0,
             attemptCount: 1,
         });
@@ -421,12 +421,6 @@ async function assertLifecycleRows(
 
 async function assertSkippedStaffContacts(db: ReturnType<typeof createDatabaseClient>["db"], bookingId: string) {
     const rows = await loadNotificationRows(db, bookingId, "booking_confirmation");
-    const skippedSms = rows.find(
-        (row) =>
-            row.recipientType === "barber" &&
-            row.channel === "sms" &&
-            row.status === "skipped",
-    );
     const skippedEmail = rows.find(
         (row) =>
             row.recipientType === "barber" &&
@@ -434,11 +428,8 @@ async function assertSkippedStaffContacts(db: ReturnType<typeof createDatabaseCl
             row.status === "skipped",
     );
 
-    assert.ok(skippedSms, "Expected a skipped barber SMS row.");
     assert.ok(skippedEmail, "Expected a skipped barber email row.");
-    assert.equal(skippedSms.recipientPhone, null);
     assert.equal(skippedEmail.recipientEmail, null);
-    assert.equal(skippedSms.metadata.skipReason, "missing_recipient_contact");
     assert.equal(skippedEmail.metadata.skipReason, "missing_recipient_contact");
 }
 

@@ -258,6 +258,7 @@
 - [x] Staff-created walk-ins without customer contact still succeed and log skipped/missing-contact attempts
 - [x] Raw customer management tokens are not persisted in notification metadata
 - [x] Repeatable local/dev Phase 9 real-route QA runner exists as `npm run qa:phase9-notifications`
+- [x] Phase 9 real-route QA passes against the restored local PostgreSQL fixture with email-only lifecycle expectations and cleans up its generated rows
 
 ## Phase 10 - Reminder Jobs
 
@@ -274,6 +275,7 @@
 - [x] Reminder jobs skip imported bookings
 - [x] Live reminder configuration preflight exists as `npm run notifications:check-live-config`
 - [x] Repeatable local/dev Phase 10 real-route QA runner exists as `npm run qa:phase10-reminders`
+- [x] Authenticated cron-job.org history confirms the hardened production endpoint is enabled and returning consecutive `200 OK` scheduled executions below the 30-second budget
 
 ## Phase 11 - Fresha Inspection
 

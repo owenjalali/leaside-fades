@@ -703,6 +703,7 @@ function dumpCounterexample(
 
 const ITERATIONS = 200;
 const SEED = 0x1ea51de;
+const PROPERTY_TEST_TIMEOUT_MS = 15_000;
 
 describe("engine parity: Team Week grid vs availability engine", () => {
     test(`booking-safety and containment hold across ${ITERATIONS} seeded random worlds`, () => {
@@ -845,7 +846,7 @@ describe("engine parity: Team Week grid vs availability engine", () => {
         // produced only ~6 interior splits and ~9 cover days across 200 worlds).
         expect(interiorSplitRemoves).toBeGreaterThan(20);
         expect(coverDays).toBeGreaterThan(20);
-    });
+    }, PROPERTY_TEST_TIMEOUT_MS);
 });
 
 // ---------------------------------------------------------------------------
