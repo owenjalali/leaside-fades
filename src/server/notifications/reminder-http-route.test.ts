@@ -9,10 +9,12 @@ async function loadApp() {
 
 const originalCronSecret = process.env.CRON_SECRET;
 const originalReminderInterval = process.env.REMINDER_HTTP_MIN_INTERVAL_MINUTES;
+const originalDatabaseUrl = process.env.DATABASE_URL;
 
 afterEach(() => {
     restoreEnv("CRON_SECRET", originalCronSecret);
     restoreEnv("REMINDER_HTTP_MIN_INTERVAL_MINUTES", originalReminderInterval);
+    restoreEnv("DATABASE_URL", originalDatabaseUrl);
 });
 
 describe("secured reminder HTTP route", () => {
@@ -25,6 +27,7 @@ describe("secured reminder HTTP route", () => {
 
     test("rejects dry-run checks without the cron bearer secret", async () => {
         process.env.CRON_SECRET = "cron-secret-for-test";
+        delete process.env.DATABASE_URL;
         const app = await loadApp();
 
         await request(app)

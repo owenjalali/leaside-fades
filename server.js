@@ -5,6 +5,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { matchesCronBearer } from "./src/server/jobs/cron-auth.ts";
+
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -377,7 +379,7 @@ app.get(
       return res.status(503).json({ error: "CRON_SECRET is required before production reminder jobs can run." });
     }
 
-    if (req.get("authorization") !== `Bearer ${cronSecret}`) {
+    if (!matchesCronBearer(req.get("authorization"), cronSecret)) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
