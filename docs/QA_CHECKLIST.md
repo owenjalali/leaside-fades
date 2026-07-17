@@ -276,7 +276,7 @@
 - [x] Live reminder configuration preflight exists as `npm run notifications:check-live-config`
 - [x] Repeatable local/dev Phase 10 real-route QA runner exists as `npm run qa:phase10-reminders`
 - [x] Authenticated cron-job.org history was inspected for saved status, duration, timing, and response-body evidence without exposing its Authorization header
-- [ ] The first external cron-job.org execution after the Neon cold-start timeout deployment returns `200 OK` below the 30-second budget
+- [x] The first external cron-job.org execution after the Neon cold-start timeout deployment returned `200 OK` in 5.10 seconds after an idle/suspend window
 
 ## Phase 11 - Fresha Inspection
 
