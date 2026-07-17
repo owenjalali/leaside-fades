@@ -70,6 +70,7 @@ describe("secured reminder HTTP route", () => {
         expect(response.body).toEqual({
             ok: false,
             error: "Reminder service initialization timed out.",
+            stage: "client_creation",
         });
         expect(response.text).not.toContain("DATABASE_URL");
     });

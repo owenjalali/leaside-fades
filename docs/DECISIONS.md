@@ -764,3 +764,11 @@ The authenticated reminder HTTP route now checks `CRON_SECRET` before job/databa
 
 Reason:
 Low Twilio balance should not cause repeated failed attempts, customer booking failures, or scheduler alarm noise while email remains affordable. The July cron-job.org failures took roughly 31-34 seconds because initialization and multiple database pools could consume the full 30-second Vercel budget before provider work completed. One connection, explicit budgets, early authentication, and concurrency locking make the endpoint predictable. Separating provider degradation from infrastructure failure keeps scheduler alerts meaningful while the in-app health surface still exposes partial delivery problems.
+
+### 2026-07-17 - Allow Bounded Neon Cold Starts And Identify Initialization Stages
+
+Decision:
+Increase the reminder route's default PostgreSQL connection timeout from 4 seconds to 8 seconds while leaving the 12-second initialization budget, 5-second query/provider defaults, and 24-second overall HTTP deadline unchanged. Classify initialization failures with fixed safe stages: `client_creation`, `database_connect`, `advisory_lock`, and `scheduler_summary`. Return and log only that stage with the existing generic authenticated error response.
+
+Reason:
+Authenticated cron-job.org history and Gmail alerts showed real intermittent `503` responses after the first scheduler hardening, not delayed notifications or stale credentials. The saved July 17 9:00 AM failure spent 6.52 seconds waiting on production before receiving `Reminder service initialization timed out`; successful neighboring runs proved the URL, bearer secret, and job configuration were valid. Durable scheduler history had no matching failure row, proving the request stopped before reminder-job execution, and Neon showed the Free-plan compute had suspended between runs. The 4-second database-connect default was therefore too aggressive for variable Neon cold starts. Eight seconds provides cold-start headroom without allowing initialization to consume cron-job.org's 30-second request budget, and safe stage codes make any future bounded failure diagnosable without leaking infrastructure details.

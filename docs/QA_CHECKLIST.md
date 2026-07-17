@@ -275,7 +275,8 @@
 - [x] Reminder jobs skip imported bookings
 - [x] Live reminder configuration preflight exists as `npm run notifications:check-live-config`
 - [x] Repeatable local/dev Phase 10 real-route QA runner exists as `npm run qa:phase10-reminders`
-- [x] Authenticated cron-job.org history confirms the hardened production endpoint is enabled and returning consecutive `200 OK` scheduled executions below the 30-second budget
+- [x] Authenticated cron-job.org history was inspected for saved status, duration, timing, and response-body evidence without exposing its Authorization header
+- [ ] The first external cron-job.org execution after the Neon cold-start timeout deployment returns `200 OK` below the 30-second budget
 
 ## Phase 11 - Fresha Inspection
 

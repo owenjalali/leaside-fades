@@ -417,10 +417,15 @@ app.get(
         error instanceof execution.ReminderHttpInitializationError ||
         error instanceof execution.ReminderHttpDeadlineError
       ) {
+        const stage = error instanceof execution.ReminderHttpInitializationError
+          ? error.stage
+          : "execution_deadline";
+        console.error(`[scheduler] reminder request failed stage=${stage}`);
         res.set("Cache-Control", "no-store");
         return res.status(error.statusCode).json({
           ok: false,
           error: "Reminder service initialization timed out.",
+          stage,
         });
       }
 

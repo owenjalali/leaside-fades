@@ -69,6 +69,7 @@ function executionHarness(options: { lockAcquired?: boolean; connectError?: Erro
         client,
         runJob,
         getSummary,
+        createDatabaseClient,
         dependencies: {
             createDatabaseClient,
             createDatabaseExecutor,
@@ -90,6 +91,15 @@ describe("bounded reminder HTTP execution", () => {
 
         expect(result).toMatchObject({ kind: "completed", degraded: false });
         expect(harness.pool.connect).toHaveBeenCalledOnce();
+        expect(harness.createDatabaseClient).toHaveBeenCalledWith(
+            ENV.DATABASE_URL,
+            ENV,
+            expect.objectContaining({
+                max: 1,
+                connectionTimeoutMillis: 8_000,
+                query_timeout: 5_000,
+            }),
+        );
         expect(harness.getSummary).toHaveBeenCalledWith(
             ENV,
             expect.objectContaining({ database: { sharedExecutor: true } }),
@@ -175,6 +185,7 @@ describe("bounded reminder HTTP execution", () => {
         })).rejects.toMatchObject({
             name: "ReminderHttpInitializationError",
             statusCode: 503,
+            stage: "database_connect",
         } satisfies Partial<ReminderHttpInitializationError>);
 
         expect(harness.events).toEqual(["connect", "end"]);

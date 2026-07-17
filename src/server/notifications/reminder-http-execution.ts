@@ -19,7 +19,7 @@ import type { BookingReminderJobResult } from "./reminders.ts";
 
 const REMINDER_LOCK_KEY_NAMESPACE = 1_279_672_644;
 const REMINDER_LOCK_KEY_JOB = 1_380_273_481;
-const DEFAULT_CONNECTION_TIMEOUT_MS = 4_000;
+const DEFAULT_CONNECTION_TIMEOUT_MS = 8_000;
 const DEFAULT_QUERY_TIMEOUT_MS = 5_000;
 const DEFAULT_HTTP_DEADLINE_MS = 24_000;
 const MAX_INITIALIZATION_BUDGET_MS = 12_000;
@@ -88,12 +88,20 @@ export type ReminderHttpExecutionResult =
           result: BookingReminderJobResult;
       };
 
+export type ReminderHttpInitializationStage =
+    | "client_creation"
+    | "database_connect"
+    | "advisory_lock"
+    | "scheduler_summary";
+
 export class ReminderHttpInitializationError extends Error {
     readonly statusCode = 503;
+    readonly stage: ReminderHttpInitializationStage;
 
-    constructor() {
+    constructor(stage: ReminderHttpInitializationStage) {
         super("Reminder database initialization did not complete within its bounded budget.");
         this.name = "ReminderHttpInitializationError";
+        this.stage = stage;
     }
 }
 
@@ -138,7 +146,7 @@ export async function executeReminderHttpRequest(
     try {
         pool = dependencies.createDatabaseClient(env.DATABASE_URL, env, poolOptions).pool;
     } catch {
-        throw new ReminderHttpInitializationError();
+        throw new ReminderHttpInitializationError("client_creation");
     }
 
     let client: ReminderHttpClient | null = null;
@@ -151,8 +159,17 @@ export async function executeReminderHttpRequest(
                 () => pool.connect(),
                 initializationDeadlineAtMs,
                 nowMs,
-                () => new ReminderHttpInitializationError(),
+                () => new ReminderHttpInitializationError("database_connect"),
             );
+        } catch (error) {
+            destroyClient = client !== null;
+            if (error instanceof ReminderHttpInitializationError) {
+                throw error;
+            }
+            throw new ReminderHttpInitializationError("database_connect");
+        }
+
+        try {
             const lockResult = await withinDeadline(
                 () => client!.query(
                     "select pg_try_advisory_lock($1, $2) as acquired",
@@ -160,15 +177,15 @@ export async function executeReminderHttpRequest(
                 ),
                 initializationDeadlineAtMs,
                 nowMs,
-                () => new ReminderHttpInitializationError(),
+                () => new ReminderHttpInitializationError("advisory_lock"),
             );
             lockAcquired = lockResult.rows[0]?.acquired === true;
         } catch (error) {
-            destroyClient = client !== null;
+            destroyClient = true;
             if (error instanceof ReminderHttpInitializationError) {
                 throw error;
             }
-            throw new ReminderHttpInitializationError();
+            throw new ReminderHttpInitializationError("advisory_lock");
         }
 
         if (!lockAcquired) {
@@ -186,13 +203,14 @@ export async function executeReminderHttpRequest(
                 () => dependencies.getSummary(env, { database }),
                 initializationDeadlineAtMs,
                 nowMs,
-                () => new ReminderHttpInitializationError(),
+                () => new ReminderHttpInitializationError("scheduler_summary"),
             );
         } catch (error) {
+            destroyClient = true;
             if (error instanceof ReminderHttpInitializationError) {
-                destroyClient = true;
+                throw error;
             }
-            throw error;
+            throw new ReminderHttpInitializationError("scheduler_summary");
         }
         const intervalMinutes = reminderHttpIntervalFromEnv(env);
         const boundaryGraceMinutes = reminderHttpBoundaryGraceMinutesFromEnv(
