@@ -34,15 +34,18 @@ npx trigger.dev@4.5.4 deploy
 Keep the CLI version pinned and matching the two `@trigger.dev/*` package versions — the CLI
 aborts on mismatch in non-interactive shells.
 
-## Cutover checklist
+## Cutover status (2026-07-19)
 
-1. Parallel-run a few days. Healthy = green runs on the :00/:30 Toronto cadence in the
-   [Trigger.dev runs view](https://cloud.trigger.dev/orgs/leviathan-systems-1eba/projects/leaside-fades-nkri/env/prod/runs),
-   `skipped: recent_success` included.
-2. Then disable or delete cron-job.org job `7551064` (cron-job.org dashboard) and delete
-   `.github/workflows/send-reminders.yml`.
-3. `docs/PRODUCTION_REMINDER_JOBS.md` sections about cron-job.org become historical at that
-   point; the endpoint, auth, and cadence guard are unchanged.
+Cutover executed at the owner's request — Trigger.dev is the sole scheduler:
+
+1. `.github/workflows/send-reminders.yml` deleted (commit `098867c`).
+2. cron-job.org job `7551064`: disable in the cron-job.org dashboard (needs the owner's
+   login). Until it is disabled it runs harmlessly in parallel — the endpoint's advisory
+   lock and 30-minute `recent_success` guard make double-scheduling safe.
+3. `docs/PRODUCTION_REMINDER_JOBS.md` sections about cron-job.org and the GH canary are
+   historical; the endpoint, auth, and cadence guard are unchanged. Watch the
+   [Trigger.dev runs view](https://cloud.trigger.dev/orgs/leviathan-systems-1eba/projects/leaside-fades-nkri/env/prod/runs)
+   for the :00/:30 Toronto cadence (`skipped: recent_success` counts as healthy).
 
 ## Local development
 
