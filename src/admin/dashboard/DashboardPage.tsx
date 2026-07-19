@@ -60,7 +60,7 @@ export function DashboardPage({
 
     if (loading && !dashboard) {
         return (
-            <section className="flex min-h-[560px] items-center justify-center rounded-md border border-[#d6ded6] bg-white text-xl font-bold text-charcoal/60">
+            <section className="flex min-h-[560px] items-center justify-center rounded-2xl border border-[var(--dv2-hairline)] bg-white text-xl font-bold text-charcoal/60">
                 <RefreshCw size={24} className="mr-3 animate-spin" />
                 Loading dashboard
             </section>
@@ -69,7 +69,7 @@ export function DashboardPage({
 
     if (!dashboard) {
         return (
-            <section className="flex min-h-[560px] flex-col items-center justify-center rounded-md border border-[#d6ded6] bg-white p-6 text-center shadow-sm">
+            <section className="flex min-h-[560px] flex-col items-center justify-center rounded-2xl border border-[var(--dv2-hairline)] bg-white p-6 text-center shadow-sm">
                 <AlertTriangle size={28} className="text-amber-600" />
                 <p className="mt-3 text-2xl font-black text-forest">Dashboard unavailable</p>
                 <p className="mt-2 max-w-md text-base font-bold text-charcoal/55">
@@ -83,13 +83,16 @@ export function DashboardPage({
         <div className="space-y-5 2xl:space-y-6">
             <section className="flex flex-wrap items-end justify-between gap-3">
                 <div className="min-w-0">
-                    <p className="text-sm font-black uppercase tracking-[0.14em] text-green">Operating dashboard</p>
-                    <h1 className="mt-1 text-3xl font-black leading-tight text-forest sm:text-4xl">
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--dv2-ink-mut)]">Operating dashboard</p>
+                    <h1 className="mt-1 text-3xl font-black leading-tight tracking-tight text-forest sm:text-4xl">
                         Revenue, bookings, and notification health
                     </h1>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-sm font-black text-charcoal/55">
-                    <span className="rounded-full border border-forest/10 bg-white px-3 py-2 shadow-sm">Last updated {lastUpdated}</span>
+                    <span className="inline-flex items-center gap-2 rounded-full border border-[var(--dv2-hairline)] bg-white px-3 py-2 shadow-sm">
+                        <span className="size-1.5 rounded-full bg-[var(--dv2-green)]" />
+                        Last updated {lastUpdated}
+                    </span>
                     {loading && (
                         <span className="inline-flex items-center gap-2 rounded-full border border-green/20 bg-green/10 px-3 py-2 text-forest">
                             <RefreshCw size={14} className="animate-spin" />
@@ -104,14 +107,16 @@ export function DashboardPage({
                     )}
                 </div>
             </section>
+            <DashboardFascia
+                revenue={dashboard.revenue}
+                upcoming={dashboard.upcomingAppointments}
+                period={period}
+                anchorDate={anchorDate}
+                onChangePeriod={onChangePeriod}
+                onNavigatePeriod={onNavigatePeriod}
+            />
             <section className="grid gap-5 xl:grid-cols-2">
-                <TrackedRevenueCard
-                    revenue={dashboard.revenue}
-                    period={period}
-                    anchorDate={anchorDate}
-                    onChangePeriod={onChangePeriod}
-                    onNavigatePeriod={onNavigatePeriod}
-                />
+                <TrackedRevenueCard revenue={dashboard.revenue} />
                 <UpcomingAppointmentsChartCard upcoming={dashboard.upcomingAppointments} />
             </section>
             <section className="grid gap-5 2xl:grid-cols-[1.15fr_0.85fr]">
@@ -133,107 +138,194 @@ export function DashboardPage({
     );
 }
 
-function TrackedRevenueCard({
+function DashboardFascia({
     revenue,
+    upcoming,
     period,
     anchorDate,
     onChangePeriod,
     onNavigatePeriod,
 }: {
     revenue: AdminDashboardSnapshot["revenue"];
+    upcoming: AdminDashboardSnapshot["upcomingAppointments"];
     period: AdminDashboardPeriod;
     anchorDate: string;
     onChangePeriod: (period: AdminDashboardPeriod) => void;
     onNavigatePeriod: (direction: -1 | 1) => void;
 }) {
+    const periodOptions: AdminDashboardPeriod[] = ["week", "month", "year", "all-time"];
+    const periodLabel = formatDashboardPeriodLabel(revenue.period, revenue.periodStart, revenue.periodEnd);
+    const isAllTime = period === "all-time";
+    const bookedCount = upcoming.confirmedCount + upcoming.cancelledCount;
+
+    return (
+        <section className="dv2-fascia px-6 pb-6 pt-6 sm:px-7">
+            <div className="mb-5 flex flex-wrap items-center gap-3">
+                <span className="dv2-wordmark text-lg leading-none">Leaside Fades</span>
+                <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                    <div
+                        className="inline-grid grid-cols-4 rounded-[10px] border border-[var(--dv2-fascia-line)] bg-black/25 p-[3px]"
+                        role="group"
+                        aria-label="Revenue period"
+                    >
+                        {periodOptions.map((option) => (
+                            <button
+                                key={`dashboard-period-${option}`}
+                                className={`rounded-[7px] px-3 py-1.5 text-xs font-black uppercase tracking-[0.06em] transition ${
+                                    option === period
+                                        ? "bg-[var(--dv2-mint)] text-[#0c281b]"
+                                        : "text-[var(--dv2-mint-dim)] hover:text-[var(--dv2-mint)]"
+                                }`}
+                                aria-pressed={option === period}
+                                onClick={() => onChangePeriod(option)}
+                                type="button"
+                            >
+                                {formatDashboardPeriodOption(option)}
+                            </button>
+                        ))}
+                    </div>
+                    <div
+                        className="flex min-w-0 items-center gap-1 rounded-[10px] border border-[var(--dv2-fascia-line)] bg-black/25 p-[3px]"
+                        title={`Anchor date ${anchorDate}`}
+                    >
+                        {!isAllTime && (
+                            <button
+                                className="grid size-8 place-items-center rounded-[7px] text-[var(--dv2-mint-dim)] transition hover:text-[var(--dv2-mint)]"
+                                onClick={() => onNavigatePeriod(-1)}
+                                type="button"
+                                title={`Previous ${period}`}
+                                aria-label={`Previous ${period}`}
+                            >
+                                <ChevronLeft size={16} />
+                            </button>
+                        )}
+                        <span className="min-w-[8rem] truncate px-2 text-center text-xs font-black uppercase tracking-[0.06em] text-[var(--dv2-mint)]">
+                            {periodLabel}
+                        </span>
+                        {!isAllTime && (
+                            <button
+                                className="grid size-8 place-items-center rounded-[7px] text-[var(--dv2-mint-dim)] transition hover:text-[var(--dv2-mint)]"
+                                onClick={() => onNavigatePeriod(1)}
+                                type="button"
+                                title={`Next ${period}`}
+                                aria-label={`Next ${period}`}
+                            >
+                                <ChevronRight size={16} />
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
+            <div className="grid grid-cols-2 gap-x-0 gap-y-6 sm:grid-cols-3 xl:grid-cols-[1.3fr_1fr_1fr_1fr_1fr_0.9fr]">
+                <FasciaKpi
+                    group="Stored snapshots"
+                    label="Revenue"
+                    value={formatDashboardCurrency(revenue.totalCents)}
+                    sub={`${revenue.pricedAppointmentCount} priced`}
+                    hero
+                    first
+                />
+                <FasciaKpi
+                    label="Appointments"
+                    value={`${revenue.appointmentCount}`}
+                    sub={`${revenue.completedAppointmentCount} completed`}
+                />
+                <FasciaKpi
+                    label="Average"
+                    value={formatDashboardCurrency(revenue.averageRevenueCents)}
+                    sub="per priced appt"
+                />
+                <FasciaKpi group="Next 7 days" label="Booked" value={`${bookedCount}`} sub="tracked" />
+                <FasciaKpi label="Confirmed" value={`${upcoming.confirmedCount}`} sub="active" />
+                <FasciaKpi label="Cancelled" value={`${upcoming.cancelledCount}`} sub="removed" rose />
+            </div>
+        </section>
+    );
+}
+
+function FasciaKpi({
+    group,
+    label,
+    value,
+    sub,
+    hero = false,
+    rose = false,
+    first = false,
+}: {
+    group?: string;
+    label: string;
+    value: string;
+    sub: string;
+    hero?: boolean;
+    rose?: boolean;
+    first?: boolean;
+}) {
+    const parts = splitDashboardValue(value);
+
+    return (
+        <div className={`min-w-0 ${first ? "" : "xl:border-l xl:border-[var(--dv2-fascia-line)] xl:pl-6"}`}>
+            <p className="mb-2 text-[0.6rem] font-black uppercase tracking-[0.16em] text-[var(--dv2-mint)]/40">
+                {group ?? " "}
+            </p>
+            <p className="truncate text-[0.65rem] font-black uppercase tracking-[0.14em] text-[var(--dv2-mint-dim)]">{label}</p>
+            <p
+                className={`dv2-num mt-1.5 truncate leading-none ${
+                    hero ? "text-[3.4rem] text-[var(--dv2-mint)]" : "text-[2.6rem]"
+                } ${rose ? "text-[var(--dv2-rose-soft)]" : hero ? "" : "text-[var(--dv2-cream)]"}`}
+                title={value}
+            >
+                {parts.prefix && <span className="mr-0.5 text-[0.5em] text-[var(--dv2-mint-dim)]">{parts.prefix}</span>}
+                {parts.rest}
+            </p>
+            <p className="truncate text-[0.7rem] font-bold text-[var(--dv2-mint-dim)]">{sub}</p>
+        </div>
+    );
+}
+
+function splitDashboardValue(value: string) {
+    const match = /^(\D+)(.*)$/.exec(value);
+    if (match && match[2]) {
+        return { prefix: match[1], rest: match[2] };
+    }
+    return { prefix: "", rest: value };
+}
+
+function TrackedRevenueCard({ revenue }: { revenue: AdminDashboardSnapshot["revenue"] }) {
     const hasUnpriced = revenue.unpricedAppointmentCount > 0;
     const hasFromPrices = revenue.fromPriceAppointmentCount > 0;
     const hasPastConfirmed = revenue.pastConfirmedAppointmentCount > 0;
     const periodLabel = formatDashboardPeriodLabel(revenue.period, revenue.periodStart, revenue.periodEnd);
-    const periodOptions: AdminDashboardPeriod[] = ["week", "month", "year", "all-time"];
-    const isAllTime = period === "all-time";
 
     return (
-        <section className="overflow-hidden rounded-md border border-[#d7e0d7] bg-white shadow-sm">
-            <div className="space-y-5 p-5 sm:p-6">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="min-w-0">
-                        <p className="text-sm font-black uppercase tracking-[0.13em] text-charcoal/45">Stored service snapshots</p>
-                        <h2 className="mt-1 text-2xl font-black text-forest sm:text-3xl">Tracked revenue</h2>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                        <div className="inline-grid grid-cols-4 overflow-hidden rounded-md border border-[#d7e0d7] bg-[#f7faf7] p-1" role="group" aria-label="Revenue period">
-                            {periodOptions.map((option) => (
-                                <button
-                                    key={`dashboard-period-${option}`}
-                                    className={`rounded px-3 py-1.5 text-xs font-black uppercase tracking-[0.08em] transition ${
-                                        option === period
-                                            ? "bg-forest text-white shadow-sm"
-                                            : "text-charcoal/58 hover:bg-white hover:text-forest"
-                                    }`}
-                                    aria-pressed={option === period}
-                                    onClick={() => onChangePeriod(option)}
-                                    type="button"
-                                >
-                                    {formatDashboardPeriodOption(option)}
-                                </button>
-                            ))}
-                        </div>
-                        <div className="flex min-w-0 items-center gap-1 rounded-md border border-[#d7e0d7] bg-white p-1 shadow-sm" title={`Anchor date ${anchorDate}`}>
-                            {!isAllTime && (
-                                <button className="icon-button size-9" onClick={() => onNavigatePeriod(-1)} type="button" title={`Previous ${period}`} aria-label={`Previous ${period}`}>
-                                    <ChevronLeft size={18} />
-                                </button>
-                            )}
-                            <span className="min-w-[9rem] truncate px-2 text-center text-sm font-black text-forest">
-                                {periodLabel}
-                            </span>
-                            {!isAllTime && (
-                                <button className="icon-button size-9" onClick={() => onNavigatePeriod(1)} type="button" title={`Next ${period}`} aria-label={`Next ${period}`}>
-                                    <ChevronRight size={18} />
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-3">
-                    <DashboardMetricTile
-                        label="Revenue"
-                        value={formatDashboardCurrency(revenue.totalCents)}
-                        detail={`${revenue.pricedAppointmentCount} priced`}
-                    />
-                    <DashboardMetricTile
-                        label="Appointments"
-                        value={`${revenue.appointmentCount}`}
-                        detail={`${revenue.completedAppointmentCount} completed`}
-                    />
-                    <DashboardMetricTile
-                        label="Average"
-                        value={formatDashboardCurrency(revenue.averageRevenueCents)}
-                        detail="priced appointments"
-                    />
+        <section className="dv2-card overflow-hidden">
+            <div className="space-y-4 p-5 sm:p-6">
+                <div className="min-w-0">
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-[var(--dv2-ink-mut)]">
+                        Stored service snapshots · {periodLabel}
+                    </p>
+                    <h2 className="mt-1 text-2xl font-black tracking-tight text-forest">Tracked revenue</h2>
                 </div>
                 {(hasUnpriced || hasFromPrices || hasPastConfirmed) && (
-                    <div className="flex flex-wrap gap-2 text-xs font-black uppercase tracking-[0.08em]">
+                    <div className="flex flex-wrap gap-2 text-[0.65rem] font-black uppercase tracking-[0.08em]">
                         {hasPastConfirmed && (
-                            <span className="rounded-full bg-[#eef5f1] px-3 py-1.5 text-charcoal/65">
+                            <span className="rounded-md bg-[#eef2ec] px-2.5 py-1.5 text-charcoal/60">
                                 {revenue.pastConfirmedAppointmentCount} past confirmed booking{revenue.pastConfirmedAppointmentCount === 1 ? "" : "s"} counted
                             </span>
                         )}
                         {hasUnpriced && (
-                            <span className="rounded-full bg-amber-50 px-3 py-1.5 text-amber-800">
+                            <span className="rounded-md bg-amber-50 px-2.5 py-1.5 text-amber-800">
                                 {revenue.unpricedAppointmentCount} unpriced appointment{revenue.unpricedAppointmentCount === 1 ? "" : "s"}
                             </span>
                         )}
                         {hasFromPrices && (
-                            <span className="rounded-full bg-[#eef5f1] px-3 py-1.5 text-charcoal/65">
+                            <span className="rounded-md bg-[#eef2ec] px-2.5 py-1.5 text-charcoal/60">
                                 {revenue.fromPriceAppointmentCount} from-price snapshot{revenue.fromPriceAppointmentCount === 1 ? "" : "s"} counted at stored total
                             </span>
                         )}
                     </div>
                 )}
             </div>
-            <div className="border-t border-[#e1e8e1] px-3 pb-4 pt-3 sm:px-5">
+            <div className="px-3 pb-4 sm:px-5">
                 <RevenueChart series={revenue.series} period={revenue.period} />
             </div>
         </section>
@@ -259,36 +351,18 @@ function UpcomingAppointmentsChartCard({
     upcoming: AdminDashboardSnapshot["upcomingAppointments"];
 }) {
     return (
-        <section className="overflow-hidden rounded-md border border-[#d7e0d7] bg-white shadow-sm">
-            <div className="space-y-5 p-5 sm:p-6">
-                <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                        <p className="text-sm font-black uppercase tracking-[0.13em] text-charcoal/45">All locations, next 7 days</p>
-                        <h2 className="mt-1 text-2xl font-black text-forest sm:text-3xl">Upcoming appointments</h2>
-                    </div>
-                    <span className="rounded-full bg-green/15 px-3 py-1 text-xs font-black uppercase tracking-[0.08em] text-forest">
-                        Live schedule
-                    </span>
+        <section className="dv2-card overflow-hidden">
+            <div className="flex items-start justify-between gap-4 p-5 sm:p-6">
+                <div className="min-w-0">
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-[var(--dv2-ink-mut)]">All locations, next 7 days</p>
+                    <h2 className="mt-1 text-2xl font-black tracking-tight text-forest">Upcoming appointments</h2>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3">
-                    <DashboardMetricTile
-                        label="Booked"
-                        value={`${upcoming.confirmedCount + upcoming.cancelledCount}`}
-                        detail="tracked"
-                    />
-                    <DashboardMetricTile
-                        label="Confirmed"
-                        value={`${upcoming.confirmedCount}`}
-                        detail="active"
-                    />
-                    <DashboardMetricTile
-                        label="Cancelled"
-                        value={`${upcoming.cancelledCount}`}
-                        detail="removed"
-                    />
-                </div>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-green/25 bg-white px-3 py-1 text-[0.65rem] font-black uppercase tracking-[0.1em] text-[var(--dv2-green)]">
+                    <span className="size-1.5 rounded-full bg-[var(--dv2-green)]" />
+                    Live schedule
+                </span>
             </div>
-            <div className="border-t border-[#e1e8e1] px-3 pb-4 pt-3 sm:px-5">
+            <div className="px-3 pb-4 sm:px-5">
                 <UpcomingAppointmentsChart series={upcoming.dailySeries} />
             </div>
         </section>
@@ -297,10 +371,10 @@ function UpcomingAppointmentsChartCard({
 
 function DashboardMetricTile({ label, value, detail }: { label: string; value: string; detail: string }) {
     return (
-        <div className="min-w-0 rounded-md border border-[#e1e8e1] bg-[#fbfdfb] p-3">
-            <p className="truncate text-xs font-black uppercase tracking-[0.12em] text-charcoal/70">{label}</p>
-            <p className="mt-1 text-2xl font-black text-forest sm:text-3xl" title={value}>{value}</p>
-            <p className="truncate text-sm font-bold text-charcoal/60">{detail}</p>
+        <div className="min-w-0 rounded-xl border border-[var(--dv2-hairline)] bg-[#fafcf9] p-3">
+            <p className="truncate text-[0.65rem] font-black uppercase tracking-[0.12em] text-charcoal/55">{label}</p>
+            <p className="dv2-num mt-1 truncate text-[1.9rem] leading-none text-forest" title={value}>{value}</p>
+            <p className="truncate text-xs font-bold text-charcoal/55">{detail}</p>
         </div>
     );
 }
@@ -321,19 +395,19 @@ function DashboardActivityPanel({
     const fallbackBookings = [...todayBookings, ...upcomingBookings].slice(0, 8);
 
     return (
-        <section className="rounded-md border border-[#d7e0d7] bg-white shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#d7e0d7] px-5 py-4">
+        <section className="dv2-card">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--dv2-hairline)] px-5 py-4">
                 <div className="flex items-center gap-2">
-                    <CalendarDays size={21} className="text-green" />
-                    <h2 className="text-2xl font-black text-forest">Appointments activity</h2>
+                    <CalendarDays size={20} className="text-[var(--dv2-green)]" />
+                    <h2 className="text-xl font-black tracking-tight text-forest">Appointments activity</h2>
                 </div>
-                <div className="flex flex-wrap gap-2 text-xs font-black uppercase tracking-[0.08em] text-charcoal/60">
-                    <span className="rounded-full bg-[#eef5f1] px-3 py-1.5">{todayBookings.length} today</span>
-                    <span className="rounded-full bg-[#eef5f1] px-3 py-1.5">{upcomingBookings.length} next 7 days</span>
-                    <span className="rounded-full bg-amber-50 px-3 py-1.5 text-amber-800">{cancellationCount} cancelled</span>
+                <div className="flex flex-wrap gap-2 text-[0.65rem] font-black uppercase tracking-[0.08em] text-charcoal/60">
+                    <span className="rounded-md bg-[#eef2ec] px-2.5 py-1.5">{todayBookings.length} today</span>
+                    <span className="rounded-md bg-[#eef2ec] px-2.5 py-1.5">{upcomingBookings.length} next 7 days</span>
+                    <span className="rounded-md bg-amber-50 px-2.5 py-1.5 text-amber-800">{cancellationCount} cancelled</span>
                 </div>
             </div>
-            <div className="max-h-[620px] divide-y divide-[#e1e8e1] overflow-y-auto">
+            <div className="max-h-[620px] divide-y divide-[var(--dv2-hairline)] overflow-y-auto">
                 {visibleActivity.length > 0 ? (
                     visibleActivity.map((item) => (
                         <DashboardActivityRow key={`dashboard-activity-${item.id}`} item={item} onOpenBooking={onOpenBooking} />
@@ -361,17 +435,17 @@ function DashboardActivityRow({
 
     return (
         <button
-            className="grid w-full gap-3 bg-white p-4 text-left transition hover:bg-[#f8fbf8] sm:grid-cols-[4.5rem_1fr_auto]"
+            className="grid w-full gap-3 bg-white p-4 text-left transition hover:bg-[#f7faf6] sm:grid-cols-[4.5rem_1fr_auto]"
             onClick={() => onOpenBooking(item.bookingId)}
         >
             <DashboardDateBadge month={date.month} day={date.day} />
             <span className="min-w-0">
                 <span className="flex min-w-0 flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-2 text-sm font-black uppercase tracking-[0.08em] text-green">
+                    <span className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.08em] text-[var(--dv2-green)]">
                         <ChannelIcon channel={item.channel} />
                         {activityLabel(item.eventType)}
                     </span>
-                    <span className="text-sm font-bold text-charcoal/45">{formatLocalTime(item.appointmentStartTime)}</span>
+                    <span className="text-xs font-bold text-charcoal/45">{formatLocalTime(item.appointmentStartTime)}</span>
                 </span>
                 <span className="mt-1 block truncate text-lg font-black text-forest">{item.customerName}</span>
                 <span className="block truncate text-sm font-bold text-charcoal/58">
@@ -397,12 +471,12 @@ function DashboardBookingActivityRow({
 
     return (
         <button
-            className="grid w-full gap-3 bg-white p-4 text-left transition hover:bg-[#f8fbf8] sm:grid-cols-[4.5rem_1fr_auto]"
+            className="grid w-full gap-3 bg-white p-4 text-left transition hover:bg-[#f7faf6] sm:grid-cols-[4.5rem_1fr_auto]"
             onClick={() => onOpenBooking(booking.id)}
         >
             <DashboardDateBadge month={date.month} day={date.day} />
             <span className="min-w-0">
-                <span className="text-sm font-black uppercase tracking-[0.08em] text-green">{formatLocalTime(booking.startTime)}</span>
+                <span className="text-xs font-black uppercase tracking-[0.08em] text-[var(--dv2-green)]">{formatLocalTime(booking.startTime)}</span>
                 <span className="mt-1 block truncate text-lg font-black text-forest">{booking.customerName}</span>
                 <span className="block truncate text-sm font-bold text-charcoal/58">
                     {booking.services.join(", ") || "Appointment"} with {booking.barberName}
@@ -418,9 +492,9 @@ function DashboardBookingActivityRow({
 
 function DashboardDateBadge({ month, day }: { month: string; day: string }) {
     return (
-        <span className="flex w-16 shrink-0 flex-col items-center justify-center rounded-md border border-[#e1e8e1] bg-[#fbfdfb] px-2 py-2 text-center">
-            <span className="text-[0.65rem] font-black uppercase tracking-[0.1em] text-charcoal/45">{month}</span>
-            <span className="text-xl font-black leading-tight text-forest">{day}</span>
+        <span className="flex w-16 shrink-0 flex-col items-center justify-center rounded-xl border border-[var(--dv2-hairline)] bg-[#f0f4ef] px-2 py-2 text-center">
+            <span className="text-[0.6rem] font-black uppercase tracking-[0.1em] text-charcoal/45">{month}</span>
+            <span className="dv2-num text-2xl leading-tight text-[var(--dv2-fascia-1)]">{day}</span>
         </span>
     );
 }
@@ -448,13 +522,13 @@ function NotificationHealthPanel({
     ].slice(0, 4);
 
     return (
-        <section className="rounded-md border border-[#d7e0d7] bg-white shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#d7e0d7] px-5 py-4">
+        <section className="dv2-card">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--dv2-hairline)] px-5 py-4">
                 <div className="flex items-center gap-2">
-                    <Bell size={21} className="text-green" />
-                    <h2 className="text-2xl font-black text-forest">Notification health</h2>
+                    <Bell size={20} className="text-[var(--dv2-green)]" />
+                    <h2 className="text-xl font-black tracking-tight text-forest">Notification health</h2>
                 </div>
-                <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.1em] ${deliveryModeTone(deliveryMode)}`}>
+                <span className={`rounded-full px-3 py-1 text-[0.65rem] font-black uppercase tracking-[0.1em] ${deliveryModeTone(deliveryMode)}`}>
                     {deliveryModeLabel(deliveryMode)} mode
                 </span>
             </div>
@@ -464,7 +538,7 @@ function NotificationHealthPanel({
                     <div className="min-w-0 space-y-3">
                         <div className="grid gap-2">
                             {summary.map((item) => (
-                                <p key={item} className="rounded-md bg-[#fbfdfb] px-3 py-2 text-sm font-black text-charcoal/65">
+                                <p key={item} className="rounded-lg bg-[#fafcf9] px-3 py-2 text-sm font-black text-charcoal/65">
                                     {item}
                                 </p>
                             ))}
@@ -478,19 +552,19 @@ function NotificationHealthPanel({
                     <DashboardMetricTile label="Failed" value={`${health.failedActiveCount}`} detail={`${health.failedHistoricalCount} historical`} />
                     <DashboardMetricTile label="Skipped" value={`${health.skippedCount}`} detail="missing contact" />
                 </div>
-                <div className="rounded-md border border-[#e1e8e1] bg-[#fbfdfb] p-3">
+                <div className="rounded-xl border border-[var(--dv2-hairline)] bg-[#fafcf9] p-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <h3 className="text-base font-black text-forest">Reminder scheduler</h3>
-                        <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.1em] ${schedulerPresentation.className}`}>
+                        <span className={`rounded-full px-3 py-1 text-[0.65rem] font-black uppercase tracking-[0.1em] ${schedulerPresentation.className}`}>
                             {schedulerPresentation.label}
                         </span>
                     </div>
                     <p className="mt-2 text-sm font-bold text-charcoal/65">{health.reminderScheduler.message}</p>
                     <div className="mt-3 flex flex-wrap gap-2 text-xs font-black text-charcoal/65">
-                        <span className="rounded-full bg-white px-3 py-1.5 ring-1 ring-[#d7e0d7]">
+                        <span className="rounded-full bg-white px-3 py-1.5 ring-1 ring-[var(--dv2-hairline)]">
                             Email - {providerDisplayName(health.providers.email.provider)} {health.providers.email.state}
                         </span>
-                        <span className="rounded-full bg-white px-3 py-1.5 ring-1 ring-[#d7e0d7]">
+                        <span className="rounded-full bg-white px-3 py-1.5 ring-1 ring-[var(--dv2-hairline)]">
                             SMS - {providerDisplayName(health.providers.sms.provider)} {health.providers.sms.state}
                         </span>
                     </div>
@@ -499,12 +573,12 @@ function NotificationHealthPanel({
                         <span>Last run: {formatNullableDashboardDateTime(health.reminderScheduler.latestRunAt)}</span>
                     </div>
                     {health.reminderScheduler.errorMessage ? (
-                        <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
+                        <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
                             {health.reminderScheduler.errorMessage}
                         </p>
                     ) : null}
                 </div>
-                <div className="rounded-md border border-[#e1e8e1] bg-[#fbfdfb] p-3">
+                <div className="rounded-xl border border-[var(--dv2-hairline)] bg-[#fafcf9] p-3">
                     <div className="flex items-center justify-between gap-3">
                         <h3 className="text-base font-black text-forest">Reminder queue</h3>
                         <span className="text-sm font-black text-charcoal/45">{upcomingReminders.length} scheduled</span>
@@ -516,10 +590,10 @@ function NotificationHealthPanel({
                             {upcomingReminders.slice(0, 2).map((item) => (
                                 <button
                                     key={`health-reminder-${item.id}`}
-                                    className="min-w-0 rounded-md bg-white p-3 text-left transition hover:bg-[#f5fbf6]"
+                                    className="min-w-0 rounded-lg bg-white p-3 text-left transition hover:bg-[#f2f8f3]"
                                     onClick={() => onOpenBooking(item.bookingId)}
                                 >
-                                    <span className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.08em] text-green">
+                                    <span className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.08em] text-[var(--dv2-green)]">
                                         <ChannelIcon channel={item.channel} />
                                         {activityLabel(item.eventType)}
                                     </span>
@@ -548,7 +622,7 @@ function NotificationHealthPanel({
                         )}
                     </div>
                     {recentRows.length === 0 ? (
-                        <p className="rounded-md border border-dashed border-[#d7e0d7] bg-[#f8fbf8] p-4 text-sm font-bold text-charcoal/55">
+                        <p className="rounded-xl border border-dashed border-[var(--dv2-hairline)] bg-[#f7faf6] p-4 text-sm font-bold text-charcoal/55">
                             No notification delivery rows in this snapshot.
                         </p>
                     ) : (
@@ -570,25 +644,25 @@ function NotificationHealthSegments({
     health: AdminDashboardSnapshot["notificationHealth"];
 }) {
     const segments = [
-        { label: "Sent", value: health.sentCount, className: "bg-[#009e65]" },
-        { label: "Scheduled", value: health.scheduledCount, className: "bg-[#7db9a5]" },
-        { label: "Failed", value: health.failedActiveCount, className: "bg-[#cf284e]" },
-        { label: "Skipped", value: health.skippedCount, className: "bg-[#d8a23b]" },
+        { label: "Sent", value: health.sentCount, className: "bg-[var(--dv2-green)]" },
+        { label: "Scheduled", value: health.scheduledCount, className: "bg-[#a2ada0]" },
+        { label: "Failed", value: health.failedActiveCount, className: "bg-[var(--dv2-rose)]" },
+        { label: "Skipped", value: health.skippedCount, className: "bg-[var(--dv2-brass)]" },
     ];
     const total = segments.reduce((sum, item) => sum + item.value, 0);
 
     if (total === 0) {
-        return <div className="h-3 rounded-full bg-[#e4ece4]" aria-label="No notification delivery activity" />;
+        return <div className="h-2.5 rounded-full bg-[var(--dv2-track)]" aria-label="No notification delivery activity" />;
     }
 
     return (
-        <div className="flex h-3 overflow-hidden rounded-full bg-[#e4ece4]" aria-label="Notification delivery status mix">
+        <div className="flex h-2.5 gap-[2px] overflow-hidden rounded-full" aria-label="Notification delivery status mix">
             {segments
                 .filter((item) => item.value > 0)
                 .map((item) => (
                     <span
                         key={item.label}
-                        className={item.className}
+                        className={`rounded-[2px] ${item.className}`}
                         style={{ width: `${Math.max(5, (item.value / total) * 100)}%` }}
                         title={`${item.label}: ${item.value}`}
                     />
@@ -610,11 +684,11 @@ function NotificationActivityCard({
 
     return (
         <button
-            className="grid w-full gap-3 rounded-md border border-[#e1e8e1] bg-white p-3 text-left transition hover:border-green/35 hover:bg-[#f8fbf8] sm:grid-cols-[1fr_auto]"
+            className="grid w-full gap-3 rounded-xl border border-[var(--dv2-hairline)] bg-white p-3 text-left transition hover:border-green/35 hover:bg-[#f7faf6] sm:grid-cols-[1fr_auto]"
             onClick={() => onOpenBooking(item.bookingId)}
         >
             <span className="min-w-0">
-                <span className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.08em] text-green">
+                <span className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.08em] text-[var(--dv2-green)]">
                     <ChannelIcon channel={item.channel} />
                     {activityLabel(item.eventType)}
                 </span>
@@ -651,7 +725,7 @@ function ActivityPill({ label, tone }: { label: string; tone: string }) {
         tone === "failed"
             ? "bg-red-100 text-red-800"
             : tone === "historical"
-              ? "bg-[#eef5f1] text-charcoal/55"
+              ? "bg-[#eef2ec] text-charcoal/55"
             : tone === "skipped" || tone === "cancelled" || tone === "no_show"
               ? "bg-amber-100 text-amber-800"
               : tone === "sms"
@@ -660,9 +734,9 @@ function ActivityPill({ label, tone }: { label: string; tone: string }) {
                   ? "bg-violet-100 text-violet-800"
               : tone === "sent" || tone === "confirmed"
                 ? "bg-green/20 text-forest"
-                : "bg-[#eef5f1] text-charcoal/65";
+                : "bg-[#eef2ec] text-charcoal/65";
 
-    return <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.08em] ${classes}`}>{label}</span>;
+    return <span className={`rounded-full px-3 py-1 text-[0.65rem] font-black uppercase tracking-[0.08em] ${classes}`}>{label}</span>;
 }
 
 function formatDashboardUpdatedAt(value: string) {
@@ -724,7 +798,7 @@ function ChannelIcon({ channel }: { channel: AdminDashboardActivity["channel"] |
 function deliveryModeTone(mode: AdminDashboardSnapshot["notificationDeliveryMode"]) {
     if (mode === "live") return "bg-green/20 text-forest";
     if (mode === "dev") return "bg-amber-100 text-amber-800";
-    return "bg-[#eef5f1] text-charcoal/65";
+    return "bg-[#eef2ec] text-charcoal/65";
 }
 
 function deliveryModeLabel(mode: AdminDashboardSnapshot["notificationDeliveryMode"]) {

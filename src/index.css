@@ -1466,3 +1466,77 @@
     }
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Dashboard v2 — "Shopfront" skin, scoped to /admin/dashboard only.  */
+/* Unlayered on purpose so it wins over layered utilities.            */
+/* ------------------------------------------------------------------ */
+
+.dashboard-v2 {
+  --dv2-canvas: #f2f5f0;
+  --dv2-card: #ffffff;
+  --dv2-hairline: #dfe6dd;
+  --dv2-ink: #1c2b22;
+  --dv2-ink-sec: #56675c;
+  --dv2-ink-mut: #8b978d;
+  --dv2-fascia-1: #143726;
+  --dv2-fascia-2: #0c281b;
+  --dv2-fascia-line: #235238;
+  --dv2-cream: #f3efdf;
+  --dv2-mint: #b7e4c7;
+  --dv2-mint-dim: #86ab95;
+  --dv2-green: #00814f;
+  --dv2-rose: #c81e4e;
+  --dv2-rose-soft: #e8a7b8;
+  --dv2-brass: #d8a23b;
+  --dv2-brass-ink: #9a6a10;
+  --dv2-warn: #b07818;
+  --dv2-grid: #e6ece4;
+  --dv2-baseline: #cdd7cb;
+  --dv2-track: #e8eee6;
+  background-color: var(--dv2-canvas);
+}
+
+.dashboard-v2 .dv2-num {
+  font-family: "Bebas Neue", "Manrope", sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.015em;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-v2 .dv2-fascia {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(175deg, var(--dv2-fascia-1), var(--dv2-fascia-2));
+  border-radius: 18px;
+  box-shadow: 0 18px 40px -24px rgb(12 40 27 / 0.55);
+}
+
+.dashboard-v2 .dv2-fascia::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--dv2-brass) 18%, #f0cf8a 50%, var(--dv2-brass) 82%, transparent);
+}
+
+.dashboard-v2 .dv2-card {
+  background: var(--dv2-card);
+  border: 1px solid var(--dv2-hairline);
+  border-radius: 16px;
+  box-shadow: 0 8px 24px -18px rgb(28 43 34 / 0.25);
+}
+
+.dashboard-v2 .dv2-wordmark {
+  font-family: "Bebas Neue", sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.22em;
+  color: var(--dv2-mint-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-v2 * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

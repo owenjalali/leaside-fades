@@ -860,7 +860,7 @@ function AdminWorkspace({
     return (
         <main
             data-admin-workspace
-            className={`flex h-dvh min-h-0 flex-col overflow-hidden bg-[#f4f7f2] text-base text-charcoal sm:text-[17px] lg:grid lg:text-[clamp(18px,1.3vw,20px)] ${workspaceColumns}`}
+            className={`flex h-dvh min-h-0 flex-col overflow-hidden bg-[#f4f7f2] text-base text-charcoal sm:text-[17px] lg:grid lg:text-[clamp(18px,1.3vw,20px)] ${workspaceColumns}${isDashboardPath ? " dashboard-v2" : ""}`}
         >
             <AdminRail path={path} user={user} onNavigate={onNavigate} onLogout={onLogout} />
             <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
