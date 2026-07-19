@@ -35,6 +35,8 @@
     "fresha:import:apply": "tsx src/server/import/fresha-import.ts --mode=apply",
     "preview": "vite preview",
     "server": "node server.js",
+    "trigger:dev": "npx trigger.dev@latest dev",
+    "trigger:deploy": "npx trigger.dev@latest deploy",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src"
@@ -53,6 +55,7 @@
     "@radix-ui/react-popover": "1.1.18",
     "@radix-ui/react-switch": "1.3.2",
     "@radix-ui/react-tooltip": "1.2.11",
+    "@trigger.dev/sdk": "^4.5.4",
     "@vercel/blob": "^2.4.0",
     "argon2": "^0.44.0",
     "clsx": "^2.1.1",
