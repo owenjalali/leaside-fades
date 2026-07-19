@@ -177,10 +177,12 @@ describe("bounded reminder HTTP execution", () => {
         });
     });
 
-    test("maps bounded connection failures to a typed 503 error", async () => {
+    test("maps bounded connection failures to a typed 503 error after one retry", async () => {
         const harness = executionHarness({ connectError: new Error("connection timeout") });
+        const sleep = vi.fn(async () => {});
 
         await expect(executeReminderHttpRequest(ENV, {
+            sleep,
             dependencies: harness.dependencies,
         })).rejects.toMatchObject({
             name: "ReminderHttpInitializationError",
@@ -188,6 +190,62 @@ describe("bounded reminder HTTP execution", () => {
             stage: "database_connect",
         } satisfies Partial<ReminderHttpInitializationError>);
 
+        expect(harness.createDatabaseClient).toHaveBeenCalledTimes(2);
+        expect(sleep).toHaveBeenCalledWith(500);
+        expect(harness.events).toEqual(["connect", "end", "connect", "end"]);
+    });
+
+    test("retries a cold-start connect failure once on a recreated pool", async () => {
+        const harness = executionHarness();
+        harness.pool.connect.mockImplementationOnce(async () => {
+            harness.events.push("connect");
+            throw new Error("connection timeout");
+        });
+        const sleep = vi.fn(async () => {});
+
+        const result = await executeReminderHttpRequest(ENV, {
+            now: () => new Date("2026-07-16T15:30:00.000Z"),
+            nowMs: () => Date.parse("2026-07-16T15:30:00.000Z"),
+            sleep,
+            dependencies: harness.dependencies,
+        });
+
+        expect(result).toMatchObject({ kind: "completed", degraded: false });
+        expect(harness.createDatabaseClient).toHaveBeenCalledTimes(2);
+        expect(harness.pool.connect).toHaveBeenCalledTimes(2);
+        expect(sleep).toHaveBeenCalledWith(500);
+        expect(harness.events).toEqual([
+            "connect",
+            "end",
+            "connect",
+            "lock",
+            "unlock",
+            "release",
+            "end",
+        ]);
+    });
+
+    test("does not retry the connect when the initialization budget is exhausted", async () => {
+        const harness = executionHarness({ connectError: new Error("connection timeout") });
+        const sleep = vi.fn(async () => {});
+        const nowMs = vi.fn()
+            .mockReturnValueOnce(0)
+            .mockReturnValueOnce(10_000);
+
+        await expect(executeReminderHttpRequest(ENV, {
+            startedAtMs: 0,
+            nowMs,
+            sleep,
+            dependencies: harness.dependencies,
+        })).rejects.toMatchObject({
+            name: "ReminderHttpInitializationError",
+            statusCode: 503,
+            stage: "database_connect",
+        } satisfies Partial<ReminderHttpInitializationError>);
+
+        expect(harness.createDatabaseClient).toHaveBeenCalledOnce();
+        expect(harness.pool.connect).toHaveBeenCalledOnce();
+        expect(sleep).not.toHaveBeenCalled();
         expect(harness.events).toEqual(["connect", "end"]);
     });
 

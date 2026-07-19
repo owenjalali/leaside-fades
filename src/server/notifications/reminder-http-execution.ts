@@ -23,6 +23,8 @@ const DEFAULT_CONNECTION_TIMEOUT_MS = 8_000;
 const DEFAULT_QUERY_TIMEOUT_MS = 5_000;
 const DEFAULT_HTTP_DEADLINE_MS = 24_000;
 const MAX_INITIALIZATION_BUDGET_MS = 12_000;
+const CONNECT_RETRY_DELAY_MS = 500;
+const MIN_CONNECT_RETRY_BUDGET_MS = 2_000;
 
 type ReminderRuntimeEnv = Partial<Record<string, string | undefined>>;
 
@@ -67,6 +69,7 @@ export interface ExecuteReminderHttpRequestOptions {
     startedAtMs?: number;
     now?: () => Date;
     nowMs?: () => number;
+    sleep?: (durationMs: number) => Promise<void>;
     dependencies?: Partial<ReminderHttpExecutionDependencies>;
 }
 
@@ -120,6 +123,7 @@ export async function executeReminderHttpRequest(
 ): Promise<ReminderHttpExecutionResult> {
     const dependencies = resolveDependencies(options.dependencies);
     const nowMs = options.nowMs ?? Date.now;
+    const sleep = options.sleep ?? delay;
     const startedAtMs = options.startedAtMs ?? nowMs();
     const providerTimeoutMs = boundedTimeout(
         env.NOTIFICATION_PROVIDER_TIMEOUT_MS,
@@ -154,19 +158,40 @@ export async function executeReminderHttpRequest(
     let destroyClient = false;
 
     try {
-        try {
-            client = await withinDeadline(
-                () => pool.connect(),
-                initializationDeadlineAtMs,
-                nowMs,
-                () => new ReminderHttpInitializationError("database_connect"),
-            );
-        } catch (error) {
-            destroyClient = client !== null;
-            if (error instanceof ReminderHttpInitializationError) {
-                throw error;
+        for (let connectAttempt = 1; client === null; connectAttempt += 1) {
+            try {
+                client = await withinDeadline(
+                    () => pool.connect(),
+                    initializationDeadlineAtMs,
+                    nowMs,
+                    () => new ReminderHttpInitializationError("database_connect"),
+                );
+            } catch (error) {
+                destroyClient = client !== null;
+                const canRetry = connectAttempt === 1
+                    && nowMs() + CONNECT_RETRY_DELAY_MS + MIN_CONNECT_RETRY_BUDGET_MS
+                        < initializationDeadlineAtMs;
+                if (!canRetry) {
+                    if (error instanceof ReminderHttpInitializationError) {
+                        throw error;
+                    }
+                    throw new ReminderHttpInitializationError("database_connect");
+                }
+
+                try {
+                    await pool.end();
+                } catch {
+                    console.error("[scheduler] failed to close bounded reminder database pool");
+                }
+
+                try {
+                    pool = dependencies.createDatabaseClient(env.DATABASE_URL, env, poolOptions).pool;
+                } catch {
+                    throw new ReminderHttpInitializationError("database_connect");
+                }
+
+                await sleep(CONNECT_RETRY_DELAY_MS);
             }
-            throw new ReminderHttpInitializationError("database_connect");
         }
 
         try {
@@ -306,6 +331,12 @@ async function withinDeadline<T>(
                 reject(error);
             },
         );
+    });
+}
+
+function delay(durationMs: number): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, durationMs);
     });
 }
 
