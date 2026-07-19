@@ -34,6 +34,13 @@ npx trigger.dev@4.5.4 deploy
 Keep the CLI version pinned and matching the two `@trigger.dev/*` package versions — the CLI
 aborts on mismatch in non-interactive shells.
 
+Note: a directory junction at a space-free path does NOT work around this — the CLI
+canonicalizes to the real folder name before containerizing. The permanent fix is renaming the
+repo folder itself to `Websites\leaside-fades`: run `C:\Users\owenj\Websites\finish-rename.cmd`
+once with the Claude desktop app fully closed (it renames the folder, deletes the
+`.leaside-trigger` workspace, then deletes itself). `@trigger.dev/build@4.5.4` is already a
+repo devDependency, so post-rename deploys are just `npx trigger.dev@4.5.4 deploy` from the repo.
+
 ## Cutover status (2026-07-19)
 
 Cutover executed at the owner's request — Trigger.dev is the sole scheduler:
