@@ -81,7 +81,7 @@ export function RevenueChart({
     };
 
     return (
-        <div className="relative aspect-[16/9] min-h-[260px] w-full overflow-hidden rounded-xl bg-[#fafcf9]">
+        <div className="relative aspect-[680/300] min-h-[260px] w-full rounded-xl bg-[#fafcf9]">
             <svg
                 role="img"
                 aria-label={`Tracked revenue by ${period === "year" || period === "all-time" ? "month" : "day"}`}
@@ -202,9 +202,10 @@ export function UpcomingAppointmentsChart({
     const baseline = frame.top + plotHeight;
     const groupWidth = plotWidth / Math.max(chartSeries.length, 1);
     const barWidth = Math.min(30, Math.max(10, groupWidth * 0.25));
+    const pairGap = 3;
 
     return (
-        <div className="relative aspect-[16/9] min-h-[260px] w-full overflow-hidden rounded-xl bg-[#fafcf9]">
+        <div className="relative aspect-[680/300] min-h-[260px] w-full rounded-xl bg-[#fafcf9]">
             <svg role="img" aria-label="Confirmed and cancelled upcoming appointments by day" viewBox={`0 0 ${width} ${height}`} className="h-full w-full">
                 {scale.ticks.map((tick) => {
                     const y = chartPointY(tick, scale.max, frame.top, plotHeight);
@@ -219,46 +220,56 @@ export function UpcomingAppointmentsChart({
                 })}
                 <line x1={frame.left} x2={width - frame.right} y1={baseline} y2={baseline} stroke={CHART_COLORS.baseline} strokeWidth="1.5" />
                 {chartSeries.map((point, index) => {
-                    const x = chartPointX(index, chartSeries.length, frame.left, plotWidth);
+                    const x = frame.left + (index + 0.5) * groupWidth;
                     const confirmedY = chartPointY(point.confirmedCount, scale.max, frame.top, plotHeight);
                     const cancelledY = chartPointY(point.cancelledCount, scale.max, frame.top, plotHeight);
                     const confirmedHeight = Math.max(0, baseline - confirmedY);
                     const cancelledHeight = Math.max(0, baseline - cancelledY);
+                    const showCancelled = point.cancelledCount > 0;
+                    const confirmedX = showCancelled ? x - barWidth - pairGap / 2 : x - barWidth / 2;
+                    const cancelledX = x + pairGap / 2;
 
                     return (
                         <g key={`upcoming-bar-${point.date}`}>
-                            <motion.rect
-                                x={x - barWidth - 3}
-                                y={confirmedY}
-                                width={barWidth}
-                                height={confirmedHeight}
-                                rx="4"
-                                fill={CHART_COLORS.green}
-                                opacity={point.confirmedCount > 0 ? "1" : "0.18"}
-                                className="transition-opacity hover:opacity-75"
-                                style={{ transformBox: "fill-box", transformOrigin: "bottom" }}
-                                initial={reduceMotion ? false : { scaleY: 0 }}
-                                animate={{ scaleY: 1 }}
-                                transition={{ duration: 0.45, delay: index * 0.04, ease: [0.2, 0.7, 0.2, 1] }}
-                            >
-                                <title>{`${formatDashboardSeriesDate(point.date)}: ${point.confirmedCount} confirmed`}</title>
-                            </motion.rect>
-                            <motion.rect
-                                x={x + 3}
-                                y={cancelledY}
-                                width={barWidth}
-                                height={cancelledHeight}
-                                rx="4"
-                                fill={CHART_COLORS.rose}
-                                opacity={point.cancelledCount > 0 ? "1" : "0.18"}
-                                className="transition-opacity hover:opacity-75"
-                                style={{ transformBox: "fill-box", transformOrigin: "bottom" }}
-                                initial={reduceMotion ? false : { scaleY: 0 }}
-                                animate={{ scaleY: 1 }}
-                                transition={{ duration: 0.45, delay: 0.05 + index * 0.04, ease: [0.2, 0.7, 0.2, 1] }}
-                            >
-                                <title>{`${formatDashboardSeriesDate(point.date)}: ${point.cancelledCount} cancelled`}</title>
-                            </motion.rect>
+                            {point.confirmedCount > 0 && (
+                                <motion.rect
+                                    x={confirmedX}
+                                    y={confirmedY}
+                                    width={barWidth}
+                                    height={confirmedHeight}
+                                    rx="4"
+                                    fill={CHART_COLORS.green}
+                                    className="transition-opacity hover:opacity-75"
+                                    style={{ transformBox: "fill-box", transformOrigin: "bottom" }}
+                                    initial={reduceMotion ? false : { scaleY: 0 }}
+                                    animate={{ scaleY: 1 }}
+                                    transition={{ duration: 0.45, delay: index * 0.04, ease: [0.2, 0.7, 0.2, 1] }}
+                                >
+                                    <title>{`${formatDashboardSeriesDate(point.date)}: ${point.confirmedCount} confirmed`}</title>
+                                </motion.rect>
+                            )}
+                            {showCancelled && (
+                                <motion.rect
+                                    x={cancelledX}
+                                    y={cancelledY}
+                                    width={barWidth}
+                                    height={cancelledHeight}
+                                    rx="4"
+                                    fill={CHART_COLORS.rose}
+                                    className="transition-opacity hover:opacity-75"
+                                    style={{ transformBox: "fill-box", transformOrigin: "bottom" }}
+                                    initial={reduceMotion ? false : { scaleY: 0 }}
+                                    animate={{ scaleY: 1 }}
+                                    transition={{ duration: 0.45, delay: 0.05 + index * 0.04, ease: [0.2, 0.7, 0.2, 1] }}
+                                >
+                                    <title>{`${formatDashboardSeriesDate(point.date)}: ${point.cancelledCount} cancelled`}</title>
+                                </motion.rect>
+                            )}
+                            {point.confirmedCount === 0 && !showCancelled && (
+                                <rect x={x - barWidth / 2} y={baseline - 3} width={barWidth} height={3} rx="1.5" fill={CHART_COLORS.baseline} opacity="0.6">
+                                    <title>{`${formatDashboardSeriesDate(point.date)}: no appointments`}</title>
+                                </rect>
+                            )}
                             <text x={x} y={height - 17} textAnchor="middle" className="fill-charcoal/50 text-[0.72rem] font-black">
                                 {formatDashboardSeriesDate(point.date)}
                             </text>
