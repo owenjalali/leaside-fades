@@ -255,7 +255,7 @@ Recommended cadence:
 - Default lookahead: 15 minutes.
 - `REMINDER_HTTP_MIN_INTERVAL_MINUTES` defaults the secured HTTP endpoint to a 30-minute database cadence using the durable success heartbeat.
 - The route authenticates before importing job/database modules, leases one pool connection (`max=1`), sets bounded connect/query timeouts, and holds a PostgreSQL advisory lock while it runs.
-- Keep `REMINDER_HTTP_DEADLINE_MS=24000`, `REMINDER_DB_CONNECT_TIMEOUT_MS=4000`, `REMINDER_DB_QUERY_TIMEOUT_MS=5000`, and `NOTIFICATION_PROVIDER_TIMEOUT_MS=5000` unless a measured production change justifies different values. The overall deadline is intentionally below Vercel's 30-second limit.
+- Keep `REMINDER_HTTP_DEADLINE_MS=24000`, `REMINDER_DB_CONNECT_TIMEOUT_MS=5000`, `REMINDER_DB_QUERY_TIMEOUT_MS=5000`, and `NOTIFICATION_PROVIDER_TIMEOUT_MS=5000` unless a measured production change justifies different values. The 5-second connect timeout leaves room for two bounded connect attempts within the 12-second initialization budget (5s + 0.5s retry delay + 5s = 10.5s), which absorbs Neon cold starts. The overall deadline is intentionally below Vercel's 30-second limit.
 - A delayed authorized scheduler run executes when the last successful heartbeat is stale; a duplicate authorized scheduler run skips with `recent_success`.
 - Capture stdout/stderr in host logs.
 - Do not configure multiple authorized production reminder schedulers for the same database.

@@ -68,7 +68,7 @@ Required production notification variables:
 - `REMINDER_JOB_LOOKAHEAD_MINUTES=15`
 - `REMINDER_HTTP_MIN_INTERVAL_MINUTES=30` on quota-limited database plans
 - `REMINDER_HTTP_BOUNDARY_GRACE_MINUTES=2` for authenticated dry-run boundary reporting
-- `REMINDER_DB_CONNECT_TIMEOUT_MS=4000`
+- `REMINDER_DB_CONNECT_TIMEOUT_MS=5000` (allows two connect attempts within the 12-second initialization budget: 5s + 0.5s retry delay + 5s = 10.5s)
 - `REMINDER_DB_QUERY_TIMEOUT_MS=5000`
 - `REMINDER_HTTP_DEADLINE_MS=24000`
 - `CRON_SECRET`
