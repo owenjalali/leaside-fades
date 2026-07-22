@@ -14,32 +14,24 @@ idempotent (advisory lock + 30-minute `recent_success` guard + outbox idempotenc
 retries and two schedulers running in parallel are both safe; a `skipped: recent_success`
 result counts as a healthy run.
 
-## Deploying updates (Windows path quirk)
+## Deploying updates
 
-The Trigger.dev CLI's containerized indexer breaks on paths containing spaces (this repo lives at
-`…\Websites\Leaside Fades`), failing with `Cannot find module '…/Leaside%20Fades/trigger.config.mjs'`.
-Deploys therefore run from the space-free workspace `C:\Users\owenj\.leaside-trigger`, which holds a
-minimal `package.json` (pinned `@trigger.dev/sdk` + `@trigger.dev/build` 4.5.4) plus copies of
-`trigger.config.ts` and `src/trigger/send-reminders.ts`. **The repo is the source of truth** — after
-editing either file here, re-sync and deploy:
+The repo folder was renamed to `C:\Users\owenj\Websites\leaside-fades` (2026-07-19) because the
+Trigger.dev CLI's containerized indexer breaks on paths containing spaces (it URL-encodes them
+into module URLs — `Cannot find module '…/Leaside%20Fades/trigger.config.mjs'`; a junction at a
+space-free path does not help, the CLI canonicalizes to the real name). With the rename in place,
+deploys run straight from the repo:
 
 ```powershell
-Copy-Item "C:\Users\owenj\Websites\Leaside Fades\trigger.config.ts" "C:\Users\owenj\.leaside-trigger\" -Force
-Copy-Item "C:\Users\owenj\Websites\Leaside Fades\src\trigger\send-reminders.ts" "C:\Users\owenj\.leaside-trigger\src\trigger\" -Force
-cd C:\Users\owenj\.leaside-trigger
+cd C:\Users\owenj\Websites\leaside-fades
 # load CRON_SECRET into the shell (e.g. from `vercel env pull`) before deploying
 npx trigger.dev@4.5.4 deploy
 ```
 
-Keep the CLI version pinned and matching the two `@trigger.dev/*` package versions — the CLI
-aborts on mismatch in non-interactive shells.
-
-Note: a directory junction at a space-free path does NOT work around this — the CLI
-canonicalizes to the real folder name before containerizing. The permanent fix is renaming the
-repo folder itself to `Websites\leaside-fades`: run `C:\Users\owenj\Websites\finish-rename.cmd`
-once with the Claude desktop app fully closed (it renames the folder, deletes the
-`.leaside-trigger` workspace, then deletes itself). `@trigger.dev/build@4.5.4` is already a
-repo devDependency, so post-rename deploys are just `npx trigger.dev@4.5.4 deploy` from the repo.
+Keep the CLI version pinned and matching the two `@trigger.dev/*` package versions
+(`@trigger.dev/sdk` and `@trigger.dev/build`, both repo dependencies) — the CLI aborts on
+mismatch in non-interactive shells. The old `C:\Users\owenj\.leaside-trigger` mirror workspace
+is retired and deleted.
 
 ## Cutover status (2026-07-19)
 
