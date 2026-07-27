@@ -62,6 +62,12 @@ export function createDatabaseClient(
     }
 
     const pool = new Pool({
+        // Supabase's session-mode pooler grants this tenant a fixed budget of
+        // server slots shared by every warm serverless instance. Eight repository
+        // modules each hold a singleton pool, so an unbounded per-pool max (pg
+        // defaults to 10) lets a single instance demand 80 slots and starve the
+        // pooler. Callers with tighter needs (reminder path uses max: 1) override.
+        max: 2,
         ...poolOptions,
         connectionString: normalizeDatabaseUrl(connectionString, env),
     });

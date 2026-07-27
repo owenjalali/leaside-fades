@@ -135,6 +135,17 @@ describe("createDatabaseClient", () => {
         }
     });
 
+    test("bounds the pool at max 2 by default so warm instances cannot starve the session pooler", async () => {
+        const { pool } = createDatabaseClient("postgres://user:pass@host:5432/db?sslmode=require", {});
+        const options = (pool as unknown as { options: { max?: number } }).options;
+
+        try {
+            expect(options.max).toBe(2);
+        } finally {
+            await pool.end();
+        }
+    });
+
     test("accepts bounded pool options for serverless reminder execution", async () => {
         const { pool } = createDatabaseClient(
             "postgres://user:pass@host:5432/db?sslmode=require",
