@@ -1,0 +1,139 @@
+name: Keep-alive and reminder canary
+
+# Independent safety net for the Supabase Free tier.
+#
+# Why this exists
+#   Supabase pauses Free-plan projects after ~7 days of low database activity, and
+#   only a paid plan removes that behaviour contractually. Sam's shop is busy, so
+#   an inactivity pause is already unlikely - the Trigger.dev reminder job alone
+#   touches the database ~32x/day. The real risk is a *silent* stop: if the
+#   Trigger.dev schedule stops firing (deploy removed, project archived, schedule
+#   disabled), no failure alert fires, reminders quietly stop, and the only thing
+#   keeping the database awake disappears at the same moment.
+#
+#   This workflow is deliberately hosted somewhere else (GitHub) so it cannot fail
+#   in the same way at the same time as Trigger.dev or Vercel Cron.
+#
+# What it does
+#   1. Hits the public /api/health endpoint, which runs a real `select 1` against
+#      Postgres. That is a genuine database request, so it counts as activity, and
+#      it needs no secrets.
+#   2. Calls the reminder endpoint, acting as a redundant scheduler. The endpoint
+#      is idempotent by design (session advisory lock + 30-minute `recent_success`
+#      guard + outbox idempotency keys), so running alongside Trigger.dev is
+#      explicitly safe - see docs/TRIGGER_DEV_SETUP.md.
+#
+#   Either step failing fails the workflow, and GitHub emails the repo owner. That
+#   is the missing "the scheduler went quiet" alert.
+#
+# Cost: $0. The repo is public, so Actions minutes are unlimited.
+#
+# Caveat: GitHub disables scheduled workflows in a public repo after 60 days with
+# no repo activity. If this repo ever goes quiet that long, re-enable the schedule
+# from the Actions tab (or push any commit).
+#
+# History: this replaces .github/workflows/send-reminders.yml, deleted in 098867c
+# at the Trigger.dev cutover. That version ran only once a day because frequent
+# wakeups burned Neon Free's monthly compute quota. Supabase is always-on with no
+# compute metering, so the cadence is no longer constrained.
+
+on:
+  schedule:
+    # Every 6 hours. Spread across the day so a pause-relevant gap never opens up.
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: production-reminders
+  cancel-in-progress: false
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Runs first and needs no secrets, so database activity is generated even if
+      # the reminder secret is missing or rotated.
+      - name: Database keep-alive via /api/health
+        run: |
+          set -euo pipefail
+
+          response_file="$(mktemp)"
+          status_code="$(
+            curl \
+              --silent \
+              --show-error \
+              --output "${response_file}" \
+              --write-out "%{http_code}" \
+              --max-time 30 \
+              --retry 3 \
+              --retry-all-errors \
+              --retry-delay 5 \
+              --header "User-Agent: leaside-fades-github-actions-keepalive/1.0" \
+              "https://www.leasidefades.com/api/health"
+          )"
+
+          echo "status=${status_code}"
+          cat "${response_file}"
+          echo
+
+          if [ "${status_code}" != "200" ]; then
+            echo "::error::Health endpoint returned HTTP ${status_code}." >&2
+            exit 1
+          fi
+
+          # Guard against a 200 that reports a degraded database.
+          if ! grep -q '"ok":true' "${response_file}"; then
+            echo "::error::Health endpoint did not report ok:true - database may be paused or unreachable." >&2
+            exit 1
+          fi
+
+          echo "Keep-alive OK: database answered a live query."
+
+      - name: Reminder canary
+        env:
+          CRON_SECRET: ${{ secrets.LEASIDE_REMINDER_CRON_SECRET }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::LEASIDE_REMINDER_CRON_SECRET is not configured in repo secrets." >&2
+            exit 1
+          fi
+
+          response_file="$(mktemp)"
+          status_code="$(
+            curl \
+              --silent \
+              --show-error \
+              --output "${response_file}" \
+              --write-out "%{http_code}" \
+              --max-time 60 \
+              --retry 2 \
+              --retry-all-errors \
+              --retry-delay 5 \
+              --header "Authorization: Bearer ${CRON_SECRET}" \
+              --header "User-Agent: leaside-fades-github-actions-reminder/1.0" \
+              --header "X-Scheduler-Source: github-actions" \
+              "https://www.leasidefades.com/api/jobs/send-reminders"
+          )"
+
+          echo "status=${status_code}"
+          cat "${response_file}"
+          echo
+
+          if [ "${status_code}" != "200" ]; then
+            echo "::error::Reminder endpoint returned HTTP ${status_code}." >&2
+            exit 1
+          fi
+
+          # A `recent_success` skip means Trigger.dev already ran recently. That is
+          # a healthy outcome, not a failure.
+          if ! grep -qE '"ok":true|"skipped":true' "${response_file}"; then
+            echo "::error::Reminder endpoint did not report a healthy result." >&2
+            exit 1
+          fi
+
+          echo "Reminder canary OK."
