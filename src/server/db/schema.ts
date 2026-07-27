@@ -288,6 +288,30 @@ export const customers = pgTable(
     ],
 );
 
+/**
+ * WARNING — this table carries a constraint Drizzle cannot see.
+ *
+ * `bookings_no_confirmed_overlap` is the database-level guarantee that one barber
+ * can never hold two confirmed appointments at the same time. It is the real
+ * protection against double-booking; the availability engine's checks are a
+ * read-then-write race that this constraint closes:
+ *
+ *   ALTER TABLE bookings ADD CONSTRAINT bookings_no_confirmed_overlap
+ *     EXCLUDE USING gist (barber_id WITH =, tstzrange(start_time, end_time, '[)') WITH &&)
+ *     WHERE (status = 'confirmed');
+ *
+ * It lives in drizzle/0000_magical_sersi.sql (with its required `btree_gist`
+ * extension) because drizzle-kit cannot model exclusion constraints, so it is
+ * absent from this file by necessity, not by oversight. `drizzle-kit generate`
+ * will not drop it, but `drizzle-kit push` reconciles against this schema and can.
+ *
+ * Do not run `drizzle-kit push` against production, and if the schema is ever
+ * rebuilt from scratch, re-apply the constraint by hand and confirm it exists:
+ *   select conname from pg_constraint where conname = 'bookings_no_confirmed_overlap';
+ *
+ * booking-service.ts depends on this: it maps SQLSTATE 23P01 (exclusion_violation)
+ * to UNAVAILABLE_SLOT. Without the constraint, concurrent bookings silently succeed.
+ */
 export const bookings = pgTable(
     "bookings",
     {
