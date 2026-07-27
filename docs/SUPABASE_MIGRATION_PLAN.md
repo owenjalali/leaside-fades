@@ -1,6 +1,15 @@
-# Neon → Supabase migration plan (option, not yet scheduled)
+# Neon → Supabase migration plan (completed)
 
-Status: **assessment + runbook only — no migration has been performed.**
+Status: **migration completed 2026-07-27.** Production runs on Supabase project
+`leaside-fades` (`bjqupqvagibxzipzzxjf`, us-east-1) via the session-mode pooler on port 5432.
+The runbook below is retained as the historical record; steps 1–6 are done. Remaining:
+step 8 cleanup (delete the Neon project, purge the Neon-era `POSTGRES_*`/`PGHOST*`/
+`NEON_PROJECT_ID`/`DATABASE_URL_UNPOOLED` envs — none are referenced by application code).
+
+Verified post-migration (2026-07-27): all 8 Drizzle migrations applied with matching hashes,
+19 tables, zero orphaned rows, zero overlapping confirmed bookings, no timestamp drift, and the
+`bookings_no_confirmed_overlap` GiST exclusion constraint still rejects double-bookings across
+concurrent sessions through the pooler.
 
 ## Is it a good idea?
 
@@ -21,8 +30,19 @@ $19 Launch plan (no scale-to-zero) is the zero-effort alternative if quota press
 Migrate as planned maintenance, not as an emergency. If the Neon console shows compute usage
 comfortably under the free quota month after month, this can wait indefinitely.
 
-Supabase free-tier note: projects pause after ~7 days of **inactivity** — site traffic plus the
-half-hourly reminder job means this never triggers for a live shop.
+Supabase free-tier note: projects pause after ~7 days of **inactivity**. Site traffic plus the
+half-hourly reminder job (~32 database-touching runs/day, 06:00–21:30 Toronto) keeps activity an
+order of magnitude above the threshold, so this will not trigger for a live shop. Two caveats
+worth holding onto:
+
+- Only a **paid plan** removes pausing contractually; on Free it is a behavioural threshold, not
+  a guarantee. Staying on Free is a deliberate cost decision (the shop nets $76/month).
+- The residual risk is not "too few bookings", it is the reminder schedule **silently stopping**
+  — Trigger.dev alerts on a run that *fails*, not on runs that stop happening. If it went quiet,
+  reminders and the only activity source would disappear together, unnoticed.
+  `.github/workflows/keepalive-and-reminder-canary.yml` covers exactly that: it runs on GitHub's
+  infrastructure every 6 hours, touches the database through `/api/health`, doubles as a
+  redundant reminder scheduler, and emails on failure.
 
 ## Runbook (~half a day including verification)
 
