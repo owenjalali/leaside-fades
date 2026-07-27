@@ -213,6 +213,44 @@ describe("Phase 4 public booking service", () => {
         ]);
     });
 
+    test("dispatches absolute management URLs when APP_URL is set, while the API response stays relative", async () => {
+        vi.stubEnv("APP_URL", "https://leasidefades.example/");
+        const repository = new InMemoryBookingRepository();
+        const dispatched: Parameters<BookingLifecycleNotificationDispatcher>[0][] = [];
+
+        try {
+            const result = await createPublicBooking(
+                {
+                    locationId,
+                    serviceIds: [serviceId],
+                    startTime: utc(14).toISOString(),
+                    customer: {
+                        firstName: "Ada",
+                        lastName: "Lovelace",
+                        phone: "647-555-0199",
+                        email: "ada@example.com",
+                    },
+                },
+                repository,
+                {
+                    notificationDispatcher: async (input) => {
+                        dispatched.push(input);
+                        return [];
+                    },
+                },
+            );
+
+            expect(result.cancelUrl).toMatch(/^\/booking\/[A-Za-z0-9_-]{40,}\/cancel$/);
+            expect(result.rescheduleUrl).toMatch(/^\/booking\/[A-Za-z0-9_-]{40,}\/reschedule$/);
+            expect(dispatched[0]?.managementUrls).toEqual({
+                cancelUrl: `https://leasidefades.example${result.cancelUrl}`,
+                rescheduleUrl: `https://leasidefades.example${result.rescheduleUrl}`,
+            });
+        } finally {
+            vi.unstubAllEnvs();
+        }
+    });
+
     test("booking still succeeds when notification delivery fails after mutation", async () => {
         const repository = new InMemoryBookingRepository();
 

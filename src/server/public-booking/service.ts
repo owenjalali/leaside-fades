@@ -133,8 +133,8 @@ export async function createPublicBooking(
             eventType: "booking_confirmation",
             bookingId: result.booking.id,
             managementUrls: {
-                cancelUrl: response.cancelUrl,
-                rescheduleUrl: response.rescheduleUrl,
+                cancelUrl: toAbsoluteManagementUrl(response.cancelUrl),
+                rescheduleUrl: toAbsoluteManagementUrl(response.rescheduleUrl),
             },
         });
 
@@ -149,6 +149,19 @@ export async function createPublicBooking(
 
         throw error;
     }
+}
+
+// Notification emails render these paths as plain text, so they must be
+// absolute to be clickable in a mail client; the API response keeps relative
+// paths for the SPA. Falls back to the relative path when APP_URL is unset.
+function toAbsoluteManagementUrl(path: string | undefined): string | undefined {
+    const baseUrl = (process.env.APP_URL ?? "").trim().replace(/\/+$/, "");
+
+    if (!path || !baseUrl) {
+        return path;
+    }
+
+    return `${baseUrl}${path}`;
 }
 
 async function dispatchLifecycleNotification(
