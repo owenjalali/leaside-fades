@@ -89,6 +89,43 @@ describe("reminder HTTP scheduler guard", () => {
         });
     });
 
+    test("runs when the previous success trails its tick by cold-start drift (28 minutes ago)", () => {
+        // A */30 cron fires exactly 30 minutes after the previous tick, but the
+        // previous run's success timestamp lags its tick by connect latency, so
+        // the on-time next tick measures 28-29 minutes. The grace must absorb it.
+        expect(
+            getReminderHttpScheduleDecision({
+                now: new Date("2026-05-20T21:00:05.000Z"),
+                intervalMinutes: 30,
+                lastSuccessAt: new Date("2026-05-20T20:31:40.000Z"),
+            }),
+        ).toEqual({
+            shouldRun: true,
+            intervalMinutes: 30,
+            boundaryGraceMinutes: 2,
+            lastSuccessAt: "2026-05-20T20:31:40.000Z",
+            minutesSinceLastSuccess: 28,
+        });
+    });
+
+    test("still skips inside the graced cadence window (27 minutes ago)", () => {
+        expect(
+            getReminderHttpScheduleDecision({
+                now: new Date("2026-05-20T20:58:41.000Z"),
+                intervalMinutes: 30,
+                lastSuccessAt: new Date("2026-05-20T20:31:40.000Z"),
+            }),
+        ).toEqual({
+            shouldRun: false,
+            intervalMinutes: 30,
+            boundaryGraceMinutes: 2,
+            reason: "recent_success",
+            nextRunAt: "2026-05-20T21:01:40.000Z",
+            lastSuccessAt: "2026-05-20T20:31:40.000Z",
+            minutesSinceLastSuccess: 27,
+        });
+    });
+
     test("can establish the first live heartbeat when no previous success exists", () => {
         expect(
             getReminderHttpScheduleDecision({

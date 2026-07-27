@@ -57,7 +57,13 @@ export function getReminderHttpScheduleDecision(input: {
     if (lastSuccessAt) {
         const minutesSinceLastSuccess = Math.max(0, Math.floor((now.getTime() - lastSuccessAt.getTime()) / 60_000));
 
-        if (minutesSinceLastSuccess >= intervalMinutes) {
+        // Compare against the interval minus the boundary grace: the previous
+        // run's lastSuccessAt trails its cron tick by cold-start/connect drift,
+        // so an exact >= interval test makes the next on-time tick measure
+        // 27-29 minutes and skip as "recent_success", degrading a */30 cron to
+        // ~hourly. The grace absorbs that drift; outbox idempotency keys remain
+        // the real double-send guard.
+        if (minutesSinceLastSuccess >= intervalMinutes - boundaryGraceMinutes) {
             return {
                 shouldRun: true,
                 intervalMinutes,
