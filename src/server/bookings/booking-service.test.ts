@@ -455,6 +455,28 @@ describe("Phase 3 booking creation service", () => {
         }
     });
 
+    test("public booking ignores an injected allowBlockedOverride flag", async () => {
+        const blockedRepository = new InMemoryBookingRepository({
+            availabilityData: baseAvailability({
+                blockedTimes: [
+                    {
+                        scope: "barber" as const,
+                        barberId: barberAId,
+                        startTime: utc(10),
+                        endTime: utc(10, 30),
+                    },
+                ],
+            }),
+        });
+
+        await expect(
+            createBooking(request({ allowBlockedOverride: true }), blockedRepository),
+        ).rejects.toSatisfy((error) => {
+            expectBookingError(error, "UNAVAILABLE_SLOT");
+            return true;
+        });
+    });
+
     test("a barber block pinned to a location never rejects other barbers there (cross-barber regression)", async () => {
         // Production regression: scope='barber' rows that also carry a location
         // used to match EVERY barber at that location in the SQL conflict guard,

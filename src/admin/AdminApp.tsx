@@ -28,6 +28,7 @@ import yogeshThumb from "../assets/barbers/booking-thumbnails/yogesh-thumb.jpg";
 import shayonPhoto from "../assets/barbers/shayon.png";
 import {
     ADMIN_AUTH_EXPIRED_EVENT,
+    AdminApiError,
     cancelAdminBooking,
     completeAdminBooking,
     createManualBooking,
@@ -54,7 +55,7 @@ import { parseLocalDate, TIME_ZONE } from "./dashboard/format";
 import SchedulePage from "./SchedulePage";
 import TeamPage from "./TeamPage";
 import { Button } from "../components/ui/Button.tsx";
-import { ConfirmDialogProvider, useConfirm } from "../components/ui/ConfirmDialog.tsx";
+import { ConfirmDialogProvider, useConfirm, type ConfirmFn } from "../components/ui/ConfirmDialog.tsx";
 import { Field as UiField } from "../components/ui/Field.tsx";
 import { Input } from "../components/ui/Input.tsx";
 import { Notice as UiNotice } from "../components/ui/Notice.tsx";
@@ -551,6 +552,7 @@ function AdminWorkspace({
     const [appointmentPreview, setAppointmentPreview] = useState<AppointmentPreview | null>(null);
     const [draggingBookingId, setDraggingBookingId] = useState<string | null>(null);
     const [pendingDragId, setPendingDragId] = useState<string | null>(null);
+    const confirm = useConfirm();
     const detailId = path.match(/^\/admin\/bookings\/([^/]+)$/)?.[1];
     const isDashboardPath = path.startsWith("/admin/dashboard");
     const isShiftsPath = path.startsWith("/admin/shifts");
@@ -799,7 +801,23 @@ function AdminWorkspace({
             setMessage("Booking rescheduled.");
             await refreshBookings();
         } catch (error) {
-            setError(error instanceof Error ? error.message : "Reschedule failed. The booking stayed in its original slot.");
+            if (isBlockedTimeConflict(error)) {
+                if (await askBookOverBlock(confirm)) {
+                    try {
+                        await rescheduleAdminBooking(booking.id, { ...payload, allowBlockedOverride: true });
+                        setMessage("Booking rescheduled over the blocked time.");
+                        await refreshBookings();
+                    } catch (retryError) {
+                        setError(
+                            retryError instanceof Error
+                                ? retryError.message
+                                : "Reschedule failed. The booking stayed in its original slot.",
+                        );
+                    }
+                }
+            } else {
+                setError(error instanceof Error ? error.message : "Reschedule failed. The booking stayed in its original slot.");
+            }
         } finally {
             setPendingDragId(null);
             setDraggingBookingId(null);
@@ -1578,26 +1596,24 @@ function DayCalendarBoard({
                                             <button
                                                 key={`${item.barber.id}-${slot}`}
                                                 className={`group absolute left-0 right-0 z-[4] border-b ${calendarRowLineClasses(slot)} outline-none transition focus-visible:z-[8] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-green ${
-                                                    canCreateHere ? "hover:bg-[#dff6e7]/55 focus:bg-[#dff6e7]/70" : "cursor-not-allowed"
+                                                    canCreateHere ? "hover:bg-[#dff6e7]/55 focus:bg-[#dff6e7]/70" : "hover:bg-[#f6ecdc]/70 focus:bg-[#f6ecdc]/80"
                                                 } ${
-                                                    draggingBookingId && canCreateHere ? "hover:ring-2 hover:ring-inset hover:ring-green/45" : ""
+                                                    draggingBookingId ? "hover:ring-2 hover:ring-inset hover:ring-green/45" : ""
                                                 }`}
                                                 style={{ top: timeTopFromClock(slot, window.start), height: SLOT_HEIGHT }}
-                                                aria-disabled={!canCreateHere}
                                                 aria-label={
                                                     canCreateHere
                                                         ? `Create appointment for ${item.barber.displayName} at ${formatLocalTime(startTime)}`
-                                                        : `${formatLocalTime(startTime)} is blocked for ${item.barber.displayName}`
+                                                        : `${formatLocalTime(startTime)} is blocked for ${item.barber.displayName} - booking here asks to confirm`
                                                 }
                                                 onClick={() => {
-                                                    if (canCreateHere) onSlot(item.barber.id, startTime);
+                                                    onSlot(item.barber.id, startTime);
                                                 }}
                                                 onDragOver={(event) => {
-                                                    if (draggingBookingId && canCreateHere) event.preventDefault();
+                                                    if (draggingBookingId) event.preventDefault();
                                                 }}
                                                 onDrop={(event) => {
                                                     event.preventDefault();
-                                                    if (!canCreateHere) return;
                                                     const bookingId = event.dataTransfer.getData("text/plain") || draggingBookingId;
                                                     const booking = bookings.find((candidate) => candidate.id === bookingId);
                                                     if (booking) void onDropBooking(booking, item.barber.id, locationId, startTime);
@@ -1605,7 +1621,7 @@ function DayCalendarBoard({
                                                 title={
                                                     canCreateHere
                                                         ? `Create staff appointment ${formatLocalTime(startTime)}-${formatLocalTime(slotEnd)}`
-                                                        : `Blocked ${formatLocalTime(startTime)}-${formatLocalTime(slotEnd)}`
+                                                        : `Blocked ${formatLocalTime(startTime)}-${formatLocalTime(slotEnd)} - click to book anyway`
                                                 }
                                             >
                                                 <span className="pointer-events-none absolute inset-x-1 top-0.5 z-[7] hidden rounded border border-green/30 bg-mint/80 px-1.5 py-0.5 text-[11px] font-black leading-none text-forest opacity-0 shadow-sm transition group-hover:opacity-100 md:block">
@@ -2028,6 +2044,7 @@ function BookingEditForm({
     user: SafeAdminUser;
     onDone: () => Promise<void>;
 }) {
+    const confirm = useConfirm();
     const initialParts = localPartsFromIso(booking.startTime);
     const [locationId, setLocationId] = useState(booking.locationId);
     const [barberId, setBarberId] = useState(booking.barberId);
@@ -2069,23 +2086,36 @@ function BookingEditForm({
         setSubmitting(true);
         setError("");
 
+        const payload = {
+            locationId,
+            barberId,
+            startTime,
+            serviceIds,
+            customer: {
+                name: customerName,
+                phone,
+                email,
+                notes: customerNotes,
+            },
+            internalNotes,
+        };
+
         try {
-            await editAdminBooking(booking.id, {
-                locationId,
-                barberId,
-                startTime,
-                serviceIds,
-                customer: {
-                    name: customerName,
-                    phone,
-                    email,
-                    notes: customerNotes,
-                },
-                internalNotes,
-            });
+            await editAdminBooking(booking.id, payload);
             await onDone();
         } catch (error) {
-            setError(error instanceof Error ? error.message : "Booking update failed.");
+            if (isBlockedTimeConflict(error)) {
+                if (await askBookOverBlock(confirm)) {
+                    try {
+                        await editAdminBooking(booking.id, { ...payload, allowBlockedOverride: true });
+                        await onDone();
+                    } catch (retryError) {
+                        setError(retryError instanceof Error ? retryError.message : "Booking update failed.");
+                    }
+                }
+            } else {
+                setError(error instanceof Error ? error.message : "Booking update failed.");
+            }
         } finally {
             setSubmitting(false);
         }
@@ -2159,6 +2189,7 @@ function AddAppointmentDrawer({
     onClose: () => void;
     onCreated: () => Promise<void>;
 }) {
+    const confirm = useConfirm();
     const initialParts = localPartsFromIso(initialStartTime);
     const [locationId, setLocationId] = useState(initialLocationId);
     const [barberId, setBarberId] = useState(user.role === "barber" && user.barberId ? user.barberId : initialBarberId);
@@ -2284,14 +2315,22 @@ function AddAppointmentDrawer({
                 internalNotes,
             };
 
-            if (bookingSource === "walk_in") {
-                await createWalkInBooking(payload);
-            } else {
-                await createManualBooking(payload);
+            const create = bookingSource === "walk_in" ? createWalkInBooking : createManualBooking;
+
+            try {
+                await create(payload);
+            } catch (error) {
+                if (isBlockedTimeConflict(error) && (await askBookOverBlock(confirm))) {
+                    await create({ ...payload, allowBlockedOverride: true });
+                } else {
+                    throw error;
+                }
             }
             await onCreated();
         } catch (error) {
-            setError(error instanceof Error ? error.message : "Appointment creation failed.");
+            if (!isBlockedTimeConflict(error)) {
+                setError(error instanceof Error ? error.message : "Appointment creation failed.");
+            }
         } finally {
             setSubmitting(false);
         }
@@ -2813,6 +2852,7 @@ function RescheduleForm({
     user: SafeAdminUser;
     onDone: () => Promise<void>;
 }) {
+    const confirm = useConfirm();
     const initialParts = localPartsFromIso(booking.startTime);
     const [locationId, setLocationId] = useState(booking.locationId);
     const [barberId, setBarberId] = useState(booking.barberId);
@@ -2844,7 +2884,23 @@ function RescheduleForm({
             });
             await onDone();
         } catch (error) {
-            setError(error instanceof Error ? error.message : "Reschedule failed.");
+            if (isBlockedTimeConflict(error)) {
+                if (await askBookOverBlock(confirm)) {
+                    try {
+                        await rescheduleAdminBooking(booking.id, {
+                            locationId,
+                            barberId,
+                            startTime,
+                            allowBlockedOverride: true,
+                        });
+                        await onDone();
+                    } catch (retryError) {
+                        setError(retryError instanceof Error ? retryError.message : "Reschedule failed.");
+                    }
+                }
+            } else {
+                setError(error instanceof Error ? error.message : "Reschedule failed.");
+            }
         }
     }
 
@@ -3474,6 +3530,23 @@ function appointmentPreviewForSlot(
         ends,
         label: `${formatLocalTime(preview.startTime)} - ${formatLocalTime(preview.endTime)}`,
     };
+}
+
+/** True when the server rejected a staff mutation only because of a blocked
+ * time - the one 409 staff may override after an explicit confirm. */
+function isBlockedTimeConflict(error: unknown): error is AdminApiError {
+    return error instanceof AdminApiError && error.code === "BLOCKED_TIME_OVERLAP";
+}
+
+function askBookOverBlock(confirm: ConfirmFn) {
+    return confirm({
+        title: "This time is blocked",
+        description:
+            "The barber has blocked time during this slot. You can book over it - the blocked time stays on the calendar for everyone else.",
+        confirmLabel: "Book anyway",
+        cancelLabel: "Cancel",
+        tone: "danger",
+    });
 }
 
 function businessWindowForDate(_date: string) {

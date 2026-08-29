@@ -41,6 +41,10 @@ export interface CreateBookingRequest {
     minimumNoticeMinutes?: number;
     now?: Date;
     timeZone?: string;
+    /** Staff-only: skip the blocked-time conflict after an explicit "Book
+     * anyway" confirm. The public and customer paths never read this flag —
+     * online booking stays hard-blocked even if a client injects it. */
+    allowBlockedOverride?: boolean;
 }
 
 export interface AvailabilityRepositoryRequest {

@@ -2300,7 +2300,25 @@ describe("Phase 7.5 walk-in and no-show booking operations", () => {
                 blockedRepository,
                 { now },
             ),
-        ).rejects.toMatchObject({ status: 409 });
+        ).rejects.toMatchObject({ status: 409, code: "BLOCKED_TIME_OVERLAP" });
+
+        // Staff can book over the block after an explicit confirm; double-booking
+        // conflicts never carry the override code.
+        await expect(
+            createAdminWalkInBooking(
+                { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+                {
+                    locationId: locationAId,
+                    serviceIds: [serviceId],
+                    barberId: barberAId,
+                    startTime: utc(10).toISOString(),
+                    customerName: "Blocked Override",
+                    allowBlockedOverride: true,
+                },
+                blockedRepository,
+                { now },
+            ),
+        ).resolves.toBeTruthy();
     });
 
     test("no-show is permission scoped and only allowed for current or past confirmed bookings", async () => {

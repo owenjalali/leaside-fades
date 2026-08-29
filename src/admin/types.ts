@@ -62,6 +62,7 @@ export interface AdminBookingEditPayload {
         notes: string;
     };
     internalNotes: string;
+    allowBlockedOverride?: boolean;
 }
 
 export interface AdminLocationOption {

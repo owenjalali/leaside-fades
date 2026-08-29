@@ -295,6 +295,7 @@ export interface AdminManualBookingPayload {
     };
     customerNotes?: unknown;
     internalNotes?: unknown;
+    allowBlockedOverride?: unknown;
 }
 
 export interface AdminWalkInBookingPayload {
@@ -313,12 +314,14 @@ export interface AdminWalkInBookingPayload {
         notes?: unknown;
     };
     internalNotes?: unknown;
+    allowBlockedOverride?: unknown;
 }
 
 export interface AdminRescheduleBookingPayload {
     locationId?: unknown;
     barberId?: unknown;
     startTime?: unknown;
+    allowBlockedOverride?: unknown;
     [key: string]: unknown;
 }
 
@@ -337,6 +340,7 @@ export interface AdminBookingEditPayload {
         notes?: unknown;
     };
     internalNotes?: unknown;
+    allowBlockedOverride?: unknown;
 }
 
 export interface AdminBookingsRepository {
@@ -423,13 +427,20 @@ export class AdminAuthorizationError extends Error {
 
 export class AdminBookingRequestError extends Error {
     readonly status: number;
+    readonly code?: string;
 
-    constructor(status: number, message: string) {
+    constructor(status: number, message: string, code?: string) {
         super(message);
         this.name = "AdminBookingRequestError";
         this.status = status;
+        this.code = code;
     }
 }
+
+/** 409 code the client can act on: staff may retry with allowBlockedOverride
+ * after an explicit "Book anyway" confirm. Double-booking conflicts never
+ * carry a code — they are never overridable. */
+export const BLOCKED_TIME_OVERLAP_CODE = "BLOCKED_TIME_OVERLAP";
 
 interface AdminBookingMutationOptions {
     now?: Date;
@@ -867,10 +878,19 @@ export async function editAdminBooking(
     repository: AdminBookingManagementRepository,
     options: AdminBookingMutationOptions = {},
 ) {
-    const result = await repository.withTransaction(async (transaction) => {
-        const tx = transaction as AdminBookingManagementRepository;
-        return editAdminBookingInTransaction(user, bookingId, payload, tx, options);
-    });
+    let result;
+    try {
+        result = await repository.withTransaction(async (transaction) => {
+            const tx = transaction as AdminBookingManagementRepository;
+            return editAdminBookingInTransaction(user, bookingId, payload, tx, options);
+        });
+    } catch (error) {
+        if (isDatabaseConflictError(error)) {
+            throw unavailableStaffSlotError();
+        }
+
+        throw error;
+    }
 
     if (result.notification) {
         await dispatchLifecycleNotification(options.notificationDispatcher, result.notification);
@@ -888,10 +908,19 @@ export async function rescheduleAdminBooking(
 ) {
     assertNoServiceChangeFields(payload);
 
-    const booking = await repository.withTransaction(async (transaction) => {
-        const tx = transaction as AdminBookingManagementRepository;
-        return rescheduleAdminBookingInTransaction(user, bookingId, payload, tx, options);
-    });
+    let booking;
+    try {
+        booking = await repository.withTransaction(async (transaction) => {
+            const tx = transaction as AdminBookingManagementRepository;
+            return rescheduleAdminBookingInTransaction(user, bookingId, payload, tx, options);
+        });
+    } catch (error) {
+        if (isDatabaseConflictError(error)) {
+            throw unavailableStaffSlotError();
+        }
+
+        throw error;
+    }
 
     await dispatchLifecycleNotification(options.notificationDispatcher, {
         eventType: "reschedule_confirmation",
@@ -948,6 +977,7 @@ async function rescheduleAdminBookingInTransaction(
         startTime,
         source: "manual",
         excludeBookingId: booking.id,
+        allowBlockedOverride: payload.allowBlockedOverride === true,
         customer: {
             firstName: firstNameFromCustomerName(booking.customerName),
             lastName: lastNameFromCustomerName(booking.customerName),
@@ -1009,6 +1039,7 @@ async function editAdminBookingInTransaction(
         startTime: parseDate(payload.startTime, "A valid appointment start time is required."),
         source: booking.source,
         excludeBookingId: booking.id,
+        allowBlockedOverride: payload.allowBlockedOverride === true,
         customer,
         customerNotes: customer.notes ?? null,
         internalNotes: optionalString(payload.internalNotes) ?? null,
@@ -1078,22 +1109,30 @@ async function resolveStaffAppointmentSlot(
         endTime,
         request.excludeBookingId,
     );
-    const hasLoadedBlockedOverlap = hasAvailabilityBlockedOverlap(
-        availabilityData,
-        request.barberId,
-        request.locationId,
-        startTime,
-        endTime,
-    );
     const hasBookingOverlap =
         hasLoadedBookingOverlap ||
         await repository.hasConfirmedBookingOverlap(request.barberId, startTime, endTime, request.excludeBookingId);
-    const hasBlockedOverlap =
-        hasLoadedBlockedOverlap ||
-        await repository.hasBlockedTimeOverlap(request.barberId, request.locationId, startTime, endTime);
 
-    if (hasBookingOverlap || hasBlockedOverlap) {
+    if (hasBookingOverlap) {
         throw unavailableStaffSlotError();
+    }
+
+    // Blocked time is a soft conflict for staff: without the override flag it
+    // 409s with a code the client turns into a "Book anyway" confirm.
+    if (request.allowBlockedOverride !== true) {
+        const hasBlockedOverlap =
+            hasAvailabilityBlockedOverlap(
+                availabilityData,
+                request.barberId,
+                request.locationId,
+                startTime,
+                endTime,
+            ) ||
+            await repository.hasBlockedTimeOverlap(request.barberId, request.locationId, startTime, endTime);
+
+        if (hasBlockedOverlap) {
+            throw blockedTimeConflictError();
+        }
     }
 
     return {
@@ -1240,6 +1279,14 @@ function unavailableStaffSlotError() {
     return new AdminBookingRequestError(409, "The requested appointment slot is not available.");
 }
 
+function blockedTimeConflictError() {
+    return new AdminBookingRequestError(
+        409,
+        "This time is blocked for the barber. Choose another time or book anyway.",
+        BLOCKED_TIME_OVERLAP_CODE,
+    );
+}
+
 function buildActorBookingScope(user: SafeAdminUser, filters: AdminBookingFilters): AdminBookingQueryScope {
     const actorScope = buildActorScope(user);
     const requestedBarberId = optionalString(filters.barberId);
@@ -1293,6 +1340,7 @@ function buildManualBookingRequest(
         startTime: parseDate(payload.startTime, "A valid appointment start time is required."),
         source: "manual",
         customer,
+        allowBlockedOverride: payload.allowBlockedOverride === true,
         customerNotes: optionalString(payload.customerNotes) ?? customer.notes ?? null,
         internalNotes: optionalString(payload.internalNotes) ?? null,
         minimumNoticeMinutes: 0,
@@ -1322,6 +1370,7 @@ function buildWalkInBookingRequest(
         startTime: parseDate(payload.startTime, "A valid appointment start time is required."),
         source: "walk_in",
         customer,
+        allowBlockedOverride: payload.allowBlockedOverride === true,
         customerNotes: customer.notes ?? null,
         internalNotes: optionalString(payload.internalNotes) ?? null,
         minimumNoticeMinutes: 0,

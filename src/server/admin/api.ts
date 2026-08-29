@@ -1378,7 +1378,8 @@ function sendAdminApiError(error: unknown, response: any, next?: any) {
         error instanceof TeamProfileImageUploadError ||
         error instanceof AdminMutationOriginError
     ) {
-        response.status(error.status).json({ message: error.message });
+        const code = "code" in error && typeof error.code === "string" ? error.code : undefined;
+        response.status(error.status).json({ message: error.message, ...(code ? { code } : {}) });
         return;
     }
 

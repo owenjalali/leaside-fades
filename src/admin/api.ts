@@ -23,11 +23,15 @@ export const ADMIN_AUTH_EXPIRED_EVENT = "leaside-admin-auth-expired";
 
 export class AdminApiError extends Error {
     readonly status: number;
+    /** Machine-readable conflict code (e.g. "BLOCKED_TIME_OVERLAP") when the
+     * server offers a client-actionable path such as "Book anyway". */
+    readonly code?: string;
 
-    constructor(message: string, status: number) {
+    constructor(message: string, status: number, code?: string) {
         super(message);
         this.name = "AdminApiError";
         this.status = status;
+        this.code = code;
     }
 }
 
@@ -48,7 +52,11 @@ async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
             notifyAdminAuthExpired(message);
         }
 
-        throw new AdminApiError(message, response.status);
+        throw new AdminApiError(
+            message,
+            response.status,
+            typeof payload.code === "string" ? payload.code : undefined,
+        );
     }
 
     return payload as T;
@@ -116,7 +124,11 @@ export async function uploadAdminBarberProfileImage(file: File) {
             notifyAdminAuthExpired(message);
         }
 
-        throw new AdminApiError(message, response.status);
+        throw new AdminApiError(
+            message,
+            response.status,
+            typeof payload.code === "string" ? payload.code : undefined,
+        );
     }
 
     return payload as AdminTeamProfileImageUpload;
