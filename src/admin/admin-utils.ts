@@ -68,9 +68,6 @@ export interface DayScheduleDraft {
 
 export interface WeeklyScheduleDraft {
     barberId: string;
-    effectiveFrom: string;
-    effectiveTo: string;
-    effectiveDatesTouched: boolean;
     sourceShiftIds: string[];
     days: DayScheduleDraft[];
 }
@@ -455,13 +452,15 @@ export function groupShiftsByBarberAndWeekday(shifts: AdminShift[]) {
     }, {});
 }
 
-export function buildWeeklyScheduleDraft(schedule: AdminSchedule, barberId: string): WeeklyScheduleDraft {
+export function buildWeeklyScheduleDraft(
+    schedule: AdminSchedule,
+    barberId: string,
+    referenceDate: string = todayLocalDate(),
+): WeeklyScheduleDraft {
     const activeShifts = schedule.shifts
         .filter((shift) => shift.active && shift.barberId === barberId)
         .sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime));
-    const shifts = selectCurrentWeeklyShiftPattern(activeShifts);
-    const effectiveFromValues = uniqueShiftDateValues(shifts, "effectiveFrom");
-    const effectiveToValues = uniqueShiftDateValues(shifts, "effectiveTo");
+    const shifts = selectCurrentWeeklyShiftPattern(activeShifts, referenceDate);
     const days: DayScheduleDraft[] = Array.from({ length: 7 }, (_, dayOfWeek) => {
         const windows = shifts
             .filter((shift) => shift.dayOfWeek === dayOfWeek)
@@ -484,9 +483,6 @@ export function buildWeeklyScheduleDraft(schedule: AdminSchedule, barberId: stri
 
     return {
         barberId,
-        effectiveFrom: effectiveFromValues.length === 1 ? effectiveFromValues[0] : "",
-        effectiveTo: effectiveToValues.length === 1 ? effectiveToValues[0] : "",
-        effectiveDatesTouched: false,
         sourceShiftIds: shifts.map((shift) => shift.id),
         days,
     };
@@ -506,13 +502,6 @@ export function calculateWeeklyScheduleHours(draft: WeeklyScheduleDraft) {
 
 export function validateWeeklyScheduleDraft(draft: WeeklyScheduleDraft): WeeklyScheduleValidationIssue[] {
     const issues: WeeklyScheduleValidationIssue[] = [];
-
-    if (draft.effectiveFrom && draft.effectiveTo && draft.effectiveFrom > draft.effectiveTo) {
-        issues.push({
-            field: "effectiveTo",
-            message: "Ends must be on or after Starts.",
-        });
-    }
 
     for (const day of draft.days) {
         if (!day.active) {
@@ -766,9 +755,12 @@ export function buildWeeklyScheduleSavePlan(
     schedule: Pick<AdminSchedule, "shifts">,
     draft: WeeklyScheduleDraft,
 ): WeeklyScheduleSaveOperation[] {
-    const sourceShiftIds = new Set(draft.sourceShiftIds);
-    const existingShifts = schedule.shifts.filter((shift) =>
-        shift.active && shift.barberId === draft.barberId && sourceShiftIds.has(shift.id),
+    // Every active row for the barber is in scope, not just the rows the draft
+    // was built from: a Save must leave exactly the drafted pattern, sweeping
+    // expired, duplicate, and stray dated rows that would otherwise linger
+    // invisibly (the Yogesh expired-pattern incident).
+    const existingShifts = schedule.shifts.filter(
+        (shift) => shift.active && shift.barberId === draft.barberId,
     );
     const existingById = new Map(existingShifts.map((shift) => [shift.id, shift]));
     const retainedShiftIds = new Set<string>();
@@ -1209,28 +1201,33 @@ function formatLocalClockTime(time: string) {
     }).format(date);
 }
 
-function uniqueShiftDateValues(shifts: AdminShift[], key: "effectiveFrom" | "effectiveTo") {
-    return Array.from(new Set(shifts.map((shift) => shift[key] ?? "")));
+function selectCurrentWeeklyShiftPattern(shifts: AdminShift[], referenceDate: string) {
+    // The modal must show what is actually in effect on the reference date -
+    // the same per-date gate the week table and the booking engine apply -
+    // never a "latest dated group" heuristic, which hid live open-ended rows
+    // behind long-expired dated ones.
+    return shifts.filter((shift) => shiftEffectiveOnDate(shift, referenceDate));
 }
 
-function selectCurrentWeeklyShiftPattern(shifts: AdminShift[]) {
-    if (shifts.length <= 1) {
-        return shifts;
+/** The most recently ended dated pattern (grouped by effective range) for a
+ * barber whose current template is empty - feeds the weekly dialog's
+ * "Restore previous schedule" affordance. */
+export function selectMostRecentExpiredPattern(shifts: AdminShift[], referenceDate: string): AdminShift[] {
+    const expired = shifts.filter(
+        (shift) => shift.active && shift.effectiveTo && shift.effectiveTo < referenceDate,
+    );
+    if (expired.length === 0) {
+        return [];
     }
 
     const groups = new Map<string, AdminShift[]>();
-    for (const shift of shifts) {
+    for (const shift of expired) {
         const key = `${shift.effectiveFrom ?? ""}|${shift.effectiveTo ?? ""}`;
         groups.set(key, [...(groups.get(key) ?? []), shift]);
     }
 
     return [...groups.values()]
         .sort((a, b) => {
-            const latestStart = (b[0]?.effectiveFrom ?? "").localeCompare(a[0]?.effectiveFrom ?? "");
-            if (latestStart !== 0) {
-                return latestStart;
-            }
-
             const latestEnd = (b[0]?.effectiveTo ?? "").localeCompare(a[0]?.effectiveTo ?? "");
             if (latestEnd !== 0) {
                 return latestEnd;
@@ -1245,14 +1242,17 @@ function buildWeeklyShiftPayload(
     dayOfWeek: number,
     window: ShiftWindowDraft,
 ): WeeklyScheduleShiftPayload {
+    // The dialog promises "every week from now on", so weekly saves always
+    // write ongoing rows: retained dated rows are normalized to open-ended and
+    // new windows are born without an expiry (the server maps "" to NULL).
     return {
         barberId: draft.barberId,
         locationId: window.locationId,
         dayOfWeek,
         startTime: window.startTime,
         endTime: window.endTime,
-        effectiveFrom: draft.effectiveDatesTouched ? draft.effectiveFrom : window.effectiveFrom ?? draft.effectiveFrom,
-        effectiveTo: draft.effectiveDatesTouched ? draft.effectiveTo : window.effectiveTo ?? draft.effectiveTo,
+        effectiveFrom: "",
+        effectiveTo: "",
     };
 }
 

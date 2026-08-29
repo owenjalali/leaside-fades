@@ -87,7 +87,9 @@ Rules:
 - barber users see only their linked barber column when assigned to the selected location
 - the day board keeps a full staff operating surface from 12:00 AM through the 11:00 PM hour, but the initial viewport defaults to 9:00 AM and scrolls rather than compressing the whole day into one screen
 - `add`, `remove`, and `not_working` shift overrides must affect displayed working windows
-- non-working time should be shaded visually, explicit blocked time should render separately, and blocked time remains non-clickable
+- non-working time should be shaded visually and explicit blocked time should render separately
+- staff can click or drop onto blocked cells, but saving asks an explicit "Book anyway" confirm before overriding the blocked time; public online booking never offers an override
+- a blocked time applies only to its own scope: a barber block affects that barber alone (at its location when one is set), a location block affects every barber at that location, and a business block affects everyone
 - authenticated staff can click or drag appointments into grey non-working cells when they need to book outside public online availability
 - public customers cannot book grey non-working cells; public availability still requires an open business day, saved shifts, minimum notice, and 30-day max window
 - if a booking exists outside a staff member's working window, show it with an outside-hours warning instead of deleting or silently hiding the data
@@ -114,6 +116,10 @@ For MVP:
 
 Launch catalog corrections:
 - `Men's Color Root Touchup` is a Men service, 30 minutes, displayed as `from $65` (owner shortened it from 45 minutes on 2026-08-29).
+
+## Expiring schedules
+
+Recurring shift rows may carry `effective_from`/`effective_to` dates, but the weekly editor never writes them: saving a weekly schedule always produces ongoing rows and deactivates any active rows the draft does not retain. A dated row that still applies today shows an "Ends {date}" warning in the editor; once a dated pattern lapses the barber simply has no recurring hours for those days (customers cannot book them) until a new weekly schedule is saved or the expired pattern is restored from the editor. Date-bounded planning is done with one-day exceptions from the calendar barber headers, not with dated recurring rows.
 
 ## Pricing
 

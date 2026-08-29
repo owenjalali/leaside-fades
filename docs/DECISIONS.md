@@ -788,3 +788,11 @@ Change `Men's Color Root Touchup` from 45 minutes to 30 minutes in the productio
 
 Reason:
 The owner confirmed the service actually takes 30 minutes (matching `Women's Root Touchup`). The 45-minute duration was blocking an extra 15 minutes of bookable time on every touchup.
+
+### 2026-08-29 - Anchor The Weekly Shift Editor To Today And Save Ongoing Rows
+
+Decision:
+The weekly schedule dialog builds its draft from the shift rows effective on the day it is opened (the same per-date gate as the week table and the booking engine) instead of the lexicographically latest dated group. Saves always emit open-ended `effective_from`/`effective_to` and the save plan deactivates every active row for the barber that the draft does not retain. Dated rows that still apply show an amber "Ends {date}" chip, clearing all weekly hours requires a destructive confirm, and an empty template with an expired dated pattern offers "Restore previous schedule". The production incident data (Yogesh's Tue-Fri rows expired 2026-06-26 while the modal displayed them as current) was repaired by nulling the effective range on the four live rows.
+
+Reason:
+The old "latest dated pattern" selector had no concept of today, so an expired pattern shadowed the live open-ended rows: the modal displayed shifts customers could not book, re-saving produced no operations (Save stayed disabled), and new windows inherited the dead dates. The effective-date editor that made dated ranges visible was removed in the July 10 Team Week redesign, leaving no way to see or repair the state. Anchoring the modal to the calendar's own resolution makes the two surfaces agree by construction, and always-ongoing saves make the banner's "every week from now on" promise literally true.

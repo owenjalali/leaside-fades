@@ -53,6 +53,8 @@ import {
     buildCoverPlan,
     buildTimeOffWritePlan,
     buildWeeklyScheduleDraft,
+    formatLocalDateLabel,
+    selectMostRecentExpiredPattern,
     buildWeeklyScheduleSavePlan,
     buildBlockedTimePayload,
     busyChipLabel,
@@ -1315,7 +1317,8 @@ function WeeklyScheduleDialog({
     onChanged: (message: string) => Promise<void>;
 }) {
     const barberId = barber?.id ?? "";
-    const [draft, setDraft] = useState<WeeklyScheduleDraft>(() => buildWeeklyScheduleDraft(schedule, barberId));
+    const confirm = useConfirm();
+    const [draft, setDraft] = useState<WeeklyScheduleDraft>(() => buildWeeklyScheduleDraft(schedule, barberId, todayLocalDate()));
     const [expandedDay, setExpandedDay] = useState(1);
     const [saving, setSaving] = useState(false);
     const [notice, setNotice] = useState("");
@@ -1323,6 +1326,35 @@ function WeeklyScheduleDialog({
     const validationIssues = useMemo(() => validateWeeklyScheduleDraft(draft), [draft]);
     const weeklyHours = calculateWeeklyScheduleHours(draft);
     const summary = barber ? describeWeeklyScheduleDraft(draft, schedule, barber.displayName) : "";
+    const expiredPattern = useMemo(
+        () =>
+            selectMostRecentExpiredPattern(
+                schedule.shifts.filter((shift) => shift.active && shift.barberId === barberId),
+                todayLocalDate(),
+            ),
+        [schedule, barberId],
+    );
+    const draftIsEmpty = draft.days.every((day) => !day.active || day.windows.length === 0);
+    const hasDatedWindows = draft.days.some((day) =>
+        day.windows.some((window) => window.effectiveFrom || window.effectiveTo),
+    );
+
+    function restorePreviousSchedule() {
+        setDraft((current) => ({
+            ...current,
+            days: current.days.map((day) => {
+                const windows = expiredPattern
+                    .filter((shift) => shift.dayOfWeek === day.dayOfWeek)
+                    .map((shift) => ({
+                        draftId: `restore-${shift.id}`,
+                        locationId: shift.locationId,
+                        startTime: shift.startTime,
+                        endTime: shift.endTime,
+                    }));
+                return windows.length > 0 ? { ...day, active: true, windows } : day;
+            }),
+        }));
+    }
 
     async function save() {
         if (savePlan.length === 0) {
@@ -1331,6 +1363,18 @@ function WeeklyScheduleDialog({
         if (validationIssues.length > 0) {
             setNotice("Fix the highlighted items before saving.");
             return;
+        }
+        if (draftIsEmpty && savePlan.some((operation) => operation.type === "deactivate")) {
+            const proceed = await confirm({
+                title: `Remove all weekly hours for ${barber?.displayName ?? "this barber"}?`,
+                description: "They will have no recurring schedule and customers won't be able to book them online.",
+                confirmLabel: "Remove all hours",
+                cancelLabel: "Keep schedule",
+                tone: "danger",
+            });
+            if (!proceed) {
+                return;
+            }
         }
         try {
             setSaving(true);
@@ -1354,6 +1398,23 @@ function WeeklyScheduleDialog({
                     <p className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12.5px] font-medium text-amber-900">
                         <Repeat size={15} className="mt-px shrink-0" /> This changes {barber?.displayName ?? "this barber"}'s schedule every week from now on — not just this week.
                     </p>
+                    {hasDatedWindows && (
+                        <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-900">
+                            Some of these shifts currently have an end date. Saving makes the whole schedule ongoing — no end date.
+                        </p>
+                    )}
+                    {barber && draftIsEmpty && expiredPattern.length > 0 && (
+                        <div className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-100 px-3 py-2.5">
+                            <p className="text-[12.5px] font-bold text-amber-900">
+                                No weekly schedule is in effect — the previous one ended {formatLocalDateLabel(expiredPattern[0]?.effectiveTo ?? "", { year: true })}.
+                            </p>
+                            {canManage && (
+                                <button type="button" className="text-button" onClick={restorePreviousSchedule} disabled={saving}>
+                                    Restore previous schedule
+                                </button>
+                            )}
+                        </div>
+                    )}
                 </div>
                 {notice && <p className="mx-5 mt-4 rounded-lg bg-red-50 px-3 py-2 text-[12.5px] font-medium text-red-700" role="alert">{notice}</p>}
                 {barber ? (
@@ -1365,7 +1426,7 @@ function WeeklyScheduleDialog({
                         expandedDay={expandedDay}
                         onExpandedDay={setExpandedDay}
                         onDraftChange={setDraft}
-                        onDiscard={() => setDraft(buildWeeklyScheduleDraft(schedule, barberId))}
+                        onDiscard={() => setDraft(buildWeeklyScheduleDraft(schedule, barberId, todayLocalDate()))}
                         onSave={save}
                         saving={saving}
                         pendingChanges={savePlan.length}
@@ -1719,6 +1780,13 @@ function WeeklyScheduleBuilder({
                                 <p className="text-xs font-black uppercase tracking-[0.14em] text-charcoal/45">Edit shift</p>
                                 <h3 className="mt-1 text-xl font-black text-forest">{weekdays[selectedContext.day.dayOfWeek]} shift</h3>
                                 <p className="mt-1 text-sm font-bold text-charcoal/55">{safeScheduleWindowLabel(selectedContext.window.startTime, selectedContext.window.endTime)}</p>
+                                {(selectedContext.window.effectiveTo || selectedContext.window.effectiveFrom) && (
+                                    <p className="mt-2 inline-flex items-center rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-black text-amber-900">
+                                        {selectedContext.window.effectiveTo
+                                            ? `Ends ${formatLocalDateLabel(selectedContext.window.effectiveTo, { year: true })} — saving makes it ongoing`
+                                            : `Starts ${formatLocalDateLabel(selectedContext.window.effectiveFrom ?? "", { year: true })} — saving makes it ongoing`}
+                                    </p>
+                                )}
                             </div>
                             <div className="grid gap-3">
                                 <label className="grid gap-1">

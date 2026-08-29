@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
     blockedTimeAppliesToBarberLocation,
     buildAdminBookingQuery,
+    selectMostRecentExpiredPattern,
     buildAdminScheduleQuery,
     buildDashboardChartScale,
     buildDashboardPeriodRange,
@@ -392,7 +393,6 @@ describe("Phase 7 schedule UI utilities", () => {
         const draft = buildWeeklyScheduleDraft(schedule, "barber-a");
 
         expect(draft.barberId).toBe("barber-a");
-        expect(draft.effectiveFrom).toBe("");
         expect(draft.sourceShiftIds).toEqual(["shift-a", "shift-a-2", "shift-b"]);
         expect(draft.days[1]).toMatchObject({
             dayOfWeek: 1,
@@ -406,9 +406,11 @@ describe("Phase 7 schedule UI utilities", () => {
         expect(draft.days[3].windows[0]).toMatchObject({ shiftId: "shift-b", startTime: "14:00", endTime: "19:00" });
     });
 
-    test("builds the weekly draft from the latest dated recurring pattern", () => {
-        const oldMonday = { ...shiftA, id: "old-monday", effectiveFrom: "2026-04-26", effectiveTo: "2026-05-26" };
-        const oldWednesday = { ...shiftB, id: "old-wednesday", effectiveFrom: "2026-04-26", effectiveTo: "2026-05-26" };
+    test("builds the weekly draft from the rows in effect on the reference date", () => {
+        // The Yogesh incident shape: an expired dated pattern, a dated pattern
+        // still in effect, and an open-ended Saturday. The draft must show
+        // exactly what the week table and the booking engine see.
+        const expiredMonday = { ...shiftA, id: "expired-monday", effectiveFrom: "2026-04-26", effectiveTo: "2026-05-26" };
         const currentMonday = {
             ...shiftA,
             id: "current-monday",
@@ -416,27 +418,75 @@ describe("Phase 7 schedule UI utilities", () => {
             effectiveFrom: "2026-04-30",
             effectiveTo: "2026-05-30",
         };
-        const currentWednesday = {
-            ...shiftB,
-            id: "current-wednesday",
-            effectiveFrom: "2026-04-30",
-            effectiveTo: "2026-05-30",
-        };
+        const openSaturday = { ...shiftA, id: "open-saturday", dayOfWeek: 6, startTime: "12:00", endTime: "19:00" };
         const schedule: AdminSchedule = {
             locations: [{ id: "location-a", name: "Eglinton", sortOrder: 1 }],
             barbers: [{ id: "barber-a", displayName: "Laura Nguyen", locationIds: ["location-a"], sortOrder: 1 }],
-            shifts: [oldMonday, currentMonday, oldWednesday, currentWednesday],
+            shifts: [expiredMonday, currentMonday, openSaturday],
             shiftOverrides: [],
             blockedTimes: [],
         };
 
-        const draft = buildWeeklyScheduleDraft(schedule, "barber-a");
+        const draft = buildWeeklyScheduleDraft(schedule, "barber-a", "2026-05-28");
 
-        expect(draft.effectiveFrom).toBe("2026-04-30");
-        expect(draft.effectiveTo).toBe("2026-05-30");
-        expect(draft.sourceShiftIds).toEqual(["current-monday", "current-wednesday"]);
-        expect(calculateWeeklyScheduleHours(draft)).toBe(14);
-        expect(buildWeeklyScheduleSavePlan(schedule, draft)).toEqual([]);
+        expect(draft.sourceShiftIds).toEqual(["current-monday", "open-saturday"]);
+        expect(draft.days[1].windows[0]).toMatchObject({ shiftId: "current-monday", effectiveTo: "2026-05-30" });
+        expect(draft.days[6].windows[0]).toMatchObject({ shiftId: "open-saturday", effectiveTo: "" });
+        expect(calculateWeeklyScheduleHours(draft)).toBe(16);
+
+        // Once the dated pattern expires, only the open-ended row remains.
+        const later = buildWeeklyScheduleDraft(schedule, "barber-a", "2026-06-10");
+        expect(later.sourceShiftIds).toEqual(["open-saturday"]);
+
+        // Saving normalizes the dated row to ongoing and sweeps the expired one.
+        const plan = buildWeeklyScheduleSavePlan(schedule, draft);
+        expect(plan).toEqual(expect.arrayContaining([
+            { type: "deactivate", shiftId: "expired-monday" },
+            {
+                type: "update",
+                shiftId: "current-monday",
+                payload: expect.objectContaining({ effectiveFrom: "", effectiveTo: "" }),
+            },
+        ]));
+        expect(plan.filter((operation) => operation.type === "create")).toEqual([]);
+        expect(plan.some((operation) => operation.type === "update" && operation.shiftId === "open-saturday")).toBe(false);
+    });
+
+    test("modal weekly hours agree with the week table for an override-free schedule", () => {
+        const schedule: AdminSchedule = {
+            locations: [{ id: "location-a", name: "Eglinton", sortOrder: 1 }],
+            barbers: [{ id: "barber-a", displayName: "Laura Nguyen", locationIds: ["location-a"], sortOrder: 1 }],
+            shifts: [
+                { ...shiftA, id: "expired-tue", dayOfWeek: 2, effectiveFrom: "2026-06-23", effectiveTo: "2026-06-26" },
+                shiftA,
+                { ...shiftB, id: "open-saturday", dayOfWeek: 6, startTime: "12:00", endTime: "19:00" },
+            ],
+            shiftOverrides: [],
+            blockedTimes: [],
+        };
+        const weekDates = ["2026-10-04", "2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-10"];
+
+        const draft = buildWeeklyScheduleDraft(schedule, "barber-a", "2026-10-05");
+
+        expect(calculateWeeklyScheduleHours(draft) * 60).toBe(
+            resolveBarberWeekMinutes(schedule, "barber-a", weekDates),
+        );
+    });
+
+    test("selects the most recently ended expired pattern for restore", () => {
+        const shifts: AdminShift[] = [
+            { ...shiftA, id: "older-a", effectiveFrom: "2026-03-01", effectiveTo: "2026-03-31" },
+            { ...shiftA, id: "recent-a", dayOfWeek: 2, effectiveFrom: "2026-06-23", effectiveTo: "2026-06-26" },
+            { ...shiftA, id: "recent-b", dayOfWeek: 3, effectiveFrom: "2026-06-23", effectiveTo: "2026-06-26" },
+            { ...shiftA, id: "still-live", dayOfWeek: 4, effectiveFrom: "2026-06-23", effectiveTo: "2126-01-01" },
+            { ...shiftA, id: "open", dayOfWeek: 6 },
+        ];
+
+        expect(selectMostRecentExpiredPattern(shifts, "2026-08-29").map((shift) => shift.id)).toEqual([
+            "recent-a",
+            "recent-b",
+        ]);
+        expect(selectMostRecentExpiredPattern([{ ...shiftA }], "2026-08-29")).toEqual([]);
     });
 
     test("calculates weekly schedule hours from active split windows", () => {
@@ -455,7 +505,7 @@ describe("Phase 7 schedule UI utilities", () => {
         expect(calculateWeeklyScheduleHours(draft)).toBe(14.5);
     });
 
-    test("validates weekly schedule draft time ranges, overlaps, and effective dates", () => {
+    test("validates weekly schedule draft time ranges and overlaps", () => {
         const draft = buildWeeklyScheduleDraft({
             locations: [{ id: "location-a", name: "Eglinton", sortOrder: 1 }],
             barbers: [{ id: "barber-a", displayName: "Laura Nguyen", locationIds: ["location-a"], sortOrder: 1 }],
@@ -463,9 +513,6 @@ describe("Phase 7 schedule UI utilities", () => {
             shiftOverrides: [],
             blockedTimes: [],
         }, "barber-a");
-        draft.effectiveFrom = "2026-09-01";
-        draft.effectiveTo = "2026-08-31";
-        draft.effectiveDatesTouched = true;
         draft.days[1].windows[0].startTime = "13:00";
         draft.days[1].windows[0].endTime = "13:00";
         draft.days[3].windows.push({
@@ -476,10 +523,6 @@ describe("Phase 7 schedule UI utilities", () => {
         });
 
         expect(validateWeeklyScheduleDraft(draft)).toEqual(expect.arrayContaining([
-            {
-                field: "effectiveTo",
-                message: "Ends must be on or after Starts.",
-            },
             {
                 dayOfWeek: 1,
                 field: "endTime",
@@ -495,7 +538,7 @@ describe("Phase 7 schedule UI utilities", () => {
         ]));
     });
 
-    test("allows ongoing effective dates and non-overlapping split shifts", () => {
+    test("allows non-overlapping split shifts", () => {
         const draft = buildWeeklyScheduleDraft({
             locations: [{ id: "location-a", name: "Eglinton", sortOrder: 1 }],
             barbers: [{ id: "barber-a", displayName: "Laura Nguyen", locationIds: ["location-a"], sortOrder: 1 }],
@@ -506,9 +549,6 @@ describe("Phase 7 schedule UI utilities", () => {
             shiftOverrides: [],
             blockedTimes: [],
         }, "barber-a");
-        draft.effectiveFrom = "2026-06-01";
-        draft.effectiveTo = "";
-        draft.effectiveDatesTouched = true;
 
         expect(validateWeeklyScheduleDraft(draft)).toEqual([]);
     });
@@ -621,9 +661,6 @@ describe("Phase 7 schedule UI utilities", () => {
             blockedTimes: [],
         };
         const draft = buildWeeklyScheduleDraft(schedule, "barber-a");
-        draft.effectiveFrom = "2026-05-19";
-        draft.effectiveTo = "2026-08-31";
-        draft.effectiveDatesTouched = true;
         draft.days[1].windows[0].endTime = "14:00";
         draft.days[2].active = false;
         draft.days[2].windows = [];
@@ -646,21 +683,8 @@ describe("Phase 7 schedule UI utilities", () => {
                     dayOfWeek: 1,
                     startTime: "10:00",
                     endTime: "14:00",
-                    effectiveFrom: "2026-05-19",
-                    effectiveTo: "2026-08-31",
-                },
-            },
-            {
-                type: "update",
-                shiftId: "shift-b-update",
-                payload: {
-                    barberId: "barber-a",
-                    locationId: "location-a",
-                    dayOfWeek: 3,
-                    startTime: "14:00",
-                    endTime: "19:00",
-                    effectiveFrom: "2026-05-19",
-                    effectiveTo: "2026-08-31",
+                    effectiveFrom: "",
+                    effectiveTo: "",
                 },
             },
             {
@@ -671,8 +695,8 @@ describe("Phase 7 schedule UI utilities", () => {
                     dayOfWeek: 5,
                     startTime: "10:00",
                     endTime: "19:00",
-                    effectiveFrom: "2026-05-19",
-                    effectiveTo: "2026-08-31",
+                    effectiveFrom: "",
+                    effectiveTo: "",
                 },
             },
         ]);

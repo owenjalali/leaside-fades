@@ -371,8 +371,9 @@ Rules:
 - blocked times that overlap confirmed bookings in the affected scope are rejected
 
 Frontend:
-- `/admin/shifts` provides a staff-first recurring weekly timeline with 15-minute-snapped drag/drop move, pointer resize, exact inspector edits, location selection, split shifts, copy/duplicate/clear actions, effective dates, explicit save/discard, tablet/mobile day cards, and a team overview tab; one-day exception editing is available from `/admin/calendar` barber headers
-- when multiple active recurring date ranges are returned for one barber, the weekly builder displays and diffs the latest effective recurring pattern instead of mixing separate dated patterns into one editable week
+- `/admin/shifts` provides a staff-first recurring weekly timeline with 15-minute-snapped drag/drop move, pointer resize, exact inspector edits, location selection, split shifts, copy/duplicate/clear actions, explicit save/discard, tablet/mobile day cards, and a team overview tab; one-day exception editing is available from `/admin/calendar` barber headers
+- the weekly builder shows exactly the shift rows in effect on the day it is opened (the same per-date effective gate as the week table and the booking engine); rows outside their effective range never appear as the current pattern, and dated rows that do apply carry an amber "Ends {date}" chip
+- weekly saves always write ongoing rows (`effective_from`/`effective_to` NULL) and deactivate every active row for the barber that the saved draft does not retain, so expired, duplicated, or stray dated rows cannot survive a save; when a barber's current template is empty but an expired dated pattern exists, the dialog offers "Restore previous schedule", and clearing all hours requires a destructive confirm
 - `/admin/blocked-time` provides scope-aware blocked-time forms, all-day closure entry, and visible chips for barber blocks, location closures, and business closures
 - recurring shift drag/drop edits only the frontend draft until the existing validated save-plan mutation endpoints commit the change; closures and blocked time remain form-based
 
