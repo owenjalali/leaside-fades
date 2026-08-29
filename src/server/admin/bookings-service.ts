@@ -37,6 +37,9 @@ export interface AdminBookingRecord {
     startTime: Date;
     endTime: Date;
     totalDurationMinutes: number;
+    /** Manual whole-booking price in cents; null/undefined = derived from
+     * the service snapshots. */
+    priceOverrideCents?: number | null;
     services: string[];
     serviceCategoryNames?: string[];
     serviceDetails?: BookingServiceSnapshot[];
@@ -341,6 +344,7 @@ export interface AdminBookingEditPayload {
     };
     internalNotes?: unknown;
     allowBlockedOverride?: unknown;
+    priceOverrideCents?: unknown;
 }
 
 export interface AdminBookingsRepository {
@@ -411,6 +415,7 @@ export interface AdminBookingManagementRepository
         customer: CreateBookingCustomerInput;
         customerNotes: string | null;
         internalNotes: string | null;
+        priceOverrideCents: number | null;
         serviceSnapshots: BookingServiceSnapshot[];
         updatedAt: Date;
     }): Promise<AdminBookingDetailRecord | null>;
@@ -1046,6 +1051,10 @@ async function editAdminBookingInTransaction(
         now: options.now,
         timeZone: DEFAULT_TIME_ZONE,
     };
+    const priceOverrideCents = resolvePriceOverrideCents(
+        payload.priceOverrideCents,
+        booking.priceOverrideCents ?? null,
+    );
     const slot = await resolveStaffAppointmentSlot(request, repository);
     const updated = await repository.updateBookingAppointmentForAdminScope({
         bookingId: booking.id,
@@ -1058,6 +1067,7 @@ async function editAdminBookingInTransaction(
         customer,
         customerNotes: request.customerNotes ?? null,
         internalNotes: request.internalNotes ?? null,
+        priceOverrideCents,
         serviceSnapshots: slot.serviceSnapshots,
         updatedAt: options.now ?? new Date(),
     });
@@ -1279,6 +1289,22 @@ function unavailableStaffSlotError() {
     return new AdminBookingRequestError(409, "The requested appointment slot is not available.");
 }
 
+/** Edit contract: absent leaves the stored override unchanged, null clears it
+ * back to snapshot-derived pricing, and an integer 0..1,000,000 sets it. */
+function resolvePriceOverrideCents(value: unknown, current: number | null): number | null {
+    if (value === undefined) {
+        return current;
+    }
+    if (value === null) {
+        return null;
+    }
+    if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 1_000_000) {
+        return value;
+    }
+
+    throw new AdminBookingRequestError(400, "Price must be a whole amount between $0 and $10,000.");
+}
+
 function blockedTimeConflictError() {
     return new AdminBookingRequestError(
         409,
@@ -1447,9 +1473,12 @@ function buildDashboardRevenueAnalytics(
         }
 
         const details = booking.serviceDetails ?? [];
-        const valueCents = details.reduce((sum, service) => sum + service.priceCents, 0);
-        const hasPriceSnapshot = details.length > 0;
-        const hasFromPrice = details.some((service) => service.priceType === "from");
+        const priceOverrideCents = booking.priceOverrideCents ?? null;
+        const valueCents = priceOverrideCents ?? details.reduce((sum, service) => sum + service.priceCents, 0);
+        const hasPriceSnapshot = priceOverrideCents !== null || details.length > 0;
+        // A manual override is an exact figure, so it never counts as a
+        // "from"-price estimate even when the snapshots underneath are.
+        const hasFromPrice = priceOverrideCents === null && details.some((service) => service.priceType === "from");
 
         appointmentCount += 1;
         bucket.appointmentCount += 1;

@@ -582,6 +582,7 @@ class InMemoryPhase6Repository
         customer: CreateBookingRequest["customer"];
         customerNotes: string | null;
         internalNotes: string | null;
+        priceOverrideCents: number | null;
         serviceSnapshots: BookingServiceSnapshot[];
     }) {
         const booking = this.bookings.find(
@@ -604,6 +605,7 @@ class InMemoryPhase6Repository
         booking.customerPhone = input.customer.phoneE164;
         booking.customerNotes = input.customerNotes;
         booking.internalNotes = input.internalNotes;
+        booking.priceOverrideCents = input.priceOverrideCents;
         booking.serviceIds = input.serviceSnapshots.map((snapshot) => snapshot.serviceId).filter(Boolean) as string[];
         booking.services = input.serviceSnapshots.map((snapshot) => snapshot.serviceName);
         booking.serviceDetails = input.serviceSnapshots;
@@ -1764,6 +1766,101 @@ describe("Phase 6 admin calendar and booking management service", () => {
                 occurrenceKey: "2026-05-04T13:00:00.000Z",
             }),
         ]);
+    });
+
+    test("edit sets, keeps, and clears the manual price override without notifying", async () => {
+        const repository = new InMemoryPhase6Repository();
+        const dispatched: Parameters<BookingLifecycleNotificationDispatcher>[0][] = [];
+        repository.bookings[0] = {
+            ...repository.bookings[0],
+            barberId: barberAId,
+            locationId: locationAId,
+            startTime: utc(10),
+            endTime: utc(10, 30),
+            totalDurationMinutes: 30,
+            serviceIds: [serviceId],
+            serviceDetails: [serviceSnapshot],
+        };
+        const owner = { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null } as const;
+        const samePayload = {
+            locationId: locationAId,
+            barberId: barberAId,
+            startTime: utc(10).toISOString(),
+            serviceIds: [serviceId],
+            customer: { name: "Ada Lovelace" },
+            internalNotes: "",
+        };
+        const options = {
+            now,
+            notificationDispatcher: async (input: Parameters<BookingLifecycleNotificationDispatcher>[0]) => {
+                dispatched.push(input);
+                return [];
+            },
+        };
+
+        await expect(
+            editAdminBooking(owner, "booking-a", { ...samePayload, priceOverrideCents: 12345 }, repository, options),
+        ).resolves.toMatchObject({ priceOverrideCents: 12345 });
+
+        // Absent leaves the stored override unchanged.
+        await expect(
+            editAdminBooking(owner, "booking-a", samePayload, repository, options),
+        ).resolves.toMatchObject({ priceOverrideCents: 12345 });
+
+        // Explicit null clears back to snapshot-derived pricing.
+        await expect(
+            editAdminBooking(owner, "booking-a", { ...samePayload, priceOverrideCents: null }, repository, options),
+        ).resolves.toMatchObject({ priceOverrideCents: null });
+
+        // Price-only edits never notify the customer.
+        expect(dispatched).toEqual([]);
+
+        await expect(
+            editAdminBooking(owner, "booking-a", { ...samePayload, priceOverrideCents: 12.5 }, repository, options),
+        ).rejects.toMatchObject({ status: 400 });
+        await expect(
+            editAdminBooking(owner, "booking-a", { ...samePayload, priceOverrideCents: -100 }, repository, options),
+        ).rejects.toMatchObject({ status: 400 });
+    });
+
+    test("dashboard revenue uses the manual price override when set", async () => {
+        const repository = new InMemoryPhase6Repository();
+        repository.bookings = [
+            dashboardBookingFixture({
+                id: "override-from-priced",
+                status: "completed",
+                startTime: new Date("2026-05-01T17:00:00.000Z"),
+                serviceDetails: [{ ...snapshotWithPrice(3000), priceType: "from" }],
+                priceOverrideCents: 12500,
+            }),
+            dashboardBookingFixture({
+                id: "zero-override-no-snapshots",
+                status: "completed",
+                startTime: new Date("2026-05-01T18:00:00.000Z"),
+                serviceDetails: [],
+                priceOverrideCents: 0,
+            }),
+            dashboardBookingFixture({
+                id: "derived",
+                status: "completed",
+                startTime: new Date("2026-05-01T19:00:00.000Z"),
+                serviceDetails: [snapshotWithPrice(4000)],
+            }),
+        ];
+
+        const dashboard = await getAdminDashboard(
+            { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null },
+            repository,
+            { now: new Date("2026-06-09T19:00:00.000Z"), dashboardPeriod: "all-time" },
+        );
+
+        expect(dashboard.revenue).toMatchObject({
+            totalCents: 16500,
+            appointmentCount: 3,
+            pricedAppointmentCount: 3,
+            unpricedAppointmentCount: 0,
+            fromPriceAppointmentCount: 0,
+        });
     });
 
     test("barber can edit own booking but cannot edit another barber booking", async () => {

@@ -3,6 +3,8 @@ import { describe, expect, test } from "vitest";
 import {
     blockedTimeAppliesToBarberLocation,
     buildAdminBookingQuery,
+    deriveBookingPriceSummary,
+    parsePriceOverrideInput,
     selectMostRecentExpiredPattern,
     buildAdminScheduleQuery,
     buildDashboardChartScale,
@@ -1618,6 +1620,36 @@ describe("Team Week grid utilities", () => {
         expect(describeWeeklyScheduleDraft(draft, schedule, "Sam")).toBe(
             "Sam works Tue–Sat, 10:00 AM–7:00 PM at Eglinton and is off Mon, Sun — every week from now on.",
         );
+    });
+});
+
+describe("booking price helpers", () => {
+    test("derives snapshot totals and marks from-pricing", () => {
+        expect(
+            deriveBookingPriceSummary([
+                { priceCents: 3000, priceType: "fixed" },
+                { priceCents: 1550, priceType: "fixed" },
+            ]),
+        ).toEqual({ cents: 4550, display: "$45.50" });
+
+        expect(
+            deriveBookingPriceSummary([
+                { priceCents: 3000, priceType: "fixed" },
+                { priceCents: 6500, priceType: "from" },
+            ]),
+        ).toEqual({ cents: 9500, display: "from $95" });
+    });
+
+    test("parses manual price input with clear-to-derived semantics", () => {
+        expect(parsePriceOverrideInput("")).toEqual({ ok: true, cents: null });
+        expect(parsePriceOverrideInput("  ")).toEqual({ ok: true, cents: null });
+        expect(parsePriceOverrideInput("45")).toEqual({ ok: true, cents: 4500 });
+        expect(parsePriceOverrideInput("$45.50")).toEqual({ ok: true, cents: 4550 });
+        expect(parsePriceOverrideInput("0")).toEqual({ ok: true, cents: 0 });
+        expect(parsePriceOverrideInput("45.555")).toMatchObject({ ok: false });
+        expect(parsePriceOverrideInput("-5")).toMatchObject({ ok: false });
+        expect(parsePriceOverrideInput("abc")).toMatchObject({ ok: false });
+        expect(parsePriceOverrideInput("10000.01")).toMatchObject({ ok: false });
     });
 });
 

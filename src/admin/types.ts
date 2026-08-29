@@ -28,6 +28,8 @@ export interface AdminBookingSummary {
     startTime: string;
     endTime: string;
     totalDurationMinutes: number;
+    /** Manual whole-booking price in cents; null/absent = derived from services. */
+    priceOverrideCents?: number | null;
     services: string[];
     serviceCategoryNames?: string[];
 }
@@ -63,6 +65,9 @@ export interface AdminBookingEditPayload {
     };
     internalNotes: string;
     allowBlockedOverride?: boolean;
+    /** Absent = leave the stored override unchanged; null = clear to derived;
+     * an integer number of cents sets a manual total. */
+    priceOverrideCents?: number | null;
 }
 
 export interface AdminLocationOption {

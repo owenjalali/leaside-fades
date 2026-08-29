@@ -330,6 +330,10 @@ export const bookings = pgTable(
         startTime: timestamp("start_time", { withTimezone: true }).notNull(),
         endTime: timestamp("end_time", { withTimezone: true }).notNull(),
         totalDurationMinutes: integer("total_duration_minutes").notNull(),
+        // Manual whole-booking price override in cents. NULL = price derives
+        // from the immutable booking_services snapshots (which edit flows
+        // delete and reinsert — that is why the override lives here instead).
+        priceOverrideCents: integer("price_override_cents"),
         customerNotes: text("customer_notes"),
         internalNotes: text("internal_notes"),
         cancellationTokenHash: text("cancellation_token_hash"),

@@ -64,6 +64,9 @@ import { TooltipProvider } from "../components/ui/Tooltip.tsx";
 import {
     blockedTimeAppliesToBarberLocation,
     buildDashboardPeriodRange,
+    deriveBookingPriceSummary,
+    formatPriceCents,
+    parsePriceOverrideInput,
     buildBookingDragPayload,
     buildCalendarBoardRows,
     buildCalendarUnavailableRanges,
@@ -1968,11 +1971,27 @@ function BookingDetailBody({
                 <p className="mb-3 text-xl font-black text-forest">Services</p>
                 <div className="grid gap-2">
                     {booking.serviceDetails.map((service) => (
-                        <div key={`${booking.id}-${service.sortOrder}-${service.serviceName}`} className="rounded-md bg-[#f3f8f4] p-4 text-lg">
+                        <div key={`${booking.id}-${service.sortOrder}-${service.serviceName}`} className="flex flex-wrap items-baseline justify-between gap-2 rounded-md bg-[#f3f8f4] p-4 text-lg">
                             <span className="font-black text-forest">{service.serviceName}</span>
-                            <span className="ml-2 text-charcoal/60">{service.durationMinutes} min - {service.displayPrice}</span>
+                            <span className="text-charcoal/60">{service.durationMinutes} min · {service.displayPrice}</span>
                         </div>
                     ))}
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-forest/15 bg-white p-4 text-lg">
+                        <span className="font-black text-forest">Total · {booking.totalDurationMinutes} min</span>
+                        {booking.priceOverrideCents != null ? (
+                            <span className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm text-charcoal/45 line-through">
+                                    {deriveBookingPriceSummary(booking.serviceDetails).display}
+                                </span>
+                                <span className="font-black text-forest">{formatPriceCents(booking.priceOverrideCents)}</span>
+                                <span className="rounded-full bg-mint px-2 py-0.5 text-[11px] font-black uppercase tracking-wide text-forest">
+                                    Edited
+                                </span>
+                            </span>
+                        ) : (
+                            <span className="font-black text-forest">{deriveBookingPriceSummary(booking.serviceDetails).display}</span>
+                        )}
+                    </div>
                 </div>
             </div>
             {(booking.customerNotes || booking.internalNotes) && (
@@ -2055,6 +2074,10 @@ function BookingEditForm({
     const [phone, setPhone] = useState(booking.customerPhone ?? "");
     const [email, setEmail] = useState(booking.customerEmail ?? "");
     const [customerNotes, setCustomerNotes] = useState(booking.customerNotes ?? "");
+    const [priceInput, setPriceInput] = useState(
+        booking.priceOverrideCents != null ? (booking.priceOverrideCents / 100).toFixed(2).replace(/\.00$/, "") : "",
+    );
+    const [priceTouched, setPriceTouched] = useState(false);
     const [internalNotes, setInternalNotes] = useState(booking.internalNotes ?? "");
     const [error, setError] = useState("");
     const [submitting, setSubmitting] = useState(false);
@@ -2086,6 +2109,12 @@ function BookingEditForm({
         setSubmitting(true);
         setError("");
 
+        const parsedPrice = parsePriceOverrideInput(priceInput);
+        if (!parsedPrice.ok) {
+            setError(parsedPrice.message);
+            return;
+        }
+
         const payload = {
             locationId,
             barberId,
@@ -2098,6 +2127,7 @@ function BookingEditForm({
                 notes: customerNotes,
             },
             internalNotes,
+            ...(priceTouched ? { priceOverrideCents: parsedPrice.cents } : {}),
         };
 
         try {
@@ -2154,6 +2184,21 @@ function BookingEditForm({
             </div>
             <Field label="Services">
                 <ServicePicker services={options.services} selected={serviceIds} onChange={setServiceIds} />
+            </Field>
+            <Field label="Price (total)">
+                <input
+                    className="input"
+                    inputMode="decimal"
+                    placeholder={`Derived: ${deriveBookingPriceSummary(selectedServices).display}`}
+                    value={priceInput}
+                    onChange={(event) => {
+                        setPriceInput(event.target.value);
+                        setPriceTouched(true);
+                    }}
+                />
+                <p className="mt-1 text-xs text-charcoal/55">
+                    Leave empty to use service pricing. A manual price overrides this appointment's total (it also counts in dashboard revenue).
+                </p>
             </Field>
             <div className="grid gap-3 md:grid-cols-2">
                 <Field label="Customer notes">

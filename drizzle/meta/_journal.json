@@ -57,6 +57,13 @@
       "when": 1780723430545,
       "tag": "0007_phase_12_team_barber_management",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788012245648,
+      "tag": "0008_burly_deathstrike",
+      "breakpoints": true
     }
   ]
 }

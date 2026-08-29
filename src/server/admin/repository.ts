@@ -107,6 +107,7 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
                 startTime: bookings.startTime,
                 endTime: bookings.endTime,
                 totalDurationMinutes: bookings.totalDurationMinutes,
+                priceOverrideCents: bookings.priceOverrideCents,
             })
             .from(bookings)
             .innerJoin(customers, eq(bookings.customerId, customers.id))
@@ -145,6 +146,7 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
                 startTime: bookings.startTime,
                 endTime: bookings.endTime,
                 totalDurationMinutes: bookings.totalDurationMinutes,
+                priceOverrideCents: bookings.priceOverrideCents,
             })
             .from(bookings)
             .innerJoin(customers, eq(bookings.customerId, customers.id))
@@ -391,6 +393,7 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
                 startTime: bookings.startTime,
                 endTime: bookings.endTime,
                 totalDurationMinutes: bookings.totalDurationMinutes,
+                priceOverrideCents: bookings.priceOverrideCents,
                 customerNotes: bookings.customerNotes,
                 internalNotes: bookings.internalNotes,
             })
@@ -426,6 +429,7 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
             startTime: booking.startTime,
             endTime: booking.endTime,
             totalDurationMinutes: booking.totalDurationMinutes,
+            priceOverrideCents: booking.priceOverrideCents,
             services: serviceDetails[booking.id]?.map((service) => service.serviceName) ?? [],
             serviceIds:
                 serviceDetails[booking.id]
@@ -773,6 +777,7 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
         };
         customerNotes: string | null;
         internalNotes: string | null;
+        priceOverrideCents: number | null;
         serviceSnapshots: BookingServiceSnapshot[];
         updatedAt: Date;
     }) {
@@ -818,6 +823,7 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
                 totalDurationMinutes: input.totalDurationMinutes,
                 customerNotes: input.customerNotes,
                 internalNotes: input.internalNotes,
+                priceOverrideCents: input.priceOverrideCents,
                 updatedAt: input.updatedAt,
             })
             .where(eq(bookings.id, input.bookingId))
@@ -849,6 +855,7 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
             startTime: Date;
             endTime: Date;
             totalDurationMinutes: number;
+            priceOverrideCents: number | null;
         }>,
     ): Promise<AdminBookingRecord[]> {
         const serviceDetails = await this.loadBookingServiceDetails(bookingRows.map((booking) => booking.id));
@@ -870,6 +877,7 @@ class DrizzleAdminBookingsRepository implements AdminBookingManagementRepository
                 startTime: booking.startTime,
                 endTime: booking.endTime,
                 totalDurationMinutes: booking.totalDurationMinutes,
+                priceOverrideCents: booking.priceOverrideCents,
                 services: details.map((service) => service.serviceName),
                 serviceCategoryNames: Array.from(new Set(details.map((service) => service.categoryName))),
                 serviceDetails: details,

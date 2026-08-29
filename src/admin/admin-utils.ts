@@ -442,6 +442,41 @@ export function formatScheduleWindow(startTime: string, endTime: string) {
     return `${formatLocalClockTime(startTime)} - ${formatLocalClockTime(endTime)}`;
 }
 
+export function formatPriceCents(cents: number) {
+    const dollars = cents / 100;
+    return `$${Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2)}`;
+}
+
+/** Snapshot-derived booking total: the sum of service prices, marked "from"
+ * when any line is a from-price. Mirrors the server's formatPriceSummary. */
+export function deriveBookingPriceSummary(
+    services: Array<{ priceCents: number; priceType: "fixed" | "from" }>,
+) {
+    const cents = services.reduce((sum, service) => sum + service.priceCents, 0);
+    const hasFromPrice = services.some((service) => service.priceType === "from");
+    return { cents, display: `${hasFromPrice ? "from " : ""}${formatPriceCents(cents)}` };
+}
+
+/** Parses the manual price field. Empty clears back to derived pricing. */
+export function parsePriceOverrideInput(
+    raw: string,
+): { ok: true; cents: number | null } | { ok: false; message: string } {
+    const trimmed = raw.trim().replace(/^\$/, "");
+    if (trimmed === "") {
+        return { ok: true, cents: null };
+    }
+    if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
+        return { ok: false, message: "Enter a price like 45 or 45.50." };
+    }
+
+    const cents = Math.round(Number.parseFloat(trimmed) * 100);
+    if (cents > 1_000_000) {
+        return { ok: false, message: "Price must be $10,000 or less." };
+    }
+
+    return { ok: true, cents };
+}
+
 export function groupShiftsByBarberAndWeekday(shifts: AdminShift[]) {
     return shifts.reduce<Record<string, Record<number, AdminShift[]>>>((groups, shift) => {
         groups[shift.barberId] ??= {};
