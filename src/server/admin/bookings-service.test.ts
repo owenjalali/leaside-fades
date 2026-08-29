@@ -23,6 +23,7 @@ import {
     listAdminBookings,
     markAdminBookingNoShow,
     rescheduleAdminBooking,
+    updateAdminBookingDuration,
     type AdminBookingManagementRepository,
     type AdminBookingRecord,
     type AdminBookingsRepository,
@@ -1991,6 +1992,158 @@ describe("Phase 6 admin calendar and booking management service", () => {
                 "Service changes are not supported during reschedule. Cancel and recreate the booking to change services.",
         });
         expect(repository.bookings[0].startTime).toEqual(originalStart);
+    });
+
+    test("duration endpoint resizes a confirmed booking without notifying", async () => {
+        const repository = new InMemoryPhase6Repository();
+        const dispatched: Parameters<BookingLifecycleNotificationDispatcher>[0][] = [];
+        repository.bookings[0] = {
+            ...repository.bookings[0],
+            barberId: barberAId,
+            locationId: locationAId,
+            startTime: utc(10),
+            endTime: utc(10, 30),
+            totalDurationMinutes: 30,
+        };
+        const owner = { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null } as const;
+        const options = {
+            now,
+            notificationDispatcher: async (input: Parameters<BookingLifecycleNotificationDispatcher>[0]) => {
+                dispatched.push(input);
+                return [];
+            },
+        };
+
+        await expect(
+            updateAdminBookingDuration(owner, "booking-a", { endTime: utc(11).toISOString() }, repository, options),
+        ).resolves.toMatchObject({
+            id: "booking-a",
+            startTime: utc(10),
+            endTime: utc(11),
+            totalDurationMinutes: 60,
+        });
+
+        await expect(
+            updateAdminBookingDuration(owner, "booking-a", { durationMinutes: 45 }, repository, options),
+        ).resolves.toMatchObject({ endTime: utc(10, 45), totalDurationMinutes: 45 });
+
+        expect(dispatched).toEqual([]);
+    });
+
+    test("duration endpoint validates payload shape and boundaries", async () => {
+        const repository = new InMemoryPhase6Repository();
+        repository.bookings[0] = {
+            ...repository.bookings[0],
+            barberId: barberAId,
+            locationId: locationAId,
+            startTime: utc(10),
+            endTime: utc(10, 30),
+            totalDurationMinutes: 30,
+        };
+        const owner = { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null } as const;
+
+        await expect(
+            updateAdminBookingDuration(owner, "booking-a", {}, repository, { now }),
+        ).rejects.toMatchObject({ status: 400 });
+        await expect(
+            updateAdminBookingDuration(
+                owner,
+                "booking-a",
+                { endTime: utc(11).toISOString(), durationMinutes: 60 },
+                repository,
+                { now },
+            ),
+        ).rejects.toMatchObject({ status: 400 });
+        await expect(
+            updateAdminBookingDuration(owner, "booking-a", { endTime: utc(10, 50).toISOString() }, repository, { now }),
+        ).rejects.toMatchObject({ status: 400 });
+        await expect(
+            updateAdminBookingDuration(owner, "booking-a", { endTime: utc(10).toISOString() }, repository, { now }),
+        ).rejects.toMatchObject({ status: 400 });
+        await expect(
+            updateAdminBookingDuration(owner, "booking-a", { durationMinutes: 12.5 }, repository, { now }),
+        ).rejects.toMatchObject({ status: 400 });
+        // Crossing local midnight is rejected.
+        await expect(
+            updateAdminBookingDuration(
+                owner,
+                "booking-a",
+                { endTime: new Date("2026-05-05T04:15:00.000Z").toISOString() },
+                repository,
+                { now },
+            ),
+        ).rejects.toMatchObject({ status: 409 });
+
+        repository.bookings[0].status = "cancelled";
+        await expect(
+            updateAdminBookingDuration(owner, "booking-a", { durationMinutes: 45 }, repository, { now }),
+        ).rejects.toMatchObject({ status: 409 });
+    });
+
+    test("duration endpoint enforces conflicts, override, and barber scoping", async () => {
+        const repository = new InMemoryPhase6Repository();
+        repository.bookings[0] = {
+            ...repository.bookings[0],
+            barberId: barberAId,
+            locationId: locationAId,
+            startTime: utc(10),
+            endTime: utc(10, 30),
+            totalDurationMinutes: 30,
+        };
+        repository.bookings.push({
+            ...repository.bookings[0],
+            id: "booking-next",
+            startTime: utc(11, 30),
+            endTime: utc(12),
+        });
+        const owner = { id: "owner", email: "owner@example.com", displayName: "Owner", role: "owner", barberId: null } as const;
+
+        // Extending into the next confirmed booking is never overridable.
+        await expect(
+            updateAdminBookingDuration(
+                owner,
+                "booking-a",
+                { endTime: utc(11, 45).toISOString(), allowBlockedOverride: true },
+                repository,
+                { now },
+            ),
+        ).rejects.toMatchObject({ status: 409, code: undefined });
+
+        // Extending into blocked time 409s with the override code, then succeeds with the flag.
+        repository.availabilityData = baseAvailability({
+            blockedTimes: [
+                {
+                    scope: "barber",
+                    barberId: barberAId,
+                    locationId: locationAId,
+                    startTime: utc(11),
+                    endTime: utc(11, 30),
+                },
+            ],
+        });
+        await expect(
+            updateAdminBookingDuration(owner, "booking-a", { endTime: utc(11, 15).toISOString() }, repository, { now }),
+        ).rejects.toMatchObject({ status: 409, code: "BLOCKED_TIME_OVERLAP" });
+        await expect(
+            updateAdminBookingDuration(
+                owner,
+                "booking-a",
+                { endTime: utc(11, 15).toISOString(), allowBlockedOverride: true },
+                repository,
+                { now },
+            ),
+        ).resolves.toMatchObject({ endTime: utc(11, 15) });
+
+        // Barbers can only resize their own bookings.
+        await expect(
+            updateAdminBookingDuration(
+                { id: "barber", email: "b@example.com", displayName: "B", role: "barber", barberId: barberBId },
+                "booking-a",
+                { durationMinutes: 45 },
+                repository,
+                { now },
+            ),
+        ).rejects.toMatchObject({ status: 404 });
     });
 
     test("reschedule still succeeds for valid time, location, and barber changes", async () => {

@@ -622,6 +622,14 @@ app.post(
 );
 
 app.post(
+  "/api/admin/bookings/:bookingId/duration",
+  asyncRoute(async (req, res, next) => {
+    const adminApi = await loadAdminApi();
+    return adminApi.handleAdminUpdateBookingDuration(req, res, next);
+  }),
+);
+
+app.post(
   "/api/admin/bookings/:bookingId/reschedule",
   asyncRoute(async (req, res, next) => {
     const adminApi = await loadAdminApi();

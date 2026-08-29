@@ -34,6 +34,7 @@ import {
     listAdminBookings,
     markAdminBookingNoShow,
     rescheduleAdminBooking,
+    updateAdminBookingDuration,
     type AdminBookingManagementRepository,
     type AdminDashboardPeriod,
 } from "./bookings-service.ts";
@@ -267,6 +268,13 @@ export function registerAdminApiRoutes(app: ExpressLikeApp, dependencies: AdminA
         "/api/admin/bookings/:bookingId/reschedule",
         asyncRoute((request, response) =>
             handleAdminRescheduleBooking(request, response, undefined, dependencies),
+        ),
+    );
+
+    app.post(
+        "/api/admin/bookings/:bookingId/duration",
+        asyncRoute((request, response) =>
+            handleAdminUpdateBookingDuration(request, response, undefined, dependencies),
         ),
     );
 
@@ -791,6 +799,30 @@ export async function handleAdminRescheduleBooking(
         assertAdminMutationOrigin(request, dependencies);
         const session = await requireAdminSession(request, response, dependencies);
         const booking = await rescheduleAdminBooking(
+            session.user,
+            request.params?.bookingId,
+            request.body,
+            dependencies.bookingsRepository ?? createDrizzleAdminBookingsRepository(),
+            { now: dependencies.now?.() ?? new Date() },
+        );
+
+        response.set("Cache-Control", "no-store");
+        response.status(200).json({ booking });
+    } catch (error) {
+        sendAdminApiError(error, response, next);
+    }
+}
+
+export async function handleAdminUpdateBookingDuration(
+    request: any,
+    response: any,
+    next?: any,
+    dependencies: AdminApiDependencies = {},
+) {
+    try {
+        assertAdminMutationOrigin(request, dependencies);
+        const session = await requireAdminSession(request, response, dependencies);
+        const booking = await updateAdminBookingDuration(
             session.user,
             request.params?.bookingId,
             request.body,

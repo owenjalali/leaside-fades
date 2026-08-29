@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
     blockedTimeAppliesToBarberLocation,
     buildAdminBookingQuery,
+    computeResizeEndIso,
     deriveBookingPriceSummary,
     parsePriceOverrideInput,
     selectMostRecentExpiredPattern,
@@ -1620,6 +1621,53 @@ describe("Team Week grid utilities", () => {
         expect(describeWeeklyScheduleDraft(draft, schedule, "Sam")).toBe(
             "Sam works Tue–Sat, 10:00 AM–7:00 PM at Eglinton and is off Mon, Sun — every week from now on.",
         );
+    });
+});
+
+describe("computeResizeEndIso", () => {
+    const base = {
+        startIso: "2026-05-04T14:00:00.000Z",
+        originalEndIso: "2026-05-04T14:30:00.000Z",
+        slotHeightPx: 22,
+        dayEndIso: "2026-05-05T04:00:00.000Z",
+    };
+
+    test("snaps pixel travel to 15-minute steps", () => {
+        expect(computeResizeEndIso({ ...base, dyPx: 0 })).toBe("2026-05-04T14:30:00.000Z");
+        expect(computeResizeEndIso({ ...base, dyPx: 10 })).toBe("2026-05-04T14:30:00.000Z");
+        expect(computeResizeEndIso({ ...base, dyPx: 22 })).toBe("2026-05-04T14:45:00.000Z");
+        expect(computeResizeEndIso({ ...base, dyPx: 44 })).toBe("2026-05-04T15:00:00.000Z");
+        expect(computeResizeEndIso({ ...base, dyPx: -22 })).toBe("2026-05-04T14:15:00.000Z");
+    });
+
+    test("floors at fifteen minutes after the start", () => {
+        expect(computeResizeEndIso({ ...base, dyPx: -66 })).toBe("2026-05-04T14:15:00.000Z");
+        expect(computeResizeEndIso({ ...base, dyPx: -2200 })).toBe("2026-05-04T14:15:00.000Z");
+    });
+
+    test("clamps at the provided day end", () => {
+        expect(computeResizeEndIso({ ...base, dyPx: 22000 })).toBe("2026-05-05T04:00:00.000Z");
+        expect(
+            computeResizeEndIso({
+                ...base,
+                originalEndIso: "2026-05-05T03:45:00.000Z",
+                dyPx: 44,
+            }),
+        ).toBe("2026-05-05T04:00:00.000Z");
+    });
+
+    test("treats DST-length days like any other via the caller's day end", () => {
+        // 2026-11-01 America/Toronto is a 25-hour local day: local midnight
+        // after it is 2026-11-02T05:00:00Z (EST), not 04:00Z (EDT).
+        expect(
+            computeResizeEndIso({
+                startIso: "2026-11-01T14:00:00.000Z",
+                originalEndIso: "2026-11-01T14:30:00.000Z",
+                dyPx: 22000,
+                slotHeightPx: 22,
+                dayEndIso: "2026-11-02T05:00:00.000Z",
+            }),
+        ).toBe("2026-11-02T05:00:00.000Z");
     });
 });
 

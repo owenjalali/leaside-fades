@@ -442,6 +442,26 @@ export function formatScheduleWindow(startTime: string, endTime: string) {
     return `${formatLocalClockTime(startTime)} - ${formatLocalClockTime(endTime)}`;
 }
 
+/** Turns a resize-drag's vertical travel into the booking's new end instant:
+ * one 15-minute step per slot of pixels, floored at start+15 minutes and
+ * clamped to the local day end passed by the caller. Pure instant math, so
+ * DST days (23h/25h) behave like any other day. */
+export function computeResizeEndIso(input: {
+    startIso: string;
+    originalEndIso: string;
+    dyPx: number;
+    slotHeightPx: number;
+    dayEndIso: string;
+}): string {
+    const start = new Date(input.startIso).getTime();
+    const originalEnd = new Date(input.originalEndIso).getTime();
+    const dayEnd = new Date(input.dayEndIso).getTime();
+    const steps = Math.round(input.dyPx / input.slotHeightPx);
+    const proposed = originalEnd + steps * 15 * 60_000;
+    const clamped = Math.min(Math.max(proposed, start + 15 * 60_000), dayEnd);
+    return new Date(clamped).toISOString();
+}
+
 export function formatPriceCents(cents: number) {
     const dollars = cents / 100;
     return `$${Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2)}`;

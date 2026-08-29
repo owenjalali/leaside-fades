@@ -1885,6 +1885,23 @@ describe("Phase 6 admin calendar and booking management API", () => {
         bookingsRepository.bookings[0].startTime = new Date("2026-04-27T14:00:00.000Z");
         bookingsRepository.bookings[0].endTime = new Date("2026-04-27T14:30:00.000Z");
 
+        bookingsRepository.bookings[0].startTime = new Date("2026-05-04T14:15:00.000Z");
+        bookingsRepository.bookings[0].endTime = new Date("2026-05-04T14:45:00.000Z");
+        const durationResponse = await agent
+            .post("/api/admin/bookings/booking-a/duration")
+            .send({ endTime: "2026-05-04T15:15:00.000Z" })
+            .expect(200);
+        expect(durationResponse.body.booking).toMatchObject({
+            id: "booking-a",
+            startTime: "2026-05-04T14:15:00.000Z",
+            endTime: "2026-05-04T15:15:00.000Z",
+            totalDurationMinutes: 60,
+        });
+
+        // Completion requires a current-or-past start; restore the past times.
+        bookingsRepository.bookings[0].startTime = new Date("2026-04-27T14:00:00.000Z");
+        bookingsRepository.bookings[0].endTime = new Date("2026-04-27T14:30:00.000Z");
+
         const completeResponse = await agent.post("/api/admin/bookings/booking-a/complete").expect(200);
         expect(completeResponse.body.booking.status).toBe("completed");
     });
@@ -1901,6 +1918,7 @@ describe("Phase 6 admin calendar and booking management API", () => {
         await request(app).post("/api/admin/bookings/booking-a/no-show").expect(401);
         await request(app).post("/api/admin/bookings/booking-a/complete").expect(401);
         await request(app).post("/api/admin/bookings/booking-a/reschedule").send({}).expect(401);
+        await request(app).post("/api/admin/bookings/booking-a/duration").send({}).expect(401);
     });
 });
 

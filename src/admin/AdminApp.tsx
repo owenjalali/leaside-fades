@@ -49,6 +49,7 @@ import {
     resetAdminPassword,
     acceptAdminInvite,
     rescheduleAdminBooking,
+    updateAdminBookingDuration,
 } from "./api";
 import { DashboardPage } from "./dashboard/DashboardPage";
 import { parseLocalDate, TIME_ZONE } from "./dashboard/format";
@@ -61,9 +62,12 @@ import { Input } from "../components/ui/Input.tsx";
 import { Notice as UiNotice } from "../components/ui/Notice.tsx";
 import { ToastProvider } from "../components/ui/toast.tsx";
 import { TooltipProvider } from "../components/ui/Tooltip.tsx";
+import { usePointerDrag } from "../components/ui/usePointerDrag.ts";
 import {
+    addDaysToLocalDate,
     blockedTimeAppliesToBarberLocation,
     buildDashboardPeriodRange,
+    computeResizeEndIso,
     deriveBookingPriceSummary,
     formatPriceCents,
     parsePriceOverrideInput,
@@ -555,6 +559,7 @@ function AdminWorkspace({
     const [appointmentPreview, setAppointmentPreview] = useState<AppointmentPreview | null>(null);
     const [draggingBookingId, setDraggingBookingId] = useState<string | null>(null);
     const [pendingDragId, setPendingDragId] = useState<string | null>(null);
+    const [resizePreview, setResizePreview] = useState<{ bookingId: string; endTime: string } | null>(null);
     const confirm = useConfirm();
     const detailId = path.match(/^\/admin\/bookings\/([^/]+)$/)?.[1];
     const isDashboardPath = path.startsWith("/admin/dashboard");
@@ -827,6 +832,39 @@ function AdminWorkspace({
         }
     }
 
+    async function handleBookingResize(booking: AdminBookingSummary, endTime: string) {
+        if (new Date(endTime).getTime() === new Date(booking.endTime).getTime()) {
+            setResizePreview(null);
+            return;
+        }
+
+        setPendingDragId(booking.id);
+        setError("");
+
+        try {
+            await updateAdminBookingDuration(booking.id, { endTime });
+            setMessage(`Appointment now ends ${formatLocalTime(endTime)}.`);
+            await refreshBookings();
+        } catch (error) {
+            if (isBlockedTimeConflict(error)) {
+                if (await askBookOverBlock(confirm)) {
+                    try {
+                        await updateAdminBookingDuration(booking.id, { endTime, allowBlockedOverride: true });
+                        setMessage(`Appointment now ends ${formatLocalTime(endTime)}.`);
+                        await refreshBookings();
+                    } catch (retryError) {
+                        setError(retryError instanceof Error ? retryError.message : "Resize failed. The appointment kept its length.");
+                    }
+                }
+            } else {
+                setError(error instanceof Error ? error.message : "Resize failed. The appointment kept its length.");
+            }
+        } finally {
+            setPendingDragId(null);
+            setResizePreview(null);
+        }
+    }
+
     const groupedBookings = useMemo(() => groupBookingsByLocalDate(bookings), [bookings]);
     const visibleDays = view === "month" ? buildMonthDays(selectedDate) : buildWeekDays(selectedDate);
     const activeLocationId = options ? resolveDefaultLocationId(options, user, filters.locationId) : "";
@@ -964,6 +1002,9 @@ function AdminWorkspace({
                             onDragStart={setDraggingBookingId}
                             onDragEnd={() => setDraggingBookingId(null)}
                             onDropBooking={handleBookingDrop}
+                            resizePreview={resizePreview}
+                            onResizePreview={setResizePreview}
+                            onResizeCommit={handleBookingResize}
                             onEditShift={(barberId) =>
                                 setDrawer({ mode: "edit_shift", barberId, locationId: activeLocationId, date: selectedDate })
                             }
@@ -1413,6 +1454,9 @@ function DayCalendarBoard({
     onDragEnd,
     onDropBooking,
     onEditShift,
+    resizePreview,
+    onResizePreview,
+    onResizeCommit,
 }: {
     bookings: AdminBookingSummary[];
     schedule: AdminSchedule | null;
@@ -1435,8 +1479,12 @@ function DayCalendarBoard({
         targetStartTime: string,
     ) => Promise<void>;
     onEditShift: (barberId: string) => void;
+    resizePreview: { bookingId: string; endTime: string } | null;
+    onResizePreview: (preview: { bookingId: string; endTime: string } | null) => void;
+    onResizeCommit: (booking: AdminBookingSummary, endTime: string) => Promise<void>;
 }) {
     const window = businessWindowForDate(selectedDate);
+    const dayEndIso = localDateTimeToIso(addDaysToLocalDate(selectedDate, 1), "00:00");
     const boardRows = buildCalendarBoardRows(window.start, window.end, 15);
     const slots = boardRows.bookableSlots;
     const barbers = barberItems.map((item) => item.barber);
@@ -1666,19 +1714,53 @@ function DayCalendarBoard({
                                     {currentLineStyle && (
                                         <div className="pointer-events-none absolute left-0 right-0 z-[7] h-0.5 bg-red-500" style={currentLineStyle} />
                                     )}
-                                    {barberBookings.map(({ booking, style }) => (
-                                        <BookingCard
-                                            key={booking.id}
-                                            booking={booking}
-                                            user={user}
-                                            pending={pendingDragId === booking.id}
-                                            offSchedule={bookingFallsOutsideWorkingWindows(booking, item.workingWindows)}
-                                            style={style}
-                                            onOpen={onOpen}
-                                            onDragStart={onDragStart}
-                                            onDragEnd={onDragEnd}
-                                        />
-                                    ))}
+                                    {barberBookings.map(({ booking, style }) => {
+                                        const previewEndTime =
+                                            resizePreview?.bookingId === booking.id ? resizePreview.endTime : null;
+                                        const cardStyle = previewEndTime
+                                            ? { ...style, ...rangeStyleFromIso(booking.startTime, previewEndTime, window.start, window.end) }
+                                            : style;
+
+                                        return (
+                                            <BookingCard
+                                                key={booking.id}
+                                                booking={booking}
+                                                user={user}
+                                                pending={pendingDragId === booking.id}
+                                                offSchedule={bookingFallsOutsideWorkingWindows(booking, item.workingWindows)}
+                                                style={cardStyle}
+                                                resizePreviewEndTime={previewEndTime}
+                                                onOpen={onOpen}
+                                                onDragStart={onDragStart}
+                                                onDragEnd={onDragEnd}
+                                                onResizeMove={(dyPx) =>
+                                                    onResizePreview({
+                                                        bookingId: booking.id,
+                                                        endTime: computeResizeEndIso({
+                                                            startIso: booking.startTime,
+                                                            originalEndIso: booking.endTime,
+                                                            dyPx,
+                                                            slotHeightPx: SLOT_HEIGHT,
+                                                            dayEndIso,
+                                                        }),
+                                                    })
+                                                }
+                                                onResizeCancel={() => onResizePreview(null)}
+                                                onResizeCommit={(dyPx) =>
+                                                    void onResizeCommit(
+                                                        booking,
+                                                        computeResizeEndIso({
+                                                            startIso: booking.startTime,
+                                                            originalEndIso: booking.endTime,
+                                                            dyPx,
+                                                            slotHeightPx: SLOT_HEIGHT,
+                                                            dayEndIso,
+                                                        }),
+                                                    )
+                                                }
+                                            />
+                                        );
+                                    })}
                                 </div>
                             );
                         })}
@@ -1707,40 +1789,70 @@ function BookingCard({
     pending,
     offSchedule = false,
     style,
+    resizePreviewEndTime = null,
     onOpen,
     onDragStart,
     onDragEnd,
+    onResizeMove,
+    onResizeCancel,
+    onResizeCommit,
 }: {
     booking: AdminBookingSummary;
     user: SafeAdminUser;
     pending: boolean;
     offSchedule?: boolean;
     style?: CSSProperties;
+    resizePreviewEndTime?: string | null;
     onOpen: (bookingId: string) => void;
     onDragStart: (bookingId: string) => void;
     onDragEnd: () => void;
+    onResizeMove?: (dyPx: number) => void;
+    onResizeCancel?: () => void;
+    onResizeCommit?: (dyPx: number) => void;
 }) {
     const tone = getBookingCardTone(booking);
     const draggable = booking.status === "confirmed" && (user.role !== "barber" || booking.barberId === user.barberId);
-    const height = Math.max(22, Math.ceil(booking.totalDurationMinutes / 15) * SLOT_HEIGHT - 2);
-    const compact = height < 34;
+    const resizable = draggable && Boolean(onResizeMove && onResizeCommit);
+    // A commit's trailing click event must not open the drawer.
+    const justResizedRef = useRef(false);
+    const resizeDrag = usePointerDrag({
+        onMove: (ctx) => onResizeMove?.(ctx.dy),
+        onCommit: (ctx) => {
+            justResizedRef.current = true;
+            setTimeout(() => {
+                justResizedRef.current = false;
+            }, 0);
+            onResizeCommit?.(ctx.dy);
+        },
+        onCancel: () => onResizeCancel?.(),
+    });
+    // Height comes from the positioned style alone (rangeStyleFromIso); the old
+    // duration-derived minHeight fought it whenever the two disagreed.
+    const styleHeight = typeof style?.height === "number" ? style.height : SLOT_HEIGHT;
+    const compact = styleHeight < 34;
+    const previewDurationMinutes = resizePreviewEndTime
+        ? Math.max(15, Math.round((new Date(resizePreviewEndTime).getTime() - new Date(booking.startTime).getTime()) / 60_000))
+        : null;
 
     const statusText = booking.source === "walk_in" ? "Walk-in" : formatAdminStatus(booking.status);
     const ariaLabel = `${formatLocalTime(booking.startTime)} ${booking.customerName}, ${booking.services.join(", ")}, ${statusText}${offSchedule ? ", outside hours" : ""}. Open booking.`;
 
     return (
         <button
-            className={`absolute z-[6] overflow-hidden rounded-md border-l-[3px] px-2 py-1 text-left text-[11px] leading-tight shadow-sm outline-none transition hover:z-[7] hover:shadow-md focus-visible:z-[8] focus-visible:ring-2 focus-visible:ring-forest ${bookingToneClasses(tone)} ${
+            className={`group absolute z-[6] overflow-hidden rounded-md border-l-[3px] px-2 py-1 text-left text-[11px] leading-tight shadow-sm outline-none transition hover:z-[7] hover:shadow-md focus-visible:z-[8] focus-visible:ring-2 focus-visible:ring-forest ${bookingToneClasses(tone)} ${
                 pending ? "opacity-60" : ""
-            } ${offSchedule ? "ring-2 ring-amber-400" : ""}`}
+            } ${offSchedule ? "ring-2 ring-amber-400" : ""} ${resizePreviewEndTime ? "z-[8] ring-2 ring-forest/50" : ""}`}
             style={{
-                minHeight: height,
+                minHeight: 18,
                 ...style,
             }}
-            draggable={draggable}
+            draggable={draggable && resizeDrag.phase === "idle"}
             aria-label={ariaLabel}
             onClick={(event) => {
                 event.stopPropagation();
+                if (justResizedRef.current) {
+                    return;
+                }
                 onOpen(booking.id);
             }}
             onDragStart={(event) => {
@@ -1770,6 +1882,27 @@ function BookingCard({
             )}
             {compact && offSchedule && (
                 <span className="sr-only">Outside hours</span>
+            )}
+            {resizePreviewEndTime && previewDurationMinutes !== null && (
+                <span className="pointer-events-none absolute inset-x-0 bottom-0 z-[9] block bg-forest px-1.5 py-0.5 text-center text-[10px] font-black text-white">
+                    {formatLocalTime(booking.startTime)} - {formatLocalTime(resizePreviewEndTime)} · {previewDurationMinutes} min
+                </span>
+            )}
+            {resizable && (
+                <span
+                    role="presentation"
+                    className="absolute inset-x-0 bottom-0 z-[10] flex h-2.5 cursor-ns-resize touch-none select-none items-end justify-center opacity-0 transition group-hover:opacity-100"
+                    draggable={false}
+                    onDragStart={(event) => event.preventDefault()}
+                    onClick={(event) => event.stopPropagation()}
+                    onPointerDown={(event) => {
+                        event.stopPropagation();
+                        resizeDrag.onPointerDown(event);
+                    }}
+                    title="Drag to change the appointment length"
+                >
+                    <span className="mb-[3px] h-[3px] w-6 rounded-full bg-forest/45" />
+                </span>
             )}
         </button>
     );
@@ -1899,6 +2032,51 @@ function BookingDetailBody({
     const canNoShow = canMutate && new Date(booking.startTime).getTime() <= openedAt;
     const canComplete = canMutate && new Date(booking.startTime).getTime() <= openedAt;
     const bookingBarber = options?.barbers.find((barber) => barber.id === booking.barberId);
+    const bookingEndClock = localPartsFromIso(booking.endTime).time;
+    const [endsInput, setEndsInput] = useState(bookingEndClock);
+    const [savingEnd, setSavingEnd] = useState(false);
+    useEffect(() => {
+        setEndsInput(localPartsFromIso(booking.endTime).time);
+    }, [booking.id, booking.endTime]);
+    const endsDirty = endsInput !== bookingEndClock;
+
+    function nudgeEnd(minutes: number) {
+        const currentIso = localDateTimeToIso(localPartsFromIso(booking.endTime).date, endsInput || bookingEndClock);
+        void saveEnd(localPartsFromIso(addMinutesToIso(currentIso, minutes)).time);
+    }
+
+    async function saveEnd(nextClock: string) {
+        const endTime = localDateTimeToIso(localPartsFromIso(booking.endTime).date, nextClock);
+        if (new Date(endTime).getTime() === new Date(booking.endTime).getTime()) {
+            setEndsInput(nextClock);
+            return;
+        }
+
+        setSavingEnd(true);
+        setError("");
+
+        try {
+            await updateAdminBookingDuration(booking.id, { endTime });
+            await refreshDetail();
+            await onChanged("Appointment length updated.");
+        } catch (error) {
+            if (isBlockedTimeConflict(error)) {
+                if (await askBookOverBlock(confirm)) {
+                    try {
+                        await updateAdminBookingDuration(booking.id, { endTime, allowBlockedOverride: true });
+                        await refreshDetail();
+                        await onChanged("Appointment length updated.");
+                    } catch (retryError) {
+                        setError(retryError instanceof Error ? retryError.message : "Length update failed.");
+                    }
+                }
+            } else {
+                setError(error instanceof Error ? error.message : "Length update failed.");
+            }
+        } finally {
+            setSavingEnd(false);
+        }
+    }
 
     async function refreshDetail() {
         const fresh = await fetchAdminBookingDetail(booking.id);
@@ -1955,7 +2133,10 @@ function BookingDetailBody({
             <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                     <h2 className={`${compact ? "text-4xl" : "text-4xl"} truncate font-black text-forest`}>{booking.customerName}</h2>
-                    <p className="text-lg text-charcoal/60">{formatLocalDateTime(booking.startTime)}</p>
+                    <p className="text-lg text-charcoal/60">
+                        {formatLocalDateTime(booking.startTime)} - {formatLocalTime(booking.endTime)}
+                        <span className="ml-2 text-charcoal/45">({booking.totalDurationMinutes} min)</span>
+                    </p>
                 </div>
                 <StatusPill status={booking.status} />
             </div>
@@ -1965,8 +2146,49 @@ function BookingDetailBody({
                 <DetailLine label="Phone" value={booking.customerPhone} />
                 <DetailLine label="Email" value={booking.customerEmail} />
                 <DetailLine label="Source" value={booking.source === "walk_in" ? "Walk-in" : booking.source} />
-                <DetailLine label="Duration" value={`${booking.totalDurationMinutes} minutes`} />
             </div>
+            {canMutate && (
+                <div className="flex flex-wrap items-end gap-2 rounded-md border border-forest/10 bg-[#f8fbf8] p-3">
+                    <label className="grid gap-1">
+                        <span className="text-[11px] font-black uppercase tracking-[0.12em] text-charcoal/45">Ends at</span>
+                        <input
+                            className="input !min-h-10 !py-2 text-sm"
+                            type="time"
+                            step={900}
+                            value={endsInput}
+                            onChange={(event) => setEndsInput(event.target.value)}
+                        />
+                    </label>
+                    <button
+                        type="button"
+                        className="icon-text-button !min-h-10 justify-center"
+                        disabled={savingEnd}
+                        onClick={() => nudgeEnd(-15)}
+                        aria-label="Shorten by 15 minutes"
+                    >
+                        -15
+                    </button>
+                    <button
+                        type="button"
+                        className="icon-text-button !min-h-10 justify-center"
+                        disabled={savingEnd}
+                        onClick={() => nudgeEnd(15)}
+                        aria-label="Extend by 15 minutes"
+                    >
+                        +15
+                    </button>
+                    {endsDirty && (
+                        <button
+                            type="button"
+                            className="primary-button !min-h-10"
+                            disabled={savingEnd}
+                            onClick={() => void saveEnd(endsInput)}
+                        >
+                            {savingEnd ? "Saving" : "Save length"}
+                        </button>
+                    )}
+                </div>
+            )}
             <div>
                 <p className="mb-3 text-xl font-black text-forest">Services</p>
                 <div className="grid gap-2">

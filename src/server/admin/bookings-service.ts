@@ -347,6 +347,12 @@ export interface AdminBookingEditPayload {
     priceOverrideCents?: unknown;
 }
 
+export interface AdminBookingDurationPayload {
+    endTime?: unknown;
+    durationMinutes?: unknown;
+    allowBlockedOverride?: unknown;
+}
+
 export interface AdminBookingsRepository {
     listBookingsForAdminScope(scope: AdminBookingQueryScope): Promise<AdminBookingRecord[]>;
 }
@@ -936,6 +942,112 @@ export async function rescheduleAdminBooking(
     return booking;
 }
 
+export async function updateAdminBookingDuration(
+    user: SafeAdminUser,
+    bookingId: string,
+    payload: AdminBookingDurationPayload,
+    repository: AdminBookingManagementRepository,
+    options: AdminBookingMutationOptions = {},
+) {
+    try {
+        // The start time never changes, so no customer notification is
+        // dispatched (matches the reschedule rule: notify only when the start
+        // moves). Service snapshots are untouched - a resized appointment may
+        // legitimately run longer or shorter than its services sum to.
+        return await repository.withTransaction(async (transaction) => {
+            const tx = transaction as AdminBookingManagementRepository;
+            return updateAdminBookingDurationInTransaction(user, bookingId, payload, tx, options);
+        });
+    } catch (error) {
+        if (isDatabaseConflictError(error)) {
+            throw unavailableStaffSlotError();
+        }
+
+        throw error;
+    }
+}
+
+async function updateAdminBookingDurationInTransaction(
+    user: SafeAdminUser,
+    bookingId: string,
+    payload: AdminBookingDurationPayload,
+    repository: AdminBookingManagementRepository,
+    options: { now?: Date },
+) {
+    const booking = await getAdminBookingDetail(user, bookingId, repository);
+    if (booking.status !== "confirmed") {
+        throw new AdminBookingRequestError(409, "Only confirmed appointments can be resized.");
+    }
+
+    const hasEndTime = payload.endTime !== undefined;
+    const hasDuration = payload.durationMinutes !== undefined;
+    if (hasEndTime === hasDuration) {
+        throw new AdminBookingRequestError(400, "Provide either endTime or durationMinutes.");
+    }
+
+    const startTime = booking.startTime;
+    let endTime: Date;
+    if (hasEndTime) {
+        endTime = parseDate(payload.endTime, "A valid appointment end time is required.");
+    } else {
+        if (
+            typeof payload.durationMinutes !== "number" ||
+            !Number.isInteger(payload.durationMinutes) ||
+            payload.durationMinutes <= 0
+        ) {
+            throw new AdminBookingRequestError(400, "Duration must be a positive whole number of minutes.");
+        }
+        endTime = addMinutes(startTime, payload.durationMinutes);
+    }
+
+    assertStaffEndTime(endTime, DEFAULT_TIME_ZONE);
+    if (endTime.getTime() < startTime.getTime() + 15 * 60_000) {
+        throw new AdminBookingRequestError(400, "Appointments must be at least 15 minutes long.");
+    }
+
+    const localDate = getLocalDate(startTime, DEFAULT_TIME_ZONE);
+    assertFitsInAdminDay(startTime, endTime, localDate, DEFAULT_TIME_ZONE);
+
+    const hasBookingOverlap = await repository.hasConfirmedBookingOverlap(
+        booking.barberId,
+        startTime,
+        endTime,
+        booking.id,
+    );
+    if (hasBookingOverlap) {
+        throw unavailableStaffSlotError();
+    }
+
+    if (payload.allowBlockedOverride !== true) {
+        const hasBlockedOverlap = await repository.hasBlockedTimeOverlap(
+            booking.barberId,
+            booking.locationId,
+            startTime,
+            endTime,
+        );
+        if (hasBlockedOverlap) {
+            throw blockedTimeConflictError();
+        }
+    }
+
+    const updated = await repository.updateBookingScheduleForAdminScope({
+        bookingId: booking.id,
+        barberId: buildActorScope(user).barberId,
+        nextBarberId: booking.barberId,
+        locationId: booking.locationId,
+        startTime,
+        endTime,
+        totalDurationMinutes: Math.round((endTime.getTime() - startTime.getTime()) / 60_000),
+        updatedAt: options.now ?? new Date(),
+    });
+
+    if (!updated) {
+        throw new AdminBookingRequestError(404, "Booking was not found.");
+    }
+
+    return getAdminBookingDetail(user, bookingId, repository);
+}
+
 function assertNoServiceChangeFields(payload: AdminRescheduleBookingPayload) {
     const serviceChangeFields = Object.keys(payload ?? {}).filter((field) =>
         RESCHEDULE_SERVICE_CHANGE_FIELDS.has(field),
@@ -1163,6 +1275,17 @@ function assertStaffStartTime(startTime: Date, timeZone: string) {
     const minute = localClockParts(startTime, timeZone).minute;
     if (minute % 15 !== 0) {
         throw new AdminBookingRequestError(400, "Appointments must start on a 15-minute boundary.");
+    }
+}
+
+function assertStaffEndTime(endTime: Date, timeZone: string) {
+    if (endTime.getUTCSeconds() !== 0 || endTime.getUTCMilliseconds() !== 0) {
+        throw new AdminBookingRequestError(400, "Appointments must end on a 15-minute boundary.");
+    }
+
+    const minute = localClockParts(endTime, timeZone).minute;
+    if (minute % 15 !== 0) {
+        throw new AdminBookingRequestError(400, "Appointments must end on a 15-minute boundary.");
     }
 }
 

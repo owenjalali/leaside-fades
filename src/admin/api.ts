@@ -235,6 +235,16 @@ export function rescheduleAdminBooking(bookingId: string, input: Record<string, 
     );
 }
 
+export function updateAdminBookingDuration(
+    bookingId: string,
+    input: { endTime?: string; durationMinutes?: number; allowBlockedOverride?: boolean },
+) {
+    return requestJson<{ booking: AdminBookingDetail }>(`/api/admin/bookings/${bookingId}/duration`, {
+        method: "POST",
+        body: JSON.stringify(input),
+    });
+}
+
 export function editAdminBooking(bookingId: string, input: AdminBookingEditPayload) {
     return requestJson<{ booking: AdminBookingDetail }>(`/api/admin/bookings/${bookingId}/edit`, {
         method: "POST",
