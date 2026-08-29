@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+    blockedTimeAppliesToBarberLocation,
     buildAdminBookingQuery,
     buildAdminScheduleQuery,
     buildDashboardChartScale,
@@ -1593,5 +1594,35 @@ describe("Team Week grid utilities", () => {
         expect(describeWeeklyScheduleDraft(draft, schedule, "Sam")).toBe(
             "Sam works Tue–Sat, 10:00 AM–7:00 PM at Eglinton and is off Mon, Sun — every week from now on.",
         );
+    });
+});
+
+describe("blocked-time scope parity with the server predicate", () => {
+    test("client mirror agrees with blockedTimeAppliesToBarberAtLocation across the full matrix", async () => {
+        const { blockedTimeAppliesToBarberAtLocation } = await import(
+            "../server/availability/blocked-time-scope.ts"
+        );
+
+        const scopes = ["business", "location", "barber"] as const;
+        const ids = [null, "loc-1", "loc-2"];
+        const barberIds = [null, "barber-1", "barber-2"];
+
+        for (const scope of scopes) {
+            for (const rowLocationId of ids) {
+                for (const rowBarberId of barberIds) {
+                    for (const queryLocationId of ["loc-1", "loc-2"]) {
+                        for (const queryBarberId of ["barber-1", "barber-2"]) {
+                            const row = { scope, barberId: rowBarberId, locationId: rowLocationId };
+                            expect(
+                                blockedTimeAppliesToBarberLocation(row, queryBarberId, queryLocationId),
+                                `scope=${scope} rowLoc=${rowLocationId} rowBarber=${rowBarberId} qLoc=${queryLocationId} qBarber=${queryBarberId}`,
+                            ).toBe(
+                                blockedTimeAppliesToBarberAtLocation(row, queryBarberId, queryLocationId),
+                            );
+                        }
+                    }
+                }
+            }
+        }
     });
 });

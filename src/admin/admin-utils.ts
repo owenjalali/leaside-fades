@@ -2145,10 +2145,11 @@ function blockedTimeCoversLocalDate(blockedTime: Pick<AdminBlockedTime, "startTi
     );
 }
 
-/** Mirror of the engine's blockedTimeApplies (availability-engine.ts): business
- * blocks everyone, location blocks its own location, barber blocks that barber
- * (barber-wide when locationId is null, else only the matching location). */
-function blockedTimeAppliesToBarberLocation(
+/** Mirror of the server's blockedTimeAppliesToBarberAtLocation
+ * (src/server/availability/blocked-time-scope.ts): business blocks everyone,
+ * location blocks its own location, barber blocks that barber (barber-wide when
+ * locationId is null, else only the matching location). Pinned by a parity test. */
+export function blockedTimeAppliesToBarberLocation(
     blockedTime: Pick<AdminBlockedTime, "scope" | "barberId" | "locationId">,
     barberId: string,
     locationId: string,

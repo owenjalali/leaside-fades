@@ -9,6 +9,7 @@ import type {
     CreatedBooking,
 } from "./types";
 import type { AvailabilityData } from "../availability";
+import { blockedTimeAppliesToBarberAtLocation } from "../availability/blocked-time-scope";
 
 const locationId = "location-eglinton";
 const barberAId = "barber-a";
@@ -209,26 +210,12 @@ class InMemoryBookingRepository implements BookingRepository {
     }
 
     async hasBlockedTimeOverlap(barberId: string, selectedLocationId: string, startTime: Date, endTime: Date) {
-        return (this.availabilityData.blockedTimes ?? []).some((blockedTime) => {
-            const overlaps = startTime < blockedTime.endTime && endTime > blockedTime.startTime;
-
-            if (!overlaps) {
-                return false;
-            }
-
-            if (blockedTime.scope === "business") {
-                return true;
-            }
-
-            if (blockedTime.scope === "location") {
-                return blockedTime.locationId === selectedLocationId;
-            }
-
-            return (
-                blockedTime.barberId === barberId &&
-                (!blockedTime.locationId || blockedTime.locationId === selectedLocationId)
-            );
-        });
+        return (this.availabilityData.blockedTimes ?? []).some(
+            (blockedTime) =>
+                startTime < blockedTime.endTime &&
+                endTime > blockedTime.startTime &&
+                blockedTimeAppliesToBarberAtLocation(blockedTime, barberId, selectedLocationId),
+        );
     }
 
     async createCustomer(customer: CreateBookingRequest["customer"]) {
@@ -466,6 +453,62 @@ describe("Phase 3 booking creation service", () => {
                 return true;
             });
         }
+    });
+
+    test("a barber block pinned to a location never rejects other barbers there (cross-barber regression)", async () => {
+        // Production regression: scope='barber' rows that also carry a location
+        // used to match EVERY barber at that location in the SQL conflict guard,
+        // so slots rendered as open and then 409'd on Book for the whole team.
+        const blockedRepository = new InMemoryBookingRepository({
+            availabilityData: baseAvailability({
+                barbers: [
+                    { id: barberAId, active: true, sortOrder: 1 },
+                    { id: barberBId, active: true, sortOrder: 2 },
+                ],
+                barberLocations: [
+                    { barberId: barberAId, locationId },
+                    { barberId: barberBId, locationId },
+                ],
+                shifts: [
+                    {
+                        barberId: barberAId,
+                        locationId,
+                        dayOfWeek: 1,
+                        startTime: "10:00",
+                        endTime: "19:00",
+                        active: true,
+                    },
+                    {
+                        barberId: barberBId,
+                        locationId,
+                        dayOfWeek: 1,
+                        startTime: "10:00",
+                        endTime: "19:00",
+                        active: true,
+                    },
+                ],
+                blockedTimes: [
+                    {
+                        scope: "barber" as const,
+                        barberId: barberAId,
+                        locationId,
+                        startTime: utc(10),
+                        endTime: utc(11),
+                    },
+                ],
+            }),
+        });
+
+        await expect(
+            createBooking(request({ barberId: barberBId, startTime: utc(10) }), blockedRepository),
+        ).resolves.toBeTruthy();
+
+        await expect(createBooking(request({ startTime: utc(10) }), blockedRepository)).rejects.toSatisfy(
+            (error) => {
+                expectBookingError(error, "UNAVAILABLE_SLOT");
+                return true;
+            },
+        );
     });
 
     test("assigns any available barber by sort order before same-day booking count", async () => {

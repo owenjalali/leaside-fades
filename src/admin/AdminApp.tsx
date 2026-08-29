@@ -61,6 +61,7 @@ import { Notice as UiNotice } from "../components/ui/Notice.tsx";
 import { ToastProvider } from "../components/ui/toast.tsx";
 import { TooltipProvider } from "../components/ui/Tooltip.tsx";
 import {
+    blockedTimeAppliesToBarberLocation,
     buildDashboardPeriodRange,
     buildBookingDragPayload,
     buildCalendarBoardRows,
@@ -1564,7 +1565,7 @@ function DayCalendarBoard({
                                 >
                                     {slots.map((slot) => {
                                         const startTime = localDateTimeToIso(selectedDate, slot);
-                                        const slotEnd = addMinutesToIso(startTime, 30);
+                                        const slotEnd = addMinutesToIso(startTime, 15);
                                         const blocked = blockedTimesOverlapRange(schedule.blockedTimes, {
                                             barberId: item.barber.id,
                                             locationId,
@@ -3356,7 +3357,7 @@ function blockedTimeOverlaysForBarber(
     const boardEnd = new Date(localDateTimeToIso(input.selectedDate, input.businessWindow.end));
 
     return blockedTimes
-        .filter((blockedTime) => blockedAppliesToCell(blockedTime, input.barberId, input.locationId))
+        .filter((blockedTime) => blockedTimeAppliesToBarberLocation(blockedTime, input.barberId, input.locationId))
         .map((blockedTime) => {
             const start = new Date(blockedTime.startTime);
             const end = new Date(blockedTime.endTime);
@@ -3427,7 +3428,7 @@ function blockedTimesForSlot(
     const end = new Date(start.getTime() + 15 * 60 * 1000);
 
     return blockedTimes.filter((blockedTime) => {
-        if (!blockedAppliesToCell(blockedTime, input.barberId, input.locationId)) {
+        if (!blockedTimeAppliesToBarberLocation(blockedTime, input.barberId, input.locationId)) {
             return false;
         }
 
@@ -3443,7 +3444,7 @@ function blockedTimesOverlapRange(
     const end = new Date(input.endTime);
 
     return blockedTimes.some((blockedTime) => {
-        if (!blockedAppliesToCell(blockedTime, input.barberId, input.locationId)) {
+        if (!blockedTimeAppliesToBarberLocation(blockedTime, input.barberId, input.locationId)) {
             return false;
         }
 
@@ -3473,12 +3474,6 @@ function appointmentPreviewForSlot(
         ends,
         label: `${formatLocalTime(preview.startTime)} - ${formatLocalTime(preview.endTime)}`,
     };
-}
-
-function blockedAppliesToCell(blockedTime: AdminBlockedTime, barberId: string, locationId: string) {
-    if (blockedTime.scope === "business") return true;
-    if (blockedTime.scope === "location") return blockedTime.locationId === locationId;
-    return blockedTime.barberId === barberId && (!blockedTime.locationId || blockedTime.locationId === locationId);
 }
 
 function businessWindowForDate(_date: string) {

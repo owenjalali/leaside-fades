@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, gte, inArray, lt, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, or, sql, type SQL } from "drizzle-orm";
 
 import type { AvailabilityData } from "../availability/index.ts";
 import { getLocalDate, localDateTimeToUtc } from "../availability/time.ts";
@@ -533,11 +533,7 @@ class DrizzleBookingRepository implements BookingRepository, AvailabilityLookupR
                 compactAnd(
                     lt(blockedTimes.startTime, endTime),
                     gt(blockedTimes.endTime, startTime),
-                    or(
-                        eq(blockedTimes.scope, "business"),
-                        eq(blockedTimes.locationId, locationId),
-                        eq(blockedTimes.barberId, barberId),
-                    ),
+                    blockedTimeScopeCondition(barberId, locationId),
                 ),
             )
             .limit(1);
@@ -921,6 +917,24 @@ export function formatPriceSummary(
 
 function compactAnd(...conditions: Array<SQL | undefined>) {
     return and(...conditions.filter(Boolean) as SQL[]);
+}
+
+/**
+ * SQL mirror of blockedTimeAppliesToBarberAtLocation
+ * (src/server/availability/blocked-time-scope.ts). A location match alone must
+ * never block another barber, and a barber block pinned to one location must
+ * not fire at other locations. Exported so tests can render and pin the SQL.
+ */
+export function blockedTimeScopeCondition(barberId: string, locationId: string) {
+    return or(
+        eq(blockedTimes.scope, "business"),
+        and(eq(blockedTimes.scope, "location"), eq(blockedTimes.locationId, locationId)),
+        and(
+            eq(blockedTimes.scope, "barber"),
+            eq(blockedTimes.barberId, barberId),
+            or(isNull(blockedTimes.locationId), eq(blockedTimes.locationId, locationId)),
+        ),
+    );
 }
 
 function customerTokenCondition(

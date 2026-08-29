@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import type { AvailabilityData } from "../availability/index.ts";
+import { blockedTimeAppliesToBarberAtLocation } from "../availability/blocked-time-scope.ts";
 import {
     hashBookingManagementToken,
 } from "../bookings/tokens.ts";
@@ -227,8 +228,13 @@ class InMemoryCustomerManagementRepository
         );
     }
 
-    async hasBlockedTimeOverlap() {
-        return false;
+    async hasBlockedTimeOverlap(barberToCheck: string, selectedLocationId: string, startTime: Date, endTime: Date) {
+        return (this.availabilityData.blockedTimes ?? []).some(
+            (blockedTime) =>
+                startTime < blockedTime.endTime &&
+                endTime > blockedTime.startTime &&
+                blockedTimeAppliesToBarberAtLocation(blockedTime, barberToCheck, selectedLocationId),
+        );
     }
 
     async createCustomer(): Promise<{ id: string }> {

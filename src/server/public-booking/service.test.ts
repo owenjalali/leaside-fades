@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { AvailabilityData } from "../availability/index.ts";
+import { blockedTimeAppliesToBarberAtLocation } from "../availability/blocked-time-scope.ts";
 import type {
     BookingRepository,
     BookingServiceSnapshot,
@@ -97,8 +98,13 @@ class InMemoryBookingRepository implements BookingRepository {
         return false;
     }
 
-    async hasBlockedTimeOverlap() {
-        return false;
+    async hasBlockedTimeOverlap(barberToCheck: string, selectedLocationId: string, startTime: Date, endTime: Date) {
+        return (this.availabilityData.blockedTimes ?? []).some(
+            (blockedTime) =>
+                startTime < blockedTime.endTime &&
+                endTime > blockedTime.startTime &&
+                blockedTimeAppliesToBarberAtLocation(blockedTime, barberToCheck, selectedLocationId),
+        );
     }
 
     async createCustomer() {

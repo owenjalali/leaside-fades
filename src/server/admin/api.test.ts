@@ -21,6 +21,7 @@ import type {
     AdminDashboardActivityRecord,
 } from "./bookings-service.ts";
 import type { AvailabilityData } from "../availability/index.ts";
+import { blockedTimeAppliesToBarberAtLocation } from "../availability/blocked-time-scope.ts";
 import type {
     BookingRepository,
     BookingServiceSnapshot,
@@ -595,8 +596,13 @@ class InMemoryAdminBookingsRepository
         );
     }
 
-    async hasBlockedTimeOverlap() {
-        return false;
+    async hasBlockedTimeOverlap(barberToCheck: string, selectedLocationId: string, startTime: Date, endTime: Date) {
+        return (this.availabilityData.blockedTimes ?? []).some(
+            (blockedTime) =>
+                startTime < blockedTime.endTime &&
+                endTime > blockedTime.startTime &&
+                blockedTimeAppliesToBarberAtLocation(blockedTime, barberToCheck, selectedLocationId),
+        );
     }
 
     async createCustomer(customer: CreateBookingRequest["customer"]) {

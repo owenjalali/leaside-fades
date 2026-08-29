@@ -1,4 +1,5 @@
 import { getAvailableSlots, type AvailabilityData } from "../availability/index.ts";
+import { blockedTimeAppliesToBarberAtLocation } from "../availability/blocked-time-scope.ts";
 import { addMinutes, getLocalDate, localDateTimeToUtc, rangesOverlap } from "../availability/time.ts";
 import {
     type BookingRepository,
@@ -1178,25 +1179,11 @@ function hasAvailabilityBlockedOverlap(
     startTime: Date,
     endTime: Date,
 ) {
-    return (data.blockedTimes ?? []).some((blockedTime) => {
-        if (!rangesOverlap(startTime, endTime, blockedTime.startTime, blockedTime.endTime)) {
-            return false;
-        }
-
-        if (blockedTime.scope === "business") {
-            return true;
-        }
-
-        if (blockedTime.scope === "location") {
-            return blockedTime.locationId === locationId;
-        }
-
-        if (blockedTime.locationId && blockedTime.locationId !== locationId) {
-            return false;
-        }
-
-        return blockedTime.barberId === barberId;
-    });
+    return (data.blockedTimes ?? []).some(
+        (blockedTime) =>
+            rangesOverlap(startTime, endTime, blockedTime.startTime, blockedTime.endTime) &&
+            blockedTimeAppliesToBarberAtLocation(blockedTime, barberId, locationId),
+    );
 }
 
 function buildEditNotification(

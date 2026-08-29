@@ -11,6 +11,7 @@ import {
     timeToMinutes,
     type TimeWindow,
 } from "./time.ts";
+import { blockedTimeAppliesToBarberAtLocation } from "./blocked-time-scope.ts";
 import type {
     AvailabilityData,
     AvailabilityRequest,
@@ -341,18 +342,7 @@ function blockedTimeApplies(
     barberId: string,
     locationId: string,
 ) {
-    if (blockedTime.scope === "business") {
-        return true;
-    }
-
-    if (blockedTime.scope === "location") {
-        return blockedTime.locationId === locationId;
-    }
-
-    return (
-        blockedTime.barberId === barberId &&
-        (!blockedTime.locationId || blockedTime.locationId === locationId)
-    );
+    return blockedTimeAppliesToBarberAtLocation(blockedTime, barberId, locationId);
 }
 
 function getLocalTime(date: Date, timeZone: string) {

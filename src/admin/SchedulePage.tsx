@@ -2481,7 +2481,9 @@ function BlockedTimeDialog({
         if (next === "location" && !locationId) {
             setLocationId(schedule.locations[0]?.id ?? "");
         }
-        if (next === "business") {
+        if (next === "barber" || next === "business") {
+            // Reset the location so a barber block defaults back to "all assigned
+            // locations" — a leftover location here silently narrows the block.
             setLocationId("");
         }
     }

@@ -1,6 +1,8 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, test } from "vitest";
 
 import {
+    blockedTimeScopeCondition,
     buildAvailabilityData,
     formatCatalog,
     formatPriceSummary,
@@ -142,5 +144,21 @@ describe("Phase 4 public booking repository mapping", () => {
                 { priceCents: 5500, priceType: "from" },
             ]),
         ).toBe("from $85");
+    });
+});
+
+describe("blockedTimeScopeCondition SQL", () => {
+    test("renders scope-qualified branches so a location match alone cannot block other barbers", () => {
+        const condition = blockedTimeScopeCondition(barberId, locationId);
+        expect(condition).toBeDefined();
+
+        const query = new PgDialect().sqlToQuery(condition!);
+
+        // Exactly the canonical semantics, parameterized in order:
+        // business | (location AND location match) | (barber AND barber match AND (no location OR location match))
+        expect(query.params).toEqual(["business", "location", locationId, "barber", barberId, locationId]);
+        expect(query.sql).toContain(`"blocked_times"."scope" = $2 and "blocked_times"."location_id" = $3`);
+        expect(query.sql).toContain(`"blocked_times"."scope" = $4 and "blocked_times"."barber_id" = $5`);
+        expect(query.sql).toContain(`"blocked_times"."location_id" is null or "blocked_times"."location_id" = $6`);
     });
 });
