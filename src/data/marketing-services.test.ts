@@ -23,7 +23,7 @@ describe("marketing services", () => {
                 slug: "mens-color-root-touchup",
                 name: "Men's Color Root Touchup",
                 displayPrice: "from $65",
-                durationMinutes: 45,
+                durationMinutes: 30,
             }),
         ]));
     });

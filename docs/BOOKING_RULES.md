@@ -112,8 +112,8 @@ For MVP:
 - all services are available at both locations
 - every barber can perform every service
 
-Launch catalog correction:
-- `Men's Color Root Touchup` is a Men service, 45 minutes, displayed as `from $65`.
+Launch catalog corrections:
+- `Men's Color Root Touchup` is a Men service, 30 minutes, displayed as `from $65` (owner shortened it from 45 minutes on 2026-08-29).
 
 ## Pricing
 

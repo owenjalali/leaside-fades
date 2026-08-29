@@ -780,3 +780,11 @@ Give the reminder route's `database_connect` stage one bounded in-process retry.
 
 Reason:
 Cold-start `503` responses persisted after the July 17 default connection-timeout bump because Vercel production sets `REMINDER_DB_CONNECT_TIMEOUT_MS` explicitly, and that environment override keeps the raised 8-second default from ever applying. A failed connect attempt still wakes the suspended Neon compute, so an immediate second attempt almost always succeeds — the GitHub canary proved this externally with `curl --retry 2`. Retrying inside the process absorbs the cold start without changing the external scheduler contract, the bounded budgets, or the overall HTTP deadline.
+
+### 2026-08-29 - Shorten Men's Color Root Touchup To 30 Minutes
+
+Decision:
+Change `Men's Color Root Touchup` from 45 minutes to 30 minutes in the production `services` row and the repo seed catalog (price stays `from $65`). Existing bookings keep their immutable 45-minute `booking_services` snapshots; only new bookings pick up the 30-minute duration. This supersedes the duration in the 2026-06-24 "Apply Launch Catalog And Copy Corrections" entry.
+
+Reason:
+The owner confirmed the service actually takes 30 minutes (matching `Women's Root Touchup`). The 45-minute duration was blocking an extra 15 minutes of bookable time on every touchup.

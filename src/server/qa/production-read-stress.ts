@@ -364,7 +364,7 @@ function assertCatalogShape(value: unknown): asserts value is Record<string, unk
                 return (
                     service.slug === "mens-color-root-touchup" &&
                     service.name === "Men's Color Root Touchup" &&
-                    service.durationMinutes === 45 &&
+                    service.durationMinutes === 30 &&
                     service.displayPrice === "from $65"
                 );
             });

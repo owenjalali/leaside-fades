@@ -35,7 +35,7 @@ describe("Phase 1 seed data", () => {
                 slug: "mens-color-root-touchup",
                 categorySlug: "hair-styling-men",
                 name: "Men's Color Root Touchup",
-                durationMinutes: 45,
+                durationMinutes: 30,
                 priceCents: 6500,
                 priceType: "from",
                 displayPrice: "from $65",
