@@ -255,12 +255,19 @@ function unavailableSlotError() {
 }
 
 function isDatabaseConflictError(error: unknown) {
-    if (!error || typeof error !== "object") {
-        return false;
+    // drizzle-orm wraps driver errors in DrizzleQueryError with the pg error
+    // on .cause, so walk the cause chain - a top-level .code check alone never
+    // fires at runtime and the GiST conflict would surface as a 500.
+    let current: unknown = error;
+    for (let depth = 0; depth < 5 && current && typeof current === "object"; depth += 1) {
+        const code = "code" in current ? (current as { code?: unknown }).code : undefined;
+        if (code === "23P01" || code === "23505") {
+            return true;
+        }
+        current = "cause" in current ? (current as { cause?: unknown }).cause : undefined;
     }
 
-    const code = "code" in error ? (error as { code?: unknown }).code : undefined;
-    return code === "23P01" || code === "23505";
+    return false;
 }
 
 function nextLocalDate(localDate: string) {

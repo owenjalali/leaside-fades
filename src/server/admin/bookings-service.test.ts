@@ -1967,6 +1967,7 @@ describe("Phase 6 admin calendar and booking management service", () => {
         ["totalDurationMinutes", 60],
         ["price", "$60"],
         ["priceCents", 6000],
+        ["priceOverrideCents", 6000],
         ["priceType", "fixed"],
         ["displayPrice", "$60"],
     ])("reschedule rejects service-changing field %s", async (field, value) => {

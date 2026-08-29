@@ -1264,9 +1264,11 @@ function selectCurrentWeeklyShiftPattern(shifts: AdminShift[], referenceDate: st
     return shifts.filter((shift) => shiftEffectiveOnDate(shift, referenceDate));
 }
 
-/** The most recently ended dated pattern (grouped by effective range) for a
- * barber whose current template is empty - feeds the weekly dialog's
- * "Restore previous schedule" affordance. */
+/** The most recently ended dated pattern for a barber whose current template
+ * is empty - feeds the weekly dialog's "Restore previous schedule" affordance.
+ * Grouped by END date only: rows that lapsed together restore together even
+ * when their start dates differ (the banner says "ended {date}", so the
+ * restored set must be everything that ended then). */
 export function selectMostRecentExpiredPattern(shifts: AdminShift[], referenceDate: string): AdminShift[] {
     const expired = shifts.filter(
         (shift) => shift.active && shift.effectiveTo && shift.effectiveTo < referenceDate,
@@ -1275,21 +1277,14 @@ export function selectMostRecentExpiredPattern(shifts: AdminShift[], referenceDa
         return [];
     }
 
-    const groups = new Map<string, AdminShift[]>();
-    for (const shift of expired) {
-        const key = `${shift.effectiveFrom ?? ""}|${shift.effectiveTo ?? ""}`;
-        groups.set(key, [...(groups.get(key) ?? []), shift]);
-    }
+    const latestEnd = expired.reduce(
+        (latest, shift) => ((shift.effectiveTo ?? "") > latest ? shift.effectiveTo ?? "" : latest),
+        "",
+    );
 
-    return [...groups.values()]
-        .sort((a, b) => {
-            const latestEnd = (b[0]?.effectiveTo ?? "").localeCompare(a[0]?.effectiveTo ?? "");
-            if (latestEnd !== 0) {
-                return latestEnd;
-            }
-
-            return b.length - a.length;
-        })[0] ?? [];
+    return expired
+        .filter((shift) => shift.effectiveTo === latestEnd)
+        .sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime));
 }
 
 function buildWeeklyShiftPayload(

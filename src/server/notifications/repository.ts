@@ -103,6 +103,10 @@ class DrizzleNotificationRepository
             startTime: booking.startTime,
             endTime: booking.endTime,
             services: services.map((service) => service.name),
+            // Deliberately snapshot-derived: the admin price override
+            // (bookings.price_override_cents) is an internal in-shop figure and
+            // never changes what customers were quoted, so customer-facing
+            // summaries ignore it.
             priceSummary: formatPriceSummary(services),
         };
     }

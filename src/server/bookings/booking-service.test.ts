@@ -651,5 +651,18 @@ describe("Phase 3 booking creation service", () => {
             expectBookingError(error, "UNAVAILABLE_SLOT");
             return true;
         });
+
+        // drizzle-orm surfaces the pg error as DrizzleQueryError.cause - the
+        // mapping must walk the cause chain, not just the top-level code.
+        const wrappedRepository = new InMemoryBookingRepository();
+        wrappedRepository.insertBooking = async () => {
+            const pgError = Object.assign(new Error("exclusion violation"), { code: "23P01" });
+            throw Object.assign(new Error("Failed query: insert into bookings"), { cause: pgError });
+        };
+
+        await expect(createBooking(request(), wrappedRepository)).rejects.toSatisfy((error) => {
+            expectBookingError(error, "UNAVAILABLE_SLOT");
+            return true;
+        });
     });
 });

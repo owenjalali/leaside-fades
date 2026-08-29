@@ -1891,7 +1891,7 @@ function BookingCard({
             {resizable && (
                 <span
                     role="presentation"
-                    className="absolute inset-x-0 bottom-0 z-[10] flex h-2.5 cursor-ns-resize touch-none select-none items-end justify-center opacity-0 transition group-hover:opacity-100"
+                    className="absolute inset-x-0 bottom-0 z-[10] flex h-2.5 cursor-ns-resize touch-none select-none items-end justify-center opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-70"
                     draggable={false}
                     onDragStart={(event) => event.preventDefault()}
                     onClick={(event) => event.stopPropagation()}
@@ -2040,13 +2040,35 @@ function BookingDetailBody({
     }, [booking.id, booking.endTime]);
     const endsDirty = endsInput !== bookingEndClock;
 
+    // An appointment never crosses local midnight, so its end lives on the
+    // START's local date - except a "00:00" end, which is the midnight AFTER
+    // the start date. Anchoring on the end's own local date got both midnight
+    // cases wrong (a 00:00-ending booking could not be shortened, and nothing
+    // could be extended to midnight).
+    function endIsoFromClock(clock: string) {
+        const startDate = localPartsFromIso(booking.startTime).date;
+        return clock === "00:00"
+            ? localDateTimeToIso(addDaysToLocalDate(startDate, 1), "00:00")
+            : localDateTimeToIso(startDate, clock);
+    }
+
+    function clampEndIso(iso: string) {
+        const start = new Date(booking.startTime).getTime();
+        const dayEnd = new Date(
+            localDateTimeToIso(addDaysToLocalDate(localPartsFromIso(booking.startTime).date, 1), "00:00"),
+        ).getTime();
+        const clamped = Math.min(Math.max(new Date(iso).getTime(), start + 15 * 60_000), dayEnd);
+        return new Date(clamped).toISOString();
+    }
+
     function nudgeEnd(minutes: number) {
-        const currentIso = localDateTimeToIso(localPartsFromIso(booking.endTime).date, endsInput || bookingEndClock);
-        void saveEnd(localPartsFromIso(addMinutesToIso(currentIso, minutes)).time);
+        const currentIso = endIsoFromClock(endsInput || bookingEndClock);
+        const nextIso = clampEndIso(addMinutesToIso(currentIso, minutes));
+        void saveEnd(localPartsFromIso(nextIso).time);
     }
 
     async function saveEnd(nextClock: string) {
-        const endTime = localDateTimeToIso(localPartsFromIso(booking.endTime).date, nextClock);
+        const endTime = endIsoFromClock(nextClock);
         if (new Date(endTime).getTime() === new Date(booking.endTime).getTime()) {
             setEndsInput(nextClock);
             return;
@@ -2300,11 +2322,17 @@ function BookingEditForm({
         booking.priceOverrideCents != null ? (booking.priceOverrideCents / 100).toFixed(2).replace(/\.00$/, "") : "",
     );
     const [priceTouched, setPriceTouched] = useState(false);
+
     const [internalNotes, setInternalNotes] = useState(booking.internalNotes ?? "");
     const [error, setError] = useState("");
     const [submitting, setSubmitting] = useState(false);
     const selectableBarbers = getVisibleBarbers(options, user, locationId);
     const selectedServices = options.services.filter((service) => serviceIds.includes(service.id));
+    const parsedPriceInput = parsePriceOverrideInput(priceInput);
+    const priceMetricDisplay =
+        parsedPriceInput.ok && parsedPriceInput.cents !== null
+            ? formatPriceCents(parsedPriceInput.cents)
+            : deriveBookingPriceSummary(selectedServices).display;
     const totalDurationMinutes = selectedServices.reduce((total, service) => total + service.durationMinutes, 0);
     const startTime = localDateTimeToIso(date, time);
     const endTime = addMinutesToIso(startTime, totalDurationMinutes || booking.totalDurationMinutes);
@@ -2328,14 +2356,14 @@ function BookingEditForm({
             return;
         }
 
-        setSubmitting(true);
-        setError("");
-
         const parsedPrice = parsePriceOverrideInput(priceInput);
         if (!parsedPrice.ok) {
             setError(parsedPrice.message);
             return;
         }
+
+        setSubmitting(true);
+        setError("");
 
         const payload = {
             locationId,
@@ -2378,7 +2406,7 @@ function BookingEditForm({
             {error && <Notice tone="error" message={error} onClear={() => setError("")} />}
             <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(12rem,1fr))]">
                 <SummaryMetric label="Duration" value={`${totalDurationMinutes || booking.totalDurationMinutes} min`} />
-                <SummaryMetric label="Price" value={formatServiceSelectionPrice(selectedServices)} />
+                <SummaryMetric label="Price" value={priceMetricDisplay} />
                 <SummaryMetric label="Time" value={`${formatLocalTime(startTime)} - ${formatLocalTime(endTime)}`} />
             </div>
             <Field label="Customer name">
@@ -3713,7 +3741,11 @@ function rangeStyleFromClock(startTime: string, endTime: string, businessStartTi
     const businessStart = clockToMinutes(businessStartTime);
     const businessEnd = clockToMinutes(businessEndTime);
     const start = Math.max(clockToMinutes(startTime), businessStart);
-    const end = Math.min(clockToMinutes(endTime), businessEnd);
+    // A range that ends exactly at local midnight comes back as clock "00:00";
+    // treat it as 24:00 so the card spans to the bottom of the day instead of
+    // collapsing to the minimum height.
+    const rawEnd = clockToMinutes(endTime);
+    const end = Math.min(rawEnd === 0 && start > 0 ? 24 * 60 : rawEnd, businessEnd);
 
     return {
         top: Math.max(0, ((start - businessStart) / 15) * SLOT_HEIGHT),
@@ -3809,7 +3841,7 @@ function askBookOverBlock(confirm: ConfirmFn) {
     return confirm({
         title: "This time is blocked",
         description:
-            "The barber has blocked time during this slot. You can book over it - the blocked time stays on the calendar for everyone else.",
+            "There is blocked time on the calendar during this slot (a barber block or a closure). You can book over it - the block itself stays in place.",
         confirmLabel: "Book anyway",
         cancelLabel: "Cancel",
         tone: "danger",
@@ -3851,11 +3883,16 @@ function defaultAppointmentClockForDate(date: string) {
 }
 
 function localDateTimeToIso(date: string, time: string) {
+    // Two-pass offset resolution, mirroring the server's localDateTimeToUtc:
+    // the naive-UTC guess can land on the wrong side of a DST transition for
+    // early-morning clocks, so re-resolve the offset at the first candidate.
     const [year, month, day] = date.split("-").map(Number);
     const [hour, minute] = time.split(":").map(Number);
-    const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute));
-    const offset = timeZoneOffsetMinutes(utcGuess, TIME_ZONE);
-    return new Date(Date.UTC(year, month - 1, day, hour, minute) - offset * 60_000).toISOString();
+    const naiveUtc = Date.UTC(year, month - 1, day, hour, minute);
+    const firstOffset = timeZoneOffsetMinutes(new Date(naiveUtc), TIME_ZONE);
+    const candidate = naiveUtc - firstOffset * 60_000;
+    const secondOffset = timeZoneOffsetMinutes(new Date(candidate), TIME_ZONE);
+    return new Date(naiveUtc - secondOffset * 60_000).toISOString();
 }
 
 function localPartsFromIso(value: string) {

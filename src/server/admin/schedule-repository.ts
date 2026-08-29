@@ -492,9 +492,19 @@ class DrizzleAdminScheduleRepository implements AdminScheduleRepository {
             from ? gt(blockedTimes.endTime, from) : undefined,
             scope.barberId
                 ? or(
+                      // Scope-qualified like blockedTimeAppliesToBarberAtLocation:
+                      // a barber's list shows business closures, closures at
+                      // their locations, and ONLY their own barber blocks - a
+                      // bare location match would leak co-located barbers'
+                      // personal blocks into their Blocked-time screen.
                       eq(blockedTimes.scope, "business"),
-                      eq(blockedTimes.barberId, scope.barberId),
-                      locationIds.length ? inArray(blockedTimes.locationId, locationIds) : undefined,
+                      locationIds.length
+                          ? and(
+                                eq(blockedTimes.scope, "location"),
+                                inArray(blockedTimes.locationId, locationIds),
+                            )
+                          : undefined,
+                      and(eq(blockedTimes.scope, "barber"), eq(blockedTimes.barberId, scope.barberId)),
                   )
                 : undefined,
         );

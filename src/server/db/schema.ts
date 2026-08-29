@@ -354,6 +354,10 @@ export const bookings = pgTable(
         uniqueIndex("bookings_reschedule_token_hash_unique").on(table.rescheduleTokenHash),
         check("bookings_time_check", sql`${table.startTime} < ${table.endTime}`),
         check("bookings_duration_positive_check", sql`${table.totalDurationMinutes} > 0`),
+        check(
+            "bookings_price_override_nonnegative_check",
+            sql`${table.priceOverrideCents} is null or ${table.priceOverrideCents} >= 0`,
+        ),
     ],
 );
 

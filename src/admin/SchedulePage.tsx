@@ -1376,6 +1376,38 @@ function WeeklyScheduleDialog({
                 return;
             }
         }
+
+        // Rows outside today's pattern (expired, or dated to start later) never
+        // appear in the draft, so a save silently sweeps them. Make that an
+        // explicit choice.
+        const deactivateIds = new Set(
+            savePlan.filter((operation) => operation.type === "deactivate").map((operation) => operation.shiftId),
+        );
+        const sweptHiddenRows = schedule.shifts.filter(
+            (shift) =>
+                shift.id &&
+                deactivateIds.has(shift.id) &&
+                !shiftAppearsInDraft(draft, shift.id) &&
+                (shift.effectiveFrom || shift.effectiveTo),
+        );
+        if (sweptHiddenRows.length > 0) {
+            const sample = sweptHiddenRows[0];
+            const sampleLabel = sample?.effectiveTo
+                ? `one ended ${formatLocalDateLabel(sample.effectiveTo, { year: true })}`
+                : sample?.effectiveFrom
+                  ? `one starts ${formatLocalDateLabel(sample.effectiveFrom, { year: true })}`
+                  : "";
+            const proceed = await confirm({
+                title: "Also remove dated schedule rows?",
+                description: `Saving removes ${sweptHiddenRows.length} schedule ${sweptHiddenRows.length === 1 ? "row" : "rows"} not shown in this editor (${sampleLabel}). They can't be restored afterward.`,
+                confirmLabel: "Remove and save",
+                cancelLabel: "Cancel",
+                tone: "danger",
+            });
+            if (!proceed) {
+                return;
+            }
+        }
         try {
             setSaving(true);
             setNotice("");
@@ -1394,13 +1426,13 @@ function WeeklyScheduleDialog({
             <DialogContent size="lg" className="!max-w-[min(1440px,96vw)] !p-0" closeDisabled={saving}>
                 <div className="border-b border-forest/10 p-5">
                     <DialogTitle>{barber?.displayName ?? "Weekly schedule"}</DialogTitle>
-                    <DialogDescription>Weekly hours: {formatWeeklyHours(weeklyHours)}</DialogDescription>
+                    <DialogDescription>Weekly template hours: {formatWeeklyHours(weeklyHours)} (one-day changes and blocked time show on the calendar)</DialogDescription>
                     <p className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12.5px] font-medium text-amber-900">
                         <Repeat size={15} className="mt-px shrink-0" /> This changes {barber?.displayName ?? "this barber"}'s schedule every week from now on — not just this week.
                     </p>
                     {hasDatedWindows && (
                         <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-900">
-                            Some of these shifts currently have an end date. Saving makes the whole schedule ongoing — no end date.
+                            Some of these shifts currently have start or end dates. Saving makes the whole schedule ongoing — it applies every week with no dates attached.
                         </p>
                     )}
                     {barber && draftIsEmpty && expiredPattern.length > 0 && (
@@ -1784,7 +1816,7 @@ function WeeklyScheduleBuilder({
                                     <p className="mt-2 inline-flex items-center rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-black text-amber-900">
                                         {selectedContext.window.effectiveTo
                                             ? `Ends ${formatLocalDateLabel(selectedContext.window.effectiveTo, { year: true })} — saving makes it ongoing`
-                                            : `Starts ${formatLocalDateLabel(selectedContext.window.effectiveFrom ?? "", { year: true })} — saving makes it ongoing`}
+                                            : `${(selectedContext.window.effectiveFrom ?? "") <= todayLocalDate() ? "Started" : "Starts"} ${formatLocalDateLabel(selectedContext.window.effectiveFrom ?? "", { year: true })} — saving makes it ongoing`}
                                     </p>
                                 )}
                             </div>
@@ -1896,7 +1928,7 @@ function WeeklyScheduleBuilder({
                     <p className={`text-xs font-bold ${validationIssues.length > 0 ? "text-red-700" : "text-charcoal/50"}`}>
                         {validationIssues.length > 0
                             ? `${validationIssues.length} schedule ${validationIssues.length === 1 ? "item needs" : "items need"} attention before saving.`
-                            : `${pendingChanges} ${pendingChanges === 1 ? "change" : "changes"} pending. Weekly hours are calculated from this schedule and range.`}
+                            : `${pendingChanges} ${pendingChanges === 1 ? "change" : "changes"} pending. Saving applies this schedule every week from now on.`}
                     </p>
                 </div>
                 {canManage && (
@@ -2545,6 +2577,11 @@ function BlockedTimeDialog({
     const [saving, setSaving] = useState(false);
 
     function switchScope(next: AdminBlockedTimeScope) {
+        if (next === scope) {
+            // Re-clicking the active chip must be a no-op - it used to clear an
+            // edited barber block's pinned location.
+            return;
+        }
         setScope(next);
         if (next === "location" && !locationId) {
             setLocationId(schedule.locations[0]?.id ?? "");
@@ -2807,6 +2844,10 @@ function defaultWindow(
 function defaultLocationIdForBarber(schedule: AdminSchedule, barberId?: string) {
     const barberLocationId = schedule.barbers.find((barber) => barber.id === barberId)?.locationIds[0];
     return barberLocationId ?? schedule.locations[0]?.id ?? "";
+}
+
+function shiftAppearsInDraft(draft: WeeklyScheduleDraft, shiftId: string) {
+    return draft.days.some((day) => day.windows.some((window) => window.shiftId === shiftId));
 }
 
 function createDraftWindowId(dayOfWeek: number) {

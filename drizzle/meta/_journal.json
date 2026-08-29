@@ -64,6 +64,13 @@
       "when": 1788012245648,
       "tag": "0008_burly_deathstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788013835102,
+      "tag": "0009_gifted_gabe_jones",
+      "breakpoints": true
     }
   ]
 }
