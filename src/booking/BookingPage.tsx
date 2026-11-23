@@ -16,6 +16,7 @@ import lauraImage from "@/assets/barbers/booking-thumbnails/laura-thumb.jpg";
 import josefImage from "@/assets/barbers/booking-thumbnails/josef-thumb.jpg";
 import samImage from "@/assets/barbers/booking-thumbnails/sam-thumb.jpg";
 import shayonImage from "@/assets/barbers/booking-thumbnails/shayon-thumb.jpg";
+import sheryImage from "@/assets/barbers/booking-thumbnails/shery-thumb.jpg";
 import yogeshImage from "@/assets/barbers/booking-thumbnails/yogesh-thumb.jpg";
 import { cn } from "@/lib/utils";
 import {
@@ -106,6 +107,11 @@ const barberProfiles: Record<
     "shayan-hussain": {
         image: shayonImage,
         shortName: "Shayon",
+        role: "Barber",
+    },
+    shery: {
+        image: sheryImage,
+        shortName: "Shery",
         role: "Barber",
     },
 };

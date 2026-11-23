@@ -796,3 +796,7 @@ The weekly schedule dialog builds its draft from the shift rows effective on the
 
 Reason:
 The old "latest dated pattern" selector had no concept of today, so an expired pattern shadowed the live open-ended rows: the modal displayed shifts customers could not book, re-saving produced no operations (Save stayed disabled), and new windows inherited the dead dates. The effective-date editor that made dated ranges visible was removed in the July 10 Team Week redesign, leaving no way to see or repair the state. Anchoring the modal to the calendar's own resolution makes the two surfaces agree by construction, and always-ongoing saves make the banner's "every week from now on" promise literally true.
+
+### 2026-11-23 - Add Shery As An Eglinton Weekend Barber
+
+Owner added Shery to the team, working Saturdays and Sundays on the same hours as Sam (Sat 10:00-19:00, Sun 10:00-17:00) at Eglinton with all active services. Production rows were inserted directly; seed data mirrors the barber and location assignment.

@@ -23,6 +23,7 @@ import {
 
 import lauraThumb from "../assets/barbers/booking-thumbnails/laura-thumb.jpg";
 import josefThumb from "../assets/barbers/booking-thumbnails/josef-thumb.jpg";
+import sheryThumb from "../assets/barbers/booking-thumbnails/shery-thumb.jpg";
 import samThumb from "../assets/barbers/booking-thumbnails/sam-thumb.jpg";
 import yogeshThumb from "../assets/barbers/booking-thumbnails/yogesh-thumb.jpg";
 import shayonPhoto from "../assets/barbers/shayon.png";
@@ -3983,6 +3984,7 @@ const barberPhotosBySlug: Record<string, string> = {
     "shayan-hussain": shayonPhoto,
     "shayon-hussain": shayonPhoto,
     josef: josefThumb,
+    shery: sheryThumb,
 };
 
 function barberPhotoUrl(barber: Pick<AdminBarberOption, "displayName" | "slug" | "profileImageUrl">) {

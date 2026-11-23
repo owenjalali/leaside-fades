@@ -4,6 +4,7 @@ import lauraImage from "@/assets/barbers/laura.jpg";
 import josefImage from "@/assets/barbers/josef.jpg";
 import yogeshImage from "@/assets/barbers/yogesh.jpg";
 import shayonImage from "@/assets/barbers/shayon.png";
+import sheryImage from "@/assets/barbers/shery.jpg";
 
 interface TeamMember {
     name: string;
@@ -42,6 +43,12 @@ const team: TeamMember[] = [
         role: "Barber",
         image: yogeshImage,
         specialty: "Haircuts, Fades & Styling",
+    },
+    {
+        name: "Shery",
+        role: "Barber",
+        image: sheryImage,
+        specialty: "Precision Cuts & Styling",
     },
 ];
 

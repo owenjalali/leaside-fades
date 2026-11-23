@@ -23,10 +23,10 @@ describe("Phase 1 seed data", () => {
 
     test("matches the Phase 1 expected business counts", () => {
         expect(locationSeeds).toHaveLength(2);
-        expect(barberSeeds).toHaveLength(5);
+        expect(barberSeeds).toHaveLength(6);
         expect(serviceCategorySeeds).toHaveLength(3);
         expect(serviceSeeds).toHaveLength(38);
-        expect(barberLocationSeeds).toHaveLength(6);
+        expect(barberLocationSeeds).toHaveLength(7);
     });
 
     test("includes owner-approved Men's Color Root Touchup launch service", () => {
@@ -89,6 +89,17 @@ describe("Phase 1 seed data", () => {
         });
         expect(barberLocationSeeds).not.toContainEqual({
             barberSlug: "josef",
+            locationSlug: "millwood",
+        });
+    });
+
+    test("keeps Shery Eglinton-only", () => {
+        expect(barberLocationSeeds).toContainEqual({
+            barberSlug: "shery",
+            locationSlug: "eglinton",
+        });
+        expect(barberLocationSeeds).not.toContainEqual({
+            barberSlug: "shery",
             locationSlug: "millwood",
         });
     });

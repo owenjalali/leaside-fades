@@ -1,5 +1,6 @@
 import lauraThumb from "../assets/barbers/booking-thumbnails/laura-thumb.jpg";
 import josefThumb from "../assets/barbers/booking-thumbnails/josef-thumb.jpg";
+import sheryThumb from "../assets/barbers/booking-thumbnails/shery-thumb.jpg";
 import samThumb from "../assets/barbers/booking-thumbnails/sam-thumb.jpg";
 import shayonThumb from "../assets/barbers/booking-thumbnails/shayon-thumb.jpg";
 import yogeshThumb from "../assets/barbers/booking-thumbnails/yogesh-thumb.jpg";
@@ -17,6 +18,7 @@ const barberPhotosBySlug: Record<string, string> = {
     "shayan-hussain": shayonThumb,
     "shayon-hussain": shayonThumb,
     josef: josefThumb,
+    shery: sheryThumb,
 };
 
 export function getAdminBarberPhotoUrl(barber: BarberPhotoInput) {
